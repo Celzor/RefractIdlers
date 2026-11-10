@@ -1,11 +1,12 @@
-import { createGame, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, migrateState, validateState, GENERATORS, SKILLS, generatorCost, skillCost, prestigeGain } from './game.js';
+import { createGame, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, getOrb, migrateState, validateState, GENERATORS, generatorQuote, prestigeGain, prestigeNextThreshold } from './game.js';
 import { createActivityBridge } from './activity.js';
 import { OrbitArena } from './arena.js';
 import { GameAudio } from './audio.js';
-import { generatorIcon } from './icons.js';
+import { generatorIcon, orbIcon, orbAppearanceKey } from './icons.js';
+import { initializeResearch, renderResearch } from './research.js';
 
 const $ = (selector) => document.querySelector(selector);
-const fmt = (value, digits = 0) => new Intl.NumberFormat('en', { maximumFractionDigits:digits, ...(value >= 1e6 ? {notation:'compact',maximumFractionDigits:1} : {}) }).format(value || 0);
+const fmt = (value, digits = 0) => value >= 1e15 ? value.toExponential(2).replace('+','') : new Intl.NumberFormat('en', { maximumFractionDigits:digits, ...(value >= 1e4 ? {notation:'compact',maximumFractionDigits:1} : {}) }).format(value || 0);
 const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const soloKey = 'refract-idlers:solo:v1';
 const people = (members) => members.map((person) => ({...person, id:String(person.id)}));
@@ -31,6 +32,10 @@ let bridge;
 let crewMarkup = '';
 let scoreboardMarkup = '';
 let previousVisualPlayer = null;
+let previousOrb = null;
+let orbImageKey = '';
+let buyQuantity = '1';
+try { buyQuantity = ['1','10','max'].includes(localStorage.getItem('refract-idlers:buy-quantity')) ? localStorage.getItem('refract-idlers:buy-quantity') : '1'; } catch { /* preferences are optional */ }
 const myPlayer = () => state.players.find((player) => player.id === selfId);
 
 function toast(message) {
@@ -41,12 +46,14 @@ function toast(message) {
 }
 function showTab(next) {
   tab = next;
+  document.body.dataset.view = next;
   for (const button of document.querySelectorAll('[data-tab]')) {
     const active = button.dataset.tab === next;
     button.classList.toggle('active', active);
     if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
   }
   for (const name of ['orbit','skills','prestige']) $(`#${name}-view`).hidden = name !== next;
+  document.dispatchEvent(new CustomEvent('game-view-change',{detail:{view:next}}));
   render(true);
 }
 function compactState() {
@@ -108,8 +115,8 @@ function execute(fromId, action) {
   dirty = true;
   if (String(fromId) === selfId) {
     if (action.type === 'click') {
-      arena.burst({amount:result.amount,critical:result.critical,color:myPlayer()?.color});
-      audio.play(result.critical ? 'critical' : 'click');
+      arena.burst({...result,color:myPlayer()?.color});
+      audio.play(result.critical ? 'critical' : 'hit');
     } else if (action.type === 'buySkill') audio.play('purchase');
     else if (action.type === 'prestige') { audio.play('levelup'); toast(`Fresh start. +${result.amount} permanent prestige points.`); }
   }
@@ -125,8 +132,8 @@ function send(action) {
   if (!bridge?.sendAction(action)) { toast('Syncing your orbit. Try again in a moment.'); return; }
   if (!bridge.isHost && action.type === 'click') {
     // Visual feedback is immediate; balances always come from the host.
-    arena.burst({amount:getStats(myPlayer(),state).clickPower,color:myPlayer()?.color});
-    audio.play('click');
+    arena.burst({damage:getStats(myPlayer(),state).clickDamage,color:myPlayer()?.color});
+    audio.play('hit');
   }
 }
 
@@ -181,10 +188,9 @@ bridge = createActivityBridge({
 });
 
 // Create stable buttons once: live numbers can update without stealing focus.
-const generatorEffect = (generator) => generator.id === 'mote' ? 'Automates 0.5 core taps / sec' : generator.id === 'star' ? '+10% to all your LRC production' : `+${generator.baseRate} base LRC / sec`;
-$('#generators').innerHTML = GENERATORS.map((generator) => `<div class="generator" id="generator-${generator.id}"><span class="generator-symbol" aria-hidden="true">${generatorIcon(generator.id)}</span><div><div class="generator-name">${generator.name}<small id="owned-${generator.id}">×0</small></div><div class="generator-description">${generatorEffect(generator)}</div></div><button data-buy-generator="${generator.id}" title="${generator.description}" disabled><span id="price-${generator.id}">${generator.baseCost}</span><small>LRC · BUILD</small></button></div>`).join('');
-const branches = [{id:'click',name:'01 / Active light'}, {id:'idle',name:'02 / Idle orbit'}, {id:'team',name:'03 / Shared energy'}];
-$('#skill-tree').innerHTML = branches.map((branch) => `<div class="skill-branch"><h3>${branch.name}</h3>${SKILLS.filter((skill) => skill.branch === branch.id).map((skill) => `<button class="skill-node" data-buy-skill="${skill.id}" disabled><span class="skill-node-icon">${skill.icon}</span><div><strong>${skill.name}</strong><span class="rank" id="rank-${skill.id}">0 / ${skill.maxRank}</span><p>${skill.description}</p><small id="skill-cost-${skill.id}">${skill.cost} SP</small></div></button>`).join('')}</div>`).join('');
+const generatorEffect = (generator) => generator.id === 'mote' ? 'Automates 0.5 orb hits / sec' : generator.id === 'star' ? '+10% damage & LRC production' : `+${generator.baseRate} base LRC / sec`;
+$('#generators').innerHTML = GENERATORS.map((generator) => `<div class="generator" id="generator-${generator.id}"><span class="generator-symbol" aria-hidden="true">${generatorIcon(generator.id)}</span><div><div class="generator-name">${generator.name}<small id="owned-${generator.id}">×0</small></div><div class="generator-description">${generatorEffect(generator)}</div></div><button data-buy-generator="${generator.id}" title="${generator.description}" disabled><span id="price-${generator.id}">${generator.baseCost}</span><small id="buy-label-${generator.id}">LRC · BUY 1</small></button></div>`).join('');
+initializeResearch();
 
 function render(force = false) {
   if (!force && performance.now() - lastRender < 100) return;
@@ -193,7 +199,9 @@ function render(force = false) {
   const playing = state.phase === 'round';
   const shopping = state.phase === 'intermission';
   const usable = initialized && synchronized && !!player;
-  const stats = player ? getStats(player,state) : {clickPower:2,idleRate:1};
+  const stats = player ? getStats(player,state) : {clickPower:2,clickDamage:2,clickIncome:0,idleRate:1,autoDps:0};
+  const observedPlayer = player || state.players[0];
+  const orb = observedPlayer ? getOrb(observedPlayer,state) : {level:1,hp:12,maxHp:12,reward:12,boss:false};
   const coop = state.mode === 'coop';
   const teamStats = getTeamStats(state);
   const balance = player ? getBalance(player,state) : 0;
@@ -201,6 +209,7 @@ function render(force = false) {
   const progress = coop ? state.teamLrc : player?.roundLrc || 0;
   const reached = progress >= target;
   document.body.dataset.phase = state.phase;
+  document.body.dataset.view = tab;
   $('#mode-picker').hidden = state.phase !== 'lobby';
   $('#mode-picker-note').textContent = !initialized ? 'Connecting to your session…' : bridge.isHost ? 'You choose for the session. The mode locks when round one begins.' : 'Your host chooses for this session. Everyone joins the same mode.';
   $('#lobby-start').disabled = !usable || !bridge.isHost || state.phase !== 'lobby';
@@ -215,7 +224,8 @@ function render(force = false) {
   $('#session-mode').textContent = coop ? '◎ CO-OP' : '≋ SCOREBOARD';
   $('#lrc-label').textContent = coop ? 'CREW LRC POOL' : 'YOUR LRCs';
   $('#lrc-description').textContent = coop ? 'Shared by everyone in the session' : 'Light Refraction Credits';
-  $('#output-label').textContent = coop ? 'CREW ORBIT OUTPUT' : 'YOUR ORBIT OUTPUT';
+  $('#output-label').textContent = coop ? 'CREW STEADY LRC' : 'STEADY LRC OUTPUT';
+  $('#idle-rate').parentElement.title = 'Continuous machine income and automatic minting. Orb drops and manual clicks are extra.';
   $('#lrc').textContent = fmt(balance);
   $('#idle-rate').textContent = fmt(coop ? teamStats.idleRate : stats.idleRate,1);
   $('#click-power').textContent = fmt(stats.clickPower,1);
@@ -226,8 +236,28 @@ function render(force = false) {
   $('#timer').textContent = shopping ? '—' : String(Math.ceil(state.remaining)).padStart(2,'0');
   $('#round-label').textContent = !initialized ? 'CONNECTING TO THE ORBIT' : !synchronized ? 'SYNCING WITH THE CREW' : state.phase === 'lobby' ? 'READY TO REFRACT' : shopping ? `ROUND ${String(state.round).padStart(2,'0')} / BUILD PHASE` : `ROUND ${String(state.round).padStart(2,'0')} / HARVESTING`;
   $('#core').disabled = !usable || !playing;
-  $('#core-label').textContent = playing ? `+${fmt(stats.clickPower,1)} LRC PER CLICK` : shopping ? 'CLOSED FOR UPGRADES' : 'THE REFRACT CORE';
-  $('#core-hint').textContent = playing ? 'CLICK THE PRISM / PRESS SPACE' : shopping ? 'The machines are taking a break.' : 'Click the prism. Collect the light.';
+  $('#core-label').textContent = playing ? `${fmt(stats.clickDamage,1)} BASE DAMAGE / HIT` : shopping ? 'CLOSED FOR UPGRADES' : 'THE REFRACT ORB';
+  $('#core-hint').textContent = playing ? 'BREAK THE ORB / PRESS SPACE' : shopping ? 'The machines are taking a break.' : 'Break the orb. Collect the light.';
+  $('#orb-name').textContent = `${orb.boss ? 'BOSS' : coop ? 'SHARED ORB' : 'REFRACT ORB'} / ${String(orb.level).padStart(3,'0')}`;
+  $('#orb-reward').textContent = `${orb.boss ? '50% armour · ' : ''}${fmt(orb.reward)} LRC drop`;
+  const healthPercent = Math.max(0,Math.min(100,orb.hp / orb.maxHp * 100));
+  $('#orb-health-fill').style.width = `${healthPercent}%`;
+  $('#orb-health').setAttribute('aria-valuenow',String(Math.round(healthPercent)));
+  $('#orb-health').setAttribute('aria-valuetext',`${fmt(orb.hp,1)} of ${fmt(orb.maxHp,1)} health`);
+  $('#orb-health-text').textContent = `${fmt(orb.hp,1)} / ${fmt(orb.maxHp,1)} HP`;
+  $('.orb-meter').classList.toggle('boss',orb.boss);
+  $('#core').classList.toggle('boss',orb.boss);
+  $('#core').setAttribute('aria-label',`Damage ${orb.boss ? 'boss' : 'orb'} ${orb.level}. ${fmt(orb.hp)} health remaining.`);
+  $('#auto-damage').textContent = fmt(stats.autoDps,1);
+  $('#click-income').textContent = fmt(stats.clickIncome,2);
+  $('#orbs-broken').textContent = fmt(player?.orbsDestroyed);
+  const imageKey = orbAppearanceKey(orb);
+  if (imageKey !== orbImageKey) { $('#core img').src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(orbIcon(orb))}`; orbImageKey = imageKey; }
+  if (previousOrb && previousOrb.mode === state.mode && orb.level > previousOrb.level && playing) {
+    audio.orbBreak(orb.level-previousOrb.level,Math.floor((orb.level-1)/10) > Math.floor((previousOrb.level-1)/10));
+    $('#core').classList.remove('orb-shattered'); void $('#core').offsetWidth; $('#core').classList.add('orb-shattered');
+  }
+  previousOrb = {level:orb.level,mode:state.mode};
   $('#surge-label').hidden = !stats.surge;
   $('#goal-label').textContent = coop ? '◎ SHARED ROUND GOAL' : '◎ YOUR ROUND GOAL';
   $('#team-lrc').textContent = fmt(progress);
@@ -239,7 +269,7 @@ function render(force = false) {
   const action = $('#round-action');
   action.disabled = !usable || playing || (!shopping && !bridge.isHost);
   action.textContent = !synchronized ? 'Syncing…' : !player ? 'Spectating' : playing ? 'Orbit in progress' : shopping ? (player.ready ? `Unready · ${ready}/${humans.length}` : 'Ready for next round ↗') : bridge.isHost ? 'Begin round ↗' : 'Waiting for host';
-  $('#round-description').textContent = shopping ? 'Your next round starts when everyone is ready.' : playing ? coop ? 'Every click feeds the same pool.' : 'Keep the light flowing. Climb the scoreboard.' : coop ? 'One pool. Every pilot makes it brighter.' : 'Your build. Your score. Your place in the orbit.';
+  $('#round-description').textContent = shopping ? 'Your next round starts when everyone is ready.' : playing ? coop ? 'One orb. Every hit helps the crew.' : 'Break the orb. The next one is tougher.' : coop ? 'One orb. One pool. A whole crew of light.' : 'Your build. Your score. Your place in the orbit.';
   $('#round-subtitle').textContent = shopping ? `${ready} / ${humans.length} pilots ready · spend or save your skill points` : playing ? `${fmt(stats.idleRate,1)} LRC / sec ${coop ? 'from your upgrades into the crew pool.' : 'from your automated orbit.'}` : '60-second rounds. A new build after every orbit.';
   $('#round-summary').hidden = !shopping;
   if (shopping && state.lastRound) {
@@ -248,37 +278,30 @@ function render(force = false) {
   }
   $('#skill-phase-note').textContent = shopping ? 'The orbit is resting. Choose your upgrades, then ready up in The orbit.' : playing ? 'Your next build phase opens at the end of this round. Preview your path below.' : 'Finish your first round to earn skill points.';
   $('#save-status').textContent = !storageAvailable ? 'Storage unavailable · keep this tab open' : bridge?.mode === 'refract' ? 'Shared run · session saved' : 'Progress saved on this device';
-  $('#skill-reward-note').textContent = `Each completed round grants 2 SP. Reach ${coop ? 'the shared' : 'your personal'} goal for +1 more.`;
+  $('#skill-reward-note').textContent = `2 SP per round, +1 for ${coop ? 'the shared' : 'your personal'} goal. Event horizon and research insight add more.`;
   $('#generator-eyebrow').textContent = coop ? 'PAID FROM THE CREW POT' : 'MACHINES FOR SALE';
   $('#generator-description').textContent = coop ? 'Every machine feeds the same pot.' : 'A little less clicking. A lot more light.';
   $('#automation-note').innerHTML = coop ? 'Your machines feed the shared pool.<br><b>Personal prestige keeps the pool intact.</b>' : 'Machines work throughout each round.<br><b>They rest while you grow your skill tree.</b>';
+  for (const button of document.querySelectorAll('[data-buy-quantity]')) button.setAttribute('aria-pressed',String(button.dataset.buyQuantity === buyQuantity));
   for (const generator of GENERATORS) {
     const owned = player?.generators[generator.id] || 0;
-    const cost = player ? generatorCost(player,generator.id) : generator.baseCost;
+    const quote = player ? generatorQuote(player,generator.id,buyQuantity === 'max' ? 'max' : Number(buyQuantity),state) : {quantity:1,cost:generator.baseCost};
+    const cost = quote.cost;
     $(`#owned-${generator.id}`).textContent = `×${owned}`;
-    $(`#price-${generator.id}`).textContent = fmt(cost);
+    $(`#price-${generator.id}`).textContent = quote.quantity ? fmt(cost) : '—';
+    $(`#buy-label-${generator.id}`).textContent = owned >= 1000 ? 'CAPACITY' : !quote.quantity ? 'SAVE LRC' : `LRC · BUY ${quote.quantity}`;
     const button = $(`[data-buy-generator="${generator.id}"]`);
-    button.disabled = !usable || state.phase === 'lobby' || balance < cost || owned >= 1000;
-    button.setAttribute('aria-label', `Build ${generator.name} for ${fmt(cost)} ${coop ? 'shared ' : ''}LRC; ${owned} owned`);
+    button.disabled = !usable || state.phase === 'lobby' || !quote.quantity || balance < cost || owned >= 1000;
+    button.setAttribute('aria-label', `Buy ${quote.quantity} ${generator.name} for ${fmt(cost)} ${coop ? 'shared ' : ''}LRC; ${owned} owned`);
   }
-  for (const skill of SKILLS) {
-    const rank = player?.skills[skill.id] || 0;
-    const cost = player ? skillCost(player,skill.id) : skill.cost;
-    const locked = skill.requires.some((id) => !player?.skills[id]);
-    const button = $(`[data-buy-skill="${skill.id}"]`);
-    button.disabled = !usable || !shopping || locked || player.skillPoints < cost || rank >= skill.maxRank;
-    button.classList.toggle('owned',rank > 0);
-    $(`#rank-${skill.id}`).textContent = `${rank} / ${skill.maxRank}`;
-    $(`#skill-cost-${skill.id}`).textContent = rank >= skill.maxRank ? 'Fully evolved' : locked ? `Requires ${SKILLS.find((item) => item.id === skill.requires[0]).name}` : `${cost} SP · ${rank ? 'Upgrade' : 'Unlock'}`;
-    if (skill.branch === 'team') button.querySelector('p').textContent = coop ? skill.description : skill.description.replaceAll('for every player','for you').replace('Crew bonuses stack.','Strengthens your own orbit.');
-  }
+  if (tab !== 'orbit') renderResearch(player,state,usable);
   const gain = player ? prestigeGain(player) : 0;
   $('#run-lrc').textContent = fmt(player?.runLrc);
-  $('#prestige-gain').textContent = `${gain} PP`;
-  $('#prestige-next').textContent = `Next point at ${fmt(2500 * (gain + 1) ** 2)} LRC`;
+  $('#prestige-gain').textContent = `${fmt(gain)} PP`;
+  $('#prestige-next').textContent = `Next point at ${fmt(player ? prestigeNextThreshold(player) : 2500)} LRC`;
   $('#prestige-action').disabled = !usable || !shopping || gain < 1;
-  $('#prestige-condition').textContent = gain >= 1 ? shopping ? `Ready to earn +${gain} PP and +${gain*10}% permanent production.` : 'Finish this round to refract your orbit.' : 'Available between rounds once you earn 2,500 LRC.';
-  $('.prestige-rules p:first-child span').textContent = coop ? 'Your personal run, generators, skills and skill points reset. The shared pool stays.' : 'Your LRC balance, generators, skills and skill points reset.';
+  $('#prestige-condition').textContent = gain >= 1 ? shopping ? `Ready to earn +${fmt(gain)} PP and +${fmt(gain*10)}% permanent production.` : 'Finish this round to refract your orbit.' : player?.totalPrestige >= Number.MAX_SAFE_INTEGER ? 'Maximum lifetime prestige reached. Keep building your research.' : 'Available between rounds once you earn 2,500 LRC.';
+  $('.prestige-rules p:first-child span').textContent = coop ? 'Your run and machines reset. The shared orb and pool stay.' : 'Your wallet, machines and current orb reset.';
   $('#crew-count').textContent = `${state.players.length} / 8`;
   $('#crew-mode').textContent = bridge?.mode === 'refract' ? 'Shared Refract activity' : 'Invite your people through Refract';
   $('#scoreboard-panel').hidden = coop;
@@ -314,9 +337,9 @@ function info(title,content) {
   if (!$('#info-dialog').open) $('#info-dialog').showModal();
 }
 function multiplayerInfo() {
-  info('Find your people.', '<p>Launch <b>Refract Idlers</b> from a Refract call. The host chooses one mode for everyone before the first round.</p><p><b>Scoreboard:</b> build your own orbit and climb the live ranking. It only includes pilots currently in this session. Spending credits and prestiging keep your earned score.</p><p><b>Co-op:</b> every click and machine feeds one LRC pool. Everyone can spend it to build upgrades. Skills stay personal, and shared-energy skills help the crew.</p><p>Everyone readies up between rounds. If the host leaves, the next pilot takes over. Up to eight pilots play.</p><a class="primary-button" href="tools/preview.html">Open multiplayer lab ↗</a><p>For a real call, an instance admin must register your publicly hosted game URL under Manage instance → Activities.</p>');
+  info('Find your people.', '<p>Launch <b>Refract Idlers</b> from a Refract call. The host chooses one mode for everyone before the first round.</p><p><b>Scoreboard:</b> break your own increasingly tough orbs and climb the live ranking. It only includes pilots currently in this session. Spending credits and prestiging keep your earned score.</p><p><b>Co-op:</b> attack one shared orb. All drops and machine income feed one LRC pool, which everyone can spend. Research stays personal; shared-energy skills strengthen the crew.</p><p>Everyone readies up between rounds. If the host leaves, the next pilot takes over. Up to eight pilots play.</p><a class="primary-button" href="tools/preview.html">Open multiplayer lab ↗</a><p>For a real call, an instance admin must register your publicly hosted game URL under Manage instance → Activities.</p>');
 }
-$('#help').addEventListener('click', () => info('Chase a little light.', '<ol><li><b>Choose an orbit.</b> The host selects Scoreboard for personal builds and live rankings, or Co-op for one shared LRC pool.</li><li><b>Harvest.</b> Click the core, tap on touch, or press Space. Your core also generates 1 LRC per second. The final 10 seconds double click income.</li><li><b>Build.</b> Automate taps, grow refract orbs, collect light through arrays, and multiply output with refractometers. In Co-op, all production feeds the same pool.</li><li><b>Evolve.</b> Each completed 60-second round earns 2 skill points. Reach your personal goal in Scoreboard, or the crew goal in Co-op, for +1 SP. Spend points between rounds, then ready up.</li><li><b>Prestige.</b> Contribute 2,500 LRCs in your run to unlock your first permanent point. Each adds 10% to your future production. Personal prestige keeps the co-op pool intact.</li></ol><p>Solo progress saves on this device. Shared runs belong to the Refract session. Production runs during harvesting rounds while the activity is open; there are no offline earnings.</p>'));
+$('#help').addEventListener('click', () => info('Break a little light.', '<ol><li><b>Choose an orbit.</b> The host selects Scoreboard for personal orbs and live rankings, or Co-op for one shared orb and LRC pool.</li><li><b>Break orbs.</b> Click the orb, tap on touch, or press Space to damage it. Destroying it drops LRCs and reveals a stronger orb. Every tenth orb is a boss. The final 10 seconds boost damage.</li><li><b>Build the factory.</b> Auto clickers damage orbs. Farms, arrays and stars make LRCs. Refractometers amplify output. Use ×1, ×10 or Max; prices include every machine in the batch.</li><li><b>Research.</b> Complete 60-second rounds for skill points. Explore eight disciplines, follow prerequisite links, and unlock deeper tiers through orb, round and prestige milestones. Click-minting upgrades turn every hit into extra LRCs.</li><li><b>Prestige.</b> Your own run earnings grant permanent points. Spend them in the legacy workshop. Research, unused SP and lifetime records survive; your machines and run restart. In Co-op the shared orb and bank stay.</li></ol><p>Solo progress saves on this device. Shared runs belong to the Refract session. Production runs during harvesting rounds while the activity is open; there are no offline earnings.</p>'));
 $('#multiplayer').addEventListener('click', multiplayerInfo);
 $('#crew').addEventListener('click', (event) => { if (event.target.closest('#invite-crew')) multiplayerInfo(); });
 $('.dialog-close').addEventListener('click', () => $('#info-dialog').close());
@@ -344,11 +367,16 @@ document.addEventListener('keydown', (event) => {
   if (event.code !== 'Space' || event.repeat || $('#info-dialog').open || /INPUT|TEXTAREA|SELECT|BUTTON|A/.test(event.target.tagName) || event.target.isContentEditable || tab !== 'orbit' || $('#core').disabled) return;
   event.preventDefault(); send({type:'click'});
 });
-$('#generators').addEventListener('click', (event) => { const button = event.target.closest('[data-buy-generator]'); if (button && !button.disabled) send({type:'buyGenerator',id:button.dataset.buyGenerator}); });
-$('#skill-tree').addEventListener('click', (event) => { const button = event.target.closest('[data-buy-skill]'); if (button && !button.disabled) send({type:'buySkill',id:button.dataset.buySkill}); });
+for (const button of document.querySelectorAll('[data-buy-quantity]')) button.addEventListener('click', () => {
+  buyQuantity = button.dataset.buyQuantity;
+  try { localStorage.setItem('refract-idlers:buy-quantity',buyQuantity); } catch { /* preferences are optional */ }
+  audio.play('click',{intensity:.4}); render(true);
+});
+$('#generators').addEventListener('click', (event) => { const button = event.target.closest('[data-buy-generator]'); if (button && !button.disabled) send({type:'buyGenerator',id:button.dataset.buyGenerator,quantity:buyQuantity === 'max' ? 'max' : Number(buyQuantity)}); });
+for (const root of ['#skill-tree','#legacy-tree']) $(root).addEventListener('click', (event) => { const button = event.target.closest('[data-buy-skill]'); if (button && !button.disabled) send({type:'buySkill',id:button.dataset.buySkill}); });
 $('#prestige-action').addEventListener('click', () => {
   const gain = prestigeGain(myPlayer());
-  info('Start a brighter orbit?', `<p>You’ll receive <b>${gain} prestige points</b>, adding <b>+${gain*10}% permanent LRC production.</b></p><p class="dialog-danger">Your personal run, generators, skills and unspent skill points reset. Lifetime earnings and prestige stay.${state.mode === 'coop' ? ' The shared LRC pool and everyone else’s upgrades stay intact.' : ' Your spendable LRC balance resets; your scoreboard total stays.'} This cannot be undone.</p><button id="confirm-prestige" class="primary-button">Refract for +${gain} PP ✧</button>`);
+  info('Start a brighter orbit?', `<p>You’ll receive <b>${fmt(gain)} prestige points</b>, adding <b>+${fmt(gain*10)}% permanent production.</b></p><p class="dialog-danger">Your personal run and machines reset.${state.mode === 'coop' ? ' The shared orb, LRC pool and everyone else’s upgrades stay intact.' : ' Your spendable LRC balance and current orb reset.'} Research, unspent skill points, highest orb, lifetime score and prestige stay. This reset cannot be undone.</p><button id="confirm-prestige" class="primary-button">Refract for +${fmt(gain)} PP ✧</button>`);
   $('#confirm-prestige').addEventListener('click', () => { $('#info-dialog').close(); send({type:'prestige'}); });
 });
 

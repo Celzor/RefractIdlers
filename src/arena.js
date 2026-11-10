@@ -1,4 +1,5 @@
-import { drawGeneratorSprite, PIXEL_PALETTE as P } from './icons.js';
+import { drawGeneratorSprite, orbAppearance, PIXEL_PALETTE as P } from './icons.js';
+import * as Game from './game.js';
 
 /** Original pixel tabletop, retaining RogueRefract's tilted orbit projection. */
 const TAU = Math.PI * 2;
@@ -6,6 +7,10 @@ const RADII = [0.62, 0.82, 1.04];
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const noise = (value) => ((Math.sin(value) * 43758.5453) % 1 + 1) % 1;
 const font = (size) => `${size}px "Press Start 2P", ui-monospace, monospace`;
+const compact = (amount) => amount >= 1e12 ? `${(amount / 1e12).toFixed(1)}t`
+  : amount >= 1e9 ? `${(amount / 1e9).toFixed(1)}b`
+    : amount >= 1e6 ? `${(amount / 1e6).toFixed(1)}m`
+      : amount >= 1000 ? `${(amount / 1000).toFixed(1)}k` : String(Number(amount.toFixed(1)));
 
 export class OrbitArena {
   constructor(canvas) {
@@ -23,6 +28,12 @@ export class OrbitArena {
     this.instrumentTime = 0;
     this.lastAutoClicks = null;
     this.autoPulseAt = -Infinity;
+    this.orbIdentity = null;
+    this.previousOrb = null;
+    this.orbPalette = orbAppearance(null);
+    this.lastBurstAt = -Infinity;
+    this.lastShatterAt = -Infinity;
+    this.impactUntil = -Infinity;
     this.lastFrame = null;
     this.destroyed = false;
     this.media = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -62,26 +73,84 @@ export class OrbitArena {
     this.pixel(x - radius, y, color, radius * 2 + 1, 1);
   }
 
-  burst({ amount = 0, critical = false } = {}) {
+  burst({ damage = 0, amount = 0, kills = 0, critical = false } = {}) {
     if (this.destroyed) return;
     const x = this.width / 2, y = this.height * 0.49;
+    const now = globalThis.performance?.now?.() ?? Date.now();
+    this.lastBurstAt = now;
+    this.impactUntil = now + 170;
+    damage = Number.isFinite(damage) ? Math.max(0, damage) : 0;
+    amount = Number.isFinite(amount) ? Math.max(0, amount) : 0;
+    kills = Number.isFinite(kills) ? Math.max(0, Math.floor(kills)) : 0;
     if (!this.reducedMotion) {
-      for (let i = 0, count = critical ? 12 : 6; i < count; i++) {
+      for (let i = 0, count = critical ? 9 : 4; i < count; i++) {
         const angle = Math.random() * TAU;
         const velocity = 13 + Math.random() * 22;
         this.particles.push({ x: x + Math.cos(angle) * 27, y: y + Math.sin(angle) * 27,
           vx: Math.cos(angle) * velocity, vy: Math.sin(angle) * velocity - 8,
-          life: 1, color: i % 3 ? P.yellow : P.cream });
+          life: 1, color: i % 3 ? this.orbPalette.primary : P.cream, size: 2 });
       }
     }
-    if (Number.isFinite(amount) && amount > 0) {
-      const number = amount >= 1000000 ? `${(amount / 1000000).toFixed(1)}m`
-        : amount >= 1000 ? `${(amount / 1000).toFixed(1)}k` : String(Number(amount.toFixed(1)));
+    if (damage > 0) {
       this.floats.push({ x: x + (this.reducedMotion ? 0 : Math.round((Math.random() - 0.5) * 24)),
-        y: y - 34, life: 1, critical, text: `${critical ? '!' : '+'}${number}` });
+        y: y - 33, life: 1, critical, color: critical ? P.yellow : '#fff1cb',
+        text: `${critical ? '!' : ''}${compact(damage)} DMG` });
     }
-    this.particles = this.particles.slice(-60);
+    if (amount > 0) {
+      this.floats.push({ x: x + (this.reducedMotion ? 0 : Math.round((Math.random() - 0.5) * 18)),
+        y: y - (damage > 0 ? 46 : 35), life: 1.1, color: P.yellow,
+        text: `+${compact(amount)} LRC` });
+    }
+    if (kills > 0) this.shatter(kills, now, false);
+    this.particles = this.particles.slice(-80);
     this.floats = this.floats.slice(-8);
+  }
+
+  shatter(kills, nowMs, announce = true) {
+    this.lastShatterAt = nowMs;
+    const x = this.width / 2, y = this.height * 0.49;
+    if (!this.reducedMotion) {
+      const palette = [this.orbPalette.primary, this.orbPalette.accent, this.orbPalette.shade, P.cream];
+      for (let i = 0; i < 16; i++) {
+        const angle = i * TAU / 16 + Math.random() * 0.2;
+        const speed = 24 + Math.random() * 28;
+        this.particles.push({ x: x + Math.cos(angle) * 21, y: y + Math.sin(angle) * 21,
+          vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 18,
+          life: 1.25, color: palette[i % palette.length], size: i % 3 === 0 ? 4 : 2, shard: true });
+      }
+      for (let i = 0; i < 5; i++) this.particles.push({ x: x + (i - 2) * 7, y: y - 5,
+        vx: (i - 2) * 11, vy: -39 - Math.random() * 17, life: 1.45, color: P.yellow, coin: true });
+      this.particles = this.particles.slice(-80);
+    }
+    if (announce) {
+      this.floats.push({ x, y: y - 45, life: 1.15, color: P.yellow,
+        text: kills > 1 ? `${compact(kills)} ORBS BROKEN` : 'ORB BROKEN!' });
+      this.floats = this.floats.slice(-8);
+    }
+  }
+
+  currentOrb(state, selfId) {
+    const player = (state.players ?? []).find((entry) => entry.id === selfId) ?? state.players?.[0];
+    if (!player || typeof Game.getOrb !== 'function') return null;
+    try {
+      const orb = Game.getOrb(player, state);
+      if (!orb || !Number.isFinite(orb.hp) || !Number.isFinite(orb.maxHp) || orb.maxHp <= 0) return null;
+      return { ...orb, identity: state.mode === 'coop' ? 'coop' : player.id };
+    } catch { return null; }
+  }
+
+  observeOrb(orb, nowMs) {
+    if (!orb) { this.previousOrb = null; this.orbIdentity = null; return; }
+    if (this.orbIdentity === orb.identity && this.previousOrb) {
+      if (orb.level > this.previousOrb.level && nowMs - this.lastShatterAt > 300) {
+        this.shatter(orb.level - this.previousOrb.level, nowMs);
+      } else if (orb.level === this.previousOrb.level && orb.hp < this.previousOrb.hp && nowMs - this.lastBurstAt > 200) {
+        this.impactUntil = nowMs + 130;
+      }
+    }
+    this.orbIdentity = orb.identity;
+    this.previousOrb = { level: orb.level, hp: orb.hp };
+    this.orbPalette = orbAppearance(orb);
   }
 
   render(state, selfId, nowMs) {
@@ -90,6 +159,8 @@ export class OrbitArena {
     const dt = clamp((nowMs - (this.lastFrame ?? nowMs)) / 1000, 0, 0.05);
     this.lastFrame = nowMs;
     const active = state.phase === 'round';
+    const orb = this.currentOrb(state, selfId);
+    this.observeOrb(orb, nowMs);
     if (active && !this.reducedMotion) this.instrumentTime += dt;
     const visualTime = this.reducedMotion ? 3 : nowMs / 1000;
     const w = this.width, h = this.height;
@@ -126,6 +197,7 @@ export class OrbitArena {
     const cx = Math.round(w / 2), cy = Math.round(h * 0.49);
     this.pixel(cx - 24, cy + 23, '#442d2b', 48, 8);
     this.pixel(cx - 20, cy + 29, '#4f312e', 40, 3);
+    if (orb) this.drawOrbFrame(orb, nowMs);
     if (active && state.remaining <= 10) {
       const phase = this.reducedMotion ? 0 : Math.floor(visualTime * 2) % 2;
       this.spark(cx - 34, cy - 15 + phase, P.yellow, 3);
@@ -148,8 +220,18 @@ export class OrbitArena {
     for (const particle of this.particles) {
       particle.life -= dt * 1.8;
       particle.x += particle.vx * dt; particle.y += particle.vy * dt;
-      particle.vy += dt * 26;
-      if (particle.life > 0.2) this.pixel(particle.x, particle.y, particle.color, 2, 2);
+      particle.vy += dt * (particle.coin ? 45 : 26);
+      if (particle.life > 0.2) {
+        if (particle.coin) {
+          this.pixel(particle.x - 1, particle.y - 1, P.ink, 5, 6);
+          this.pixel(particle.x, particle.y, P.yellow, 3, 4);
+          this.pixel(particle.x + 1, particle.y, P.cream, 1, 3);
+        } else {
+          const size = particle.size ?? 2;
+          if (particle.shard) this.pixel(particle.x - 1, particle.y - 1, P.ink, size + 1, size + 1);
+          this.pixel(particle.x, particle.y, particle.color, size, size);
+        }
+      }
     }
     this.particles = this.particles.filter((particle) => particle.life > 0);
     for (const float of this.floats) {
@@ -157,10 +239,51 @@ export class OrbitArena {
       if (!this.reducedMotion) float.y -= dt * 12;
       c.font = font(float.critical ? 6 : 5); c.textAlign = 'center'; c.textBaseline = 'alphabetic';
       c.fillStyle = P.ink; c.fillText(float.text, Math.round(float.x) + 1, Math.round(float.y) + 1);
-      c.fillStyle = float.critical ? P.yellow : P.cream;
+      c.fillStyle = float.color ?? (float.critical ? P.yellow : P.cream);
       c.fillText(float.text, Math.round(float.x), Math.round(float.y));
     }
     this.floats = this.floats.filter((float) => float.life > 0);
+  }
+
+  drawOrbFrame(orb, nowMs) {
+    const x = Math.round(this.width / 2), y = Math.round(this.height * 0.49);
+    const appearance = this.orbPalette;
+    const hit = nowMs < this.impactUntil;
+    const rim = hit ? P.cream : appearance.primary;
+    const extent = orb.boss ? 30 : 27;
+    // Pixel corner braces frame the DOM sprite without covering the click area.
+    for (const side of [-1, 1]) {
+      this.pixel(x + side * extent - (side < 0 ? 0 : 5), y - 17, P.ink, 7, 2);
+      this.pixel(x + side * extent, y - 17, P.ink, 2, 7);
+      this.pixel(x + side * extent - (side < 0 ? 0 : 4), y - 16, rim, 5, 1);
+      this.pixel(x + side * extent - (side < 0 ? 0 : 5), y + 14, P.ink, 7, 2);
+      this.pixel(x + side * extent, y + 9, P.ink, 2, 7);
+      this.pixel(x + side * extent - (side < 0 ? 0 : 4), y + 14, rim, 5, 1);
+    }
+    if (orb.boss) {
+      // Brass pennants and a stronger base distinguish every tenth orb.
+      this.pixel(x - 31, y + 24, P.ink, 64, 7);
+      this.pixel(x - 29, y + 25, P.yellow, 60, 3);
+      for (const side of [-1, 1]) {
+        this.pixel(x + side * 35, y - 7, P.ink, 5, 12);
+        this.pixel(x + side * 35 + 1, y - 6, P.red, 3, 8);
+        this.pixel(x + side * 35 + 2, y - 3, P.yellow, 1, 2);
+      }
+    }
+    if (appearance.damageTier > 0) {
+      for (let i = 0; i < appearance.damageTier + 1; i++) {
+        this.pixel(x - 21 + i * 13, y + 24 - i % 2, appearance.shade, 3, 2);
+        this.pixel(x - 20 + i * 13, y + 24 - i % 2, appearance.accent, 1, 1);
+      }
+    }
+    const age = nowMs - this.lastShatterAt;
+    if (age >= 0 && age < 360 && !this.reducedMotion) {
+      const step = Math.floor(age / 90);
+      for (let i = 0; i < 8; i++) {
+        const angle = i * TAU / 8;
+        this.pixel(x + Math.cos(angle) * (29 + step * 4), y + Math.sin(angle) * (29 + step * 4), P.yellow, 2, 2);
+      }
+    }
   }
 
   drawGardenCorner(x, y, flower) {

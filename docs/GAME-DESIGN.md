@@ -1,161 +1,171 @@
-# Refract Idlers: game design and economy
+# Refract Idlers: combat, economy and long-term research
 
-This first playable version is an incremental game for up to eight pilots. Click the middle of the orbit to harvest LRCs, buy generators that produce LRCs during the round, and build a personal skill tree between rounds. The host chooses one mode in the lobby before the session starts.
+Refract Idlers combines a shared round clock with personal builds, destructible light orbs, automated attacks, continuous farming, and persistent research. The coordinating browser owns the simulation; clients send intents and render synchronized state.
 
 ## Session modes
 
+The host chooses one mode in the initial lobby. It stays fixed for that session.
+
 | Rule | Scoreboard | Co-op |
 | --- | --- | --- |
-| Spendable LRCs | Each pilot has their own wallet | Every pilot earns into one shared wallet |
-| Generator purchases | Paid from the purchaser's wallet | Paid from the shared wallet; attributed to the purchasing pilot |
-| Builds and skill points | Personal | Personal; every build contributes to pooled production |
-| Frequency and Resonance bonuses | Affect only their owner | Aggregate across participating pilots and benefit the crew |
-| Extra round skill point | Earned by meeting a personal target | Awarded to everyone when the crew meets its shared target |
-| Comparison | Live ranking of currently active pilots | Pooled balance and combined production |
-| Prestige | Resets that pilot's wallet and build | Resets that pilot's build and contribution counters; preserves the shared wallet |
+| Orb | Each pilot attacks their own orb | Everyone attacks one shared orb |
+| Wallet | Individual spendable LRCs | One pool containing everyone's earnings |
+| Machines | Bought from the purchaser's wallet | Bought from the pool, attributed to the purchasing pilot |
+| Research and skill points | Personal | Personal; every build contributes to the shared effort |
+| Frequency effects | Only the owner benefits | Aggregate across the current crew |
+| Round bonus | Reach a personal income milestone | Everyone benefits when the shared milestone is reached |
+| Ranking | Currently active pilots only | Shared progress and individual contribution attribution |
 
-Scoreboard is the default. Only the first participant can change the mode, and only while the session is in the initial lobby. The mode is retained in synchronized snapshots and saved progress. A departing pilot leaves the active ranking and stops contributing production; their already-earned co-op LRCs remain in the pool. There is no cross-session global ranking.
+Up to eight pilots are active. Additional participants spectate. Departed pilots leave the live ranking and stop producing; their already-earned co-op LRCs remain in the bank, and shared orb damage remains. The engine supports bots for tests, but there is no bot toggle in the interface.
 
-## Round loop
+## The 60-second loop
 
-1. The first participant is the coordinating host and starts round one.
-2. Every round lasts 60 seconds. Every pilot begins with 1 passive LRC/second and a base click worth 2 LRCs.
-3. Generators can be purchased during a round or its intermission. There is no passive production in the lobby or intermission. The engine does not award offline catch-up income.
-4. The final 10 seconds double manual and automatic click rewards. Farm/array/star production and the baseline passive rate are unchanged.
-5. When the timer expires, every active pilot receives 2 skill points. Scoreboard grants that pilot +1 for reaching their personal target; co-op grants everyone +1 for reaching the crew target. Having any rank of Event horizon grants that pilot another point. The exact award is recorded before anyone can buy upgrades or prestige.
-6. The intermission has no timeout. Pilots can spend skill points, buy generators, or prestige. The next round begins when every human pilot is ready; practice bots never delay it. Buying a skill or prestiging clears that pilot's ready flag.
+The host starts the first round. During each 60-second round, pilots can attack, buy machines, and earn continuous income. The final 10 seconds double manual and automatic hit damage. Continuous farm production is unchanged; research can separately enhance surge minting.
 
-LRC balances, the co-op pool, generators, skills, and unused skill points carry between rounds. The round timer, round contribution counters, target progress, and ready flags reset. Missing a target still grants the normal 2 skill points and does not block progression.
+Completing a round grants 2 SP, plus 1 for meeting the applicable milestone, plus any research bonus. Total awards are capped at **10 SP per pilot per completed round**. The exact award is recorded before upgrades or prestige can change the build. There is no income in the lobby or intermission and no closed-tab income calculation.
 
-The target for round `r`, with `N` pilots present at its start, is:
+The intermission has no countdown. Pilots research, buy machines, or prestige, then ready up. Everyone still active must be ready before the next round starts. Buying research or prestiging clears that pilot's ready flag. A departing player cannot hold an otherwise ready crew in the intermission.
+
+For round `r`, the personal income milestone is:
 
 ```text
-scoreboard personal target = round(500 × 1.35^(r − 1))
-co-op crew target = round(500 × N × 1.35^(r − 1))
+round(500 × (1 + 0.12 × (r − 1))²)
 ```
 
-The target stays fixed during that round even if a pilot joins or leaves. Earnings already contributed by a departed pilot remain in the team total. Scoreboard rewards do not depend on other pilots' performance. The engine supports labeled practice pilots for automated tests; this version does not expose a bot toggle in the interface.
+Scoreboard uses that personal amount. Co-op multiplies it by the number of pilots present when the round begins. The co-op target remains fixed during roster changes. Spending does not reduce milestone progress. Missing a milestone still grants the normal 2 SP and never blocks the next round. Quadratic milestone growth avoids the previous exponential curve overtaking the entire economy during a long session.
 
-## LRC production
+## Destructible orbs
 
-Each generator's price grows with the number already owned:
+An unmodified manual click deals **2 damage** and separately mints **0.25 LRC**. The first orb has **12 HP** and pays **12 LRC** when destroyed. A new orb appears immediately. Excess damage carries into subsequent orbs.
 
 ```text
-next price = ceil(base price × 1.17^owned)
+maximum HP at level n = 12 × 1.18^(n − 1)
+base destruction reward = 12 × 1.14^(n − 1)
 ```
 
-| Generator | Base price | Effect per unit |
+Every tenth orb is a boss. Bosses have **50% damage resistance** and **five times the base reward**. Maximum HP follows the same increasing curve, so orb 11 still has more HP than orb 10. Bossbreaker and related research improve damage against the resistance; boss-reward research improves the boss drop. HP and rewards eventually saturate at the documented finite economy ceiling.
+
+Manual hits have a base 5% critical chance and a 3× critical damage multiplier. Research adds critical chance, critical multiplier, a chance of an extra hit, and combo damage. Critical chance is capped at 80%; extra-hit chance is capped at 90%. A successful bonus-hit roll adds a second hit to the same input. Holding a key does not create repeated input in the UI, and the host's token bucket allows 15 accepted manual inputs per second with a burst of three.
+
+Consecutive manual hits build a combo, initially capped at ten. The combo expires after two seconds without a manual hit. Combo research gives those stacks a damage effect; Fortune loop also increases capacity. The simulation splits long time steps at combo expiry and the surge boundary so an expired effect does not apply for a whole delayed frame.
+
+Orb drops belong to the pilot whose attack shatters the orb. In co-op those drops enter the pool and that pilot's contribution record. All active co-op pilots share the highest orb reached for research gates. `getOrb(player,state).reward` previews the **personalized manual destruction reward**, including that pilot's research and prestige. Automatic-only drop modifiers can change an automatic kill's payout.
+
+Large attacks use capped geometric sums and a binary search for the number of full orbs destroyed. Work does not grow linearly with the number of kills. The test suite compares this analytical calculation against an independent iterative oracle across partial orbs, bosses, modifiers, and high-value attacks.
+
+## Machines and bulk purchases
+
+| Machine | Initial price | Effect per unit |
 | --- | ---: | --- |
-| Auto clicker | 25 | 0.5 automatic clicks/second, each paying your current click value |
-| Refract orb farm | 140 | Grows Refract orbs for 6 base LRC/second |
-| Light array | 800 | 32 base LRC/second |
-| Refractometer | 4,500 | +10% to all your LRC production |
-| Pocket star | 12,000 | 300 base LRC/second |
+| Auto clicker | 25 | One automated orb strike every two seconds |
+| Refract orb farm | 140 | 6 base continuous LRC/second |
+| Light array | 800 | 32 base continuous LRC/second |
+| Refractometer | 4,500 | +10% personal damage and all LRC production |
+| Pocket star | 12,000 | 300 base continuous LRC/second |
 
-Purchases deduct only the spendable wallet: personal LRCs in scoreboard, or shared LRCs in co-op. They never deduct run earnings or lifetime earnings, so investing in generators does not delay eligibility for prestige. Co-op purchases do not alter the purchaser's personal contribution counters. Skill costs remain personal skill points in both modes.
+Each successive unit costs `ceil(base price × 1.17^owned)`. **Buy 1** buys the next unit. **Buy 10** requires the full next-ten-unit price and capacity; it never buys a partial bundle. **Buy Max** buys the largest affordable prefix, up to the 1,000-unit capacity per machine. The bundle price is the sum of each individually rounded unit price. Quotes do not mutate balances; the host validates and deducts the entire purchase atomically.
 
-The income multiplier uses only the owning pilot's Frequency/Resonance ranks in scoreboard, or sums those ranks across the current participating crew in co-op:
+Machine spending never reduces run or lifetime earnings. Co-op purchases deduct only the shared bank, while personal contribution counters remain intact.
 
-```text
-frequency bonus = Σ(0.03 × Shared frequency rank + 0.02 × Resonance rank)
-personal bonus = 0.10 × own Resonance rank + 0.15 × own Event horizon rank
-refractometer multiplier = 1 + 0.10 × owned refractometers
-multiplier = (1 + 0.10 × total prestige points)
-  × (1 + frequency bonus) × (1 + personal bonus) × refractometer multiplier
-```
+Automatic strikes are actual pulses. Fractional pulse progress is stored in `autoClock`; completed pulses increment lifetime `autoClicks`. They damage the orb and receive destruction rewards, but never consume manual input tokens or increment manual click counters. They do not roll critical hits or bonus hits. Damage research, prestige, Refractometers, and surge affect their damage; automation research adds independent speed, damage, minting, and drop bonuses. Clockwork core can supply a small automatic rate even before a machine is owned.
 
-Click income before critical hits is:
+`idleRate` means projected **continuous LRC plus automatic minting**. It excludes uncertain orb-destruction rewards. `autoDps` reports automated damage separately. This prevents an HP-damaging auto clicker from being advertised as guaranteed continuous LRC production.
 
-```text
-(2 + 2 × Focused light rank)
-  × (1 + 0.25 × Singularity rank)
-  × multiplier
-  × (2 during the final 10 seconds, otherwise 1)
-```
+## Persistent research
 
-Every manual click has a `5% + 5% × Critical mass rank` chance to pay triple. Automatic clicks do not roll critical hits. The coordinating simulation owns the deterministic random-number state. Critical outcomes cannot be selected by a follower's action payload.
+There are **48 regular research nodes in eight branches**, plus **12 permanent prestige disciplines**. All research ranks survive prestige. The full regular tree has **312 ranks**.
 
-Let `generator production` be the sum of owned orb farms, light arrays, and pocket stars multiplied by their base rates. Continuous passive income is:
+| Branch | Main systems |
+| --- | --- |
+| Active light | Damage, critical chance, extra hits, combos |
+| Living light | Continuous income, machine output, farm/array/star synergies |
+| Shared frequency | Personal power, co-op frequency, shared automation, Event horizon SP |
+| Orb geology | Destruction rewards, boss damage and boss drops, highest-orb scaling |
+| Clockwork orbit | Automatic cadence, damage, minting and drops |
+| Luminous mint | Income per manual click, machine dividends, surge minting |
+| Prism fortune | Critical multipliers, extra hits, critical minting and combo capacity |
+| Long horizon | Research insight and long-term cross-discipline bonuses |
 
-```text
-(1 + 2 × Solar cells rank
-   + generator production × (1 + 0.30 × Perpetual motion rank))
-  × (1 + 0.20 × Orbital array rank)
-  × multiplier
-```
+Each branch has six tiers:
 
-Automatic click frequency and total projected idle income are:
+| Tier | Base SP cost | Maximum ranks | Highest orb | Completed rounds | Further gates |
+| ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 1 | 8 | — | — | None |
+| 2 | 4 | 8 | 10 | 3 | Previous node at rank 2 |
+| 3 | 15 | 8 | 25 | 15 | Previous node at rank 3 |
+| 4 | 50 | 6 | 50 | 60 | Previous node rank 2, cross-branch node rank 2, one prestige |
+| 5 | 180 | 5 | 100 | 240 | Previous node rank 2, cross-branch node rank 2, three prestiges |
+| 6 | 600 | 4 | 175 | 720 | Previous node rank 2, cross-branch node rank 1, three prestiges and ten lifetime PP |
 
-```text
-automatic clicks/second = owned auto clickers × 0.5
-  × (1 + 0.30 × Perpetual motion rank)
-  × (1 + 0.20 × Orbital array rank)
-projected idle LRC/second = continuous passive income + automatic clicks/second × click value
-```
+The next regular rank costs `ceil(base cost × 1.38^current rank)`. Exact prerequisites, effects, and milestone gates live in `src/skills.js`; the interface displays them from the same catalog. Gate explanations take priority over phase/funds messages so a pilot can inspect future research during a round.
 
-The engine awards automatic clicks as actual pulses, retaining fractional pulse progress in `autoClock`. One unmodified auto clicker pays once every two seconds rather than adding a fractional click reward every frame. Automatic pulses increment the lifetime `autoClicks` counter; they do not increment manual click counters or consume the manual token bucket. Focused light, Singularity, prestige, Refractometers, and the final-ten-second surge all affect their value. Idle tree upgrades increase their frequency. Catch-up steps split at the surge boundary so time before the surge is not paid at its doubled value.
+Event horizon grants +1 SP once any rank is owned. Deep research, Chrono archive, Universal theory, Keeper's insight, and Infinite library add fractional **research insight**. Every whole accumulated insight gives +1 SP per completed round. Maximum regular insight is 4.2 and permanent insight is 2; with the base award, milestone, and Event horizon, the hard maximum is 10 SP.
 
-Co-op combined passive production is the sum of every active pilot's passive rate. Combined click power is the sum of their individual click values before critical hits; it describes all pilots clicking once, not one pilot's click. Each click still awards only the clicking pilot's own value into the pool and their contribution record.
+The entire regular tree costs **59,816 SP**. Even granting the maximum 10 SP from the first round, ignoring every milestone gate and every intermission, completion requires at least **5,982 rounds: 99.7 active hours, or 4.154 days of harvesting**. Actual completion takes longer because early rounds grant fewer points and intermissions require decisions. This is a mathematical lower bound, not a claim that an unattended session completes the tree in four days. The balance audit in `scripts/balance.mjs` measures representative legal purchase/research policies separately.
 
-## Skill tree
+## Prestige and permanent disciplines
 
-Skills are purchased only during intermissions. Each branch requires at least one rank in its preceding node. A rank costs `base cost + current rank` skill points. Unspent points carry forward until prestige.
-
-| Branch | Skill | Base cost | Maximum rank | Effect per rank |
-| --- | --- | ---: | ---: | --- |
-| Click | Focused light | 1 | 5 | +2 base LRC/click |
-| Click | Critical mass | 2 | 5 | +5 percentage points of critical chance |
-| Click | Singularity | 3 | 5 | +25% click production |
-| Idle | Solar cells | 1 | 5 | +2 base passive LRC/second |
-| Idle | Orbital array | 2 | 5 | +20% passive production |
-| Idle | Perpetual motion | 3 | 5 | +30% generator production |
-| Crew | Shared frequency | 1 | 5 | +3% income; shared with the crew in co-op |
-| Crew | Resonance | 2 | 5 | +2% income shared in co-op, and +10% personal income |
-| Crew | Event horizon | 3 | 3 | +15% personal income; owning any rank grants +1 skill point per completed round |
-
-Bonuses within the same term add together; separate terms in the formulas multiply. Frequency bonuses help solo players too. In scoreboard another pilot's upgrades never change your production or your milestone reward.
-
-## Prestige: refract your core
-
-Prestige becomes available during an intermission after earning at least 2,500 LRCs since that pilot's previous prestige:
+Prestige becomes available between rounds after **2,500 personal run LRCs**, including income already spent on machines. Co-op teammates' contributions cannot unlock another pilot's prestige.
 
 ```text
-points awarded = floor(sqrt(run earnings / 2,500))
+points awarded = floor(log2(1 + personal run earnings / 2,500))
+threshold for k points = 2,500 × (2^k − 1)
 ```
 
-| Run earnings | Points awarded |
+| Run earnings | Award |
 | ---: | ---: |
-| 2,500 | 1 |
-| 10,000 | 2 |
-| 22,500 | 3 |
-| 40,000 | 4 |
+| 2,500 | 1 PP |
+| 7,500 | 2 PP |
+| 17,500 | 3 PP |
+| 37,500 | 4 PP |
+| 77,500 | 5 PP |
 
-Every earned prestige point permanently adds 10% to that pilot's prestige income multiplier. Points are not spent in this version; the prestige balance records the accumulated points. Waiting for a larger award trades faster current growth against a stronger reset.
+The logarithmic award prevents the prestige/reinvestment feedback loop from reaching the numeric point ceiling within hours. Exact threshold comparisons correct floating-point logarithm rounding. The application uses `prestigeNextThreshold` rather than duplicating the formula.
 
-Prestige is based on the choosing pilot's own run earnings in both modes; another pilot's contribution cannot unlock it. It resets that pilot's personal LRC counter, run earnings, generators, skill tree, and unspent skill points. It preserves lifetime earnings, lifetime click count, prestige points, and prestige count. It does not reset the crew's round number, other pilots, or the completed round's contribution/award records.
+Each lifetime earned PP adds 10% to the prestige multiplier. Spendable PP can buy permanent disciplines without reducing that lifetime multiplier. Prestige resets only the choosing pilot's personal wallet/run earnings, machines, personal orb, fractional auto-strike progress, and combo. It **preserves all research, unspent SP, lifetime earnings, manual/automatic click counts, highest orb, destruction count, completed rounds, and prestige history**. In co-op it also preserves the shared bank and shared orb exactly. Other pilots retain their builds.
 
-In scoreboard the resetting LRC counter is that pilot's spendable wallet. In co-op the shared wallet remains intact: the choosing pilot's build resets, while every already-pooled LRC stays available to everyone. Removing that pilot's Frequency/Resonance skills changes the co-op shared multiplier for the next round. Prestige does not require a team vote because it never resets the pool or another pilot's build. Fractional automatic pulse progress resets with the build; the lifetime automatic-click counter is retained.
+The twelve prestige disciplines form three chains:
 
-The initial pacing is deliberately quick enough to explore in one short session. In a deterministic simulation that buys affordable generators continuously and chooses a mix of early idle/click skills, the first prestige was available after roughly two rounds at two clicks per second, or three rounds without clicking. These are illustrative balance checks, not automatic gameplay: purchases and skill choices still require player input, and different choices change the result.
+- Eternal spark → Crown of rays → Stellar heart → Source of light
+- Enduring orbit → Timeless machinery → Recursive light → Everlight
+- Prism memory → Keeper's insight → Eternal record → Infinite library
 
-## Multiplayer authority and persistence boundaries
+Each has five ranks. The four tiers start at 1, 3, 8, and 20 PP, with costs growing by `1.65^current rank`. Later nodes require two ranks in the prior discipline and higher orb, completed-round, and lifetime-PP milestones. The top tier requires orb 150, 720 completed rounds, and 100 lifetime PP. Effects improve damage, production, automation, drops, research insight, and co-op frequency.
 
-Refract supplies participant identities and the relay. The first participant simulates the game, accepts actions for authenticated senders, and publishes snapshots. Followers render those snapshots. The bridge handles request deduplication, snapshot ordering, late-join synchronization, and host handover. The engine validates phase, membership, prerequisites, prices, rank limits, and numeric state. The application attaches the displayed round number to every action; the engine rejects intents carrying a different round number, so a delayed click or purchase cannot apply to a later round.
+## Production formulas
 
-When a host leaves, the first remaining participant becomes coordinator using the synchronized state. Roster reconciliation retains each remaining pilot's build and balances. If everyone still present was already ready, the next round can begin during that reconciliation; the replacement host publishes the resulting state.
+The shared frequency sum includes only the owner in scoreboard and all active pilots in co-op. Refractometers belong to the owner. Research effects within each named term add; separate terms multiply.
 
-The click limiter replenishes 15 clicks per second and permits a burst of three. This prevents a follower from submitting arbitrarily many rewarded clicks in one simulation instant. It is a gameplay limit, not a reliable way to detect automation.
+```text
+power multiplier = (1 + 0.10 × lifetime PP)
+  × (1 + frequency) × (1 + personal-power research)
+  × (1 + 0.10 × refractometers)
 
-This is a casual game with a trusted browser host. A modified coordinator can forge its simulation or saved progress. Competitive rankings, secure cross-device progression, and adversarial anti-cheat would require a server referee and authenticated persistent storage. No currency has a real-money value.
+hit damage = (2 + flat-damage research) × (1 + damage research)
+  × power multiplier × (1 + combo stacks × combo research)
+  × (2 during surge, otherwise 1)
 
-Session restoration and browser storage belong to the application layer. The pure engine itself neither reads storage nor grants closed-tab income. Removing a participant removes their active engine record; restoring progress on a later visit must be handled by the application layer. Prestige is permanent within the saved progression retained by that layer.
+manual mint = (0.25 + flat-mint research) × (1 + mint research)
+  × (1 + owned-machine count × mint dividends)
+  × power multiplier × surge-mint factor
+```
 
-`migrateState` upgrades older browser saves that predate modes into scoreboard mode with an empty shared pool, and initializes missing automatic-click counters to zero. It preserves their existing balances and owned catalog IDs; those IDs now have the effects described above. Old round summaries did not record each player's individual Event horizon reward, so migration retains only the recorded base award rather than inventing a historical bonus. New summaries record exact personal awards. The network validator requires the new fields; migration is only for browser saves.
+Farm, array, and star output use their separate research multipliers. Farm horticulture adds yield based on owned arrays; Dyson crown adds machine yield based on total machine count. Their sum is enhanced by machine-production research, then added to the baseline 1 LRC/second and flat passive research before the general passive and power multipliers apply.
 
-## Technical limits and verification
+Automatic rate is `(0.5 × auto clickers + flat automatic research) × (1 + automatic-speed research + shared automation)`. Each strike uses hit damage times its automatic-damage modifier. Autonomous mint pays a fraction of manual-mint income per strike. Projected idle income is continuous production plus automatic rate times automatic mint.
 
-- At most eight active pilots; additional Refract members can be handled as spectators by the application.
-- Monetary counters and calculated production are capped at `10^15` to remain finite. Generator ownership is capped at 1,000 per kind. These are implementation safety limits, not early-game goals.
-- A round crossing its boundary awards income only for its remaining time, completes once, and awards skill points once.
-- Snapshot validation rejects malformed numbers, invalid ranks, unknown catalog entries, unsafe avatar protocols, duplicate IDs, inconsistent phase fields, and states over 15,000 UTF-8 bytes. The application omits avatar URLs from shared snapshots and renders avatars from the Refract roster, leaving room in the 16 KiB relay envelope.
-- The engine tests cover mode authority, individual production and rewards, pooled affordability and spending, combined rates, pool retention after prestige/departure, exact round awards, save migration, phase rules, click limits, passive production, automatic pulses and surge catch-up, Refractometer multipliers, skill prerequisites, readiness, host handover, deterministic replay, practice bots, and snapshot validation.
+Orb drops combine the geometric base reward, boss reward modifiers, flat drop research, the power multiplier, drop research, and highest-orb research. Automatic-only drop research applies to automatic kills. Long catch-up batches use the stats at the start of each segment; orb-level scaling updates for subsequent segments. Normal simulation advances on short timer ticks.
+
+## Authority, saves and finite limits
+
+Refract supplies authenticated participants and a relay. The first participant coordinates; followers render snapshots. Actions include their displayed round number, so stale packets cannot affect a later round. The host validates membership, phase, affordability, capacity, rank/prerequisite gates, and currencies. On departure, the next participant continues from synchronized state. Casual play trusts that browser host; adversarial rankings would require a server referee.
+
+Standalone saves are device-local. Shared snapshots use browser session storage. There is no account-backed save, cross-device progression, global ranking, or offline catch-up. Closing every participating session can end that shared run. Research is permanent within retained progression, not independent of browser storage.
+
+The engine migrates older saves by adding missing orb/counter fields and preserves already-earned legacy ranks even if new research prerequisites are higher. Future purchases enforce the new gates. Existing partial orb health is preserved exactly. The original nine skill IDs remain stable; compact IDs for newer nodes keep large multiplayer snapshots within the relay envelope. Readable catalog keys and names remain available for UI and audits.
+
+- Monetary values and damage are finite and capped at `10^150`; integer counters use the safe-integer ceiling.
+- Machines cap at 1,000 of each kind. Orb level has a finite implementation limit of one million; saturated HP/rewards remain finite.
+- Snapshots must remain below 15,000 UTF-8 bytes, leaving room for the 16 KiB relay envelope. Avatar URLs are supplied separately from the roster. Tests cover eight fully ranked builds with long IDs and Unicode names.
+- Validation covers malformed numbers, catalog ranks, duplicate IDs, phase fields, orb HP, and payload size. Save migration is never used to accept network state.
+- Automated checks include 250 independent combat-oracle cases, atomic bulk purchases, mode isolation, pooled state retention, research gates/effects, reward caps, multi-day cost bounds, migration, persistence, and host handover.

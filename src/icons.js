@@ -104,3 +104,55 @@ export function drawGeneratorSprite(context, id, x, y, { phase = 0.5, running = 
     context.fillRect(Math.round(x) + dx, Math.round(y) + dy, width, height);
   }
 }
+
+const ORB_THEMES = Object.freeze([
+  { light: '#afbd77', primary: '#7d9d69', shade: '#4f704e', accent: '#efbf58' },
+  { light: '#b5d0cb', primary: '#81adb8', shade: '#4d718b', accent: '#efe0b6' },
+  { light: '#ffe3a0', primary: '#efbf58', shade: '#cf8546', accent: '#a35b50' },
+  { light: '#e9baa0', primary: '#d3917c', shade: '#a35b50', accent: '#efbf58' },
+  { light: '#d0bfcc', primary: '#a491b1', shade: '#715a79', accent: '#81adb8' },
+]);
+
+/** Maps bounded game values to finite artwork variants, never to SVG markup. */
+export function orbAppearance(orb) {
+  const level = Number.isSafeInteger(orb?.level) && orb.level > 0 ? orb.level : 1;
+  const hp = Number.isFinite(orb?.hp) ? Math.max(0, orb.hp) : 1;
+  const maxHp = Number.isFinite(orb?.maxHp) && orb.maxHp > 0 ? orb.maxHp : Math.max(1, hp);
+  const health = Math.min(1, hp / maxHp);
+  const damageTier = health > 0.75 ? 0 : health > 0.5 ? 1 : health > 0.25 ? 2 : 3;
+  const boss = orb?.boss === true || orb?.isBoss === true;
+  const theme = (level - 1) % ORB_THEMES.length;
+  return { ...ORB_THEMES[theme], damageTier, boss, key: `${theme}:${damageTier}:${boss ? 1 : 0}` };
+}
+
+export function orbAppearanceKey(orb) { return orbAppearance(orb).key; }
+
+function makeOrbIcon(theme, damageTier, boss) {
+  const { light, primary, shade, accent } = theme;
+  const crown = boss ? '<path fill="#392923" d="M8 0h4v2h8V0h4v6H8z"/><path fill="#efbf58" d="M9 1h2v2h4V1h2v2h4V1h2v4H9z"/><rect x="15" y="3" width="2" height="2" fill="#a35b50"/>' : '';
+  const cracks = [
+    '',
+    '<path fill="#392923" d="M10 8h2v4h2v4h-2v-3h-2z"/><rect x="12" y="16" width="3" height="1" fill="#fff1cb"/>',
+    '<path fill="#392923" d="M10 8h2v4h2v3h4v2h-3v4h-2v-6h-1v-2h-2zM24 16h-4v2h-2v2h-2v-2h1v-2h3v-2h4z"/><path fill="#fff1cb" d="M12 14h1v2h2v1h-3zM18 20h2v1h-2z"/>',
+    '<path fill="#392923" d="M10 8h2v4h2v3h4v2h-3v4h-2v-6h-1v-2h-2zM24 16h-4v2h-2v3h-2v-3h1v-2h3v-2h4zM16 22h2v4h-2zM6 16h4v2h2v2h-2v-1H8v-1H6z"/><path fill="#fff1cb" d="M12 14h1v2h2v1h-3zM18 21h2v1h-2zM14 22h1v3h-1z"/>',
+  ][damageTier];
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" shape-rendering="crispEdges" aria-hidden="true" focusable="false">
+    <path fill="#392923" d="M14 2h4v2h2v2h2v2h2v2h2v2h2v2h2v4h-2v2h-2v2h-2v2h-2v2h-2v2h-2v2h-4v-2h-2v-2h-2v-2H8v-2H6v-2H4v-2H2v-4h2v-2h2v-2h2V8h2V6h2V4h2z"/>
+    <path fill="${light}" d="M14 4h2v12H4v-2h2v-2h2v-2h2V8h2V6h2z"/>
+    <path fill="${primary}" d="M16 4h2v2h2v2h2v2h2v2h2v2h2v2H16z"/>
+    <path fill="${shade}" d="M4 16h12v12h-2v-2h-2v-2h-2v-2H8v-2H6v-2H4z"/>
+    <path fill="${accent}" d="M16 16h12v2h-2v2h-2v2h-2v2h-2v2h-2v2h-2z"/>
+    <path fill="${primary}" d="M10 10h2v2h2v2h2v2H4v-2h2v-2h2v-2z"/>
+    <path fill="${shade}" d="M16 16h12v2h-2v2h-2v2h-2v-2h-2v-2h-4z"/>
+    <path fill="#fff1cb" d="M14 6h2v4h-2v2h-2v2H8v-2h2v-2h2V8h2z"/>
+    <rect x="16" y="14" width="2" height="4" fill="#efe0b6"/><rect x="14" y="16" width="6" height="2" fill="#efe0b6"/>
+    ${cracks}${crown}
+  </svg>`;
+}
+
+const ORB_ICONS = Object.freeze(Object.fromEntries(ORB_THEMES.flatMap((theme, index) =>
+  [0, 1, 2, 3].flatMap((damageTier) => [false, true].map((boss) =>
+    [`${index}:${damageTier}:${boss ? 1 : 0}`, makeOrbIcon(theme, damageTier, boss)])))));
+
+/** Safe, prebuilt stage colour, crack and boss-crown variants for the core image. */
+export function orbIcon(orb) { return ORB_ICONS[orbAppearanceKey(orb)]; }

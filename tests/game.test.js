@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, addPlayer, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, generatorCost, prestigeGain, validateState, migrateState, SKILLS } from '../src/game.js';
+import { createGame, addPlayer, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, getOrb, generatorCost, generatorQuote, skillCost, skillAvailability, prestigeGain, prestigeNextThreshold, validateState, migrateState, SKILLS, SKILL_BRANCHES, RESEARCH_TOTAL_COST, RESEARCH_TOTAL_RANKS, MAX_SKILL_POINTS_PER_ROUND, ECONOMY_LIMIT } from '../src/game.js';
+const idOf = (key) => SKILLS.find((skill) => skill.key === key).id;
 
 function setup(count = 1) {
   const state = createGame();
@@ -27,7 +28,8 @@ test('clicks earn LRC and a host-owned token bucket limits input spam', () => {
   const player = state.players[0];
   for (let i = 0; i < 3; i++) assert.equal(applyAction(state, player.id, { type: 'click' }).ok, true);
   const earned = player.lrc;
-  assert.ok(earned >= 6);
+  assert.ok(earned >= 0.75);
+  assert.ok(getOrb(player, state).hp < 12);
   assert.equal(applyAction(state, player.id, { type: 'click' }).ok, false);
   assert.equal(player.lrc, earned);
   advance(state, 0.1);
@@ -58,9 +60,10 @@ test('generators cost LRC, scale their next price, and produce passive income', 
   assert.equal(player.lrc, 75);
   assert.equal(player.runLrc, 100);
   assert.equal(generatorCost(player, 'mote'), 30);
-  assert.equal(getStats(player, state).idleRate, 2);
+  assert.equal(getStats(player, state).idleRate, 1);
+  assert.equal(getStats(player, state).autoDps, 1);
   advance(state, 3);
-  assert.equal(player.lrc, 80, 'Three seconds grants baseline income plus one completed automatic pulse');
+  assert.equal(player.lrc, 78, 'Automatic damage pays only when an orb shatters');
   assert.equal(player.autoClicks, 1);
   assert.equal(applyAction(state, player.id, { type: 'buyGenerator', id: '__proto__' }).ok, false);
 });
@@ -72,11 +75,13 @@ test('skills require an intermission, prerequisites, points, and have bounded ra
   assert.equal(applyAction(state, player.id, { type: 'buySkill', id: 'tap-tuning' }).ok, false);
   advance(state, 60);
   assert.equal(applyAction(state, player.id, { type: 'buySkill', id: 'lucky-photon' }).ok, false);
-  for (let i = 0; i < 5; i++) assert.equal(applyAction(state, player.id, { type: 'buySkill', id: 'tap-tuning' }).ok, true);
+  for (let i = 0; i < 8; i++) assert.equal(applyAction(state, player.id, { type: 'buySkill', id: 'tap-tuning' }).ok, true);
   assert.equal(applyAction(state, player.id, { type: 'buySkill', id: 'tap-tuning' }).ok, false);
+  assert.equal(applyAction(state, player.id, { type: 'buySkill', id: 'lucky-photon' }).ok, false);
+  player.highestOrb = 10; player.completedRounds = 3;
   assert.equal(applyAction(state, player.id, { type: 'buySkill', id: 'lucky-photon' }).ok, true);
-  assert.equal(getStats(player, state).clickPower, 12);
-  assert.equal(getStats(player, state).criticalChance, 0.1);
+  assert.equal(getStats(player, state).clickPower, 18);
+  assert.ok(Math.abs(getStats(player, state).criticalChance - 0.075) < 1e-10);
   assert.equal(validateState(state), true);
 });
 
@@ -86,7 +91,7 @@ test('cooperative goal awards an extra point and crew skills affect other pilots
   start(state);
   const [a, b] = state.players;
   a.skills['shared-frequency'] = 2;
-  assert.equal(getStats(b, state).multiplier, 1.06);
+  assert.equal(getStats(b, state).multiplier, 1.05);
   a.generators.nova = 1;
   advance(state, 60);
   assert.equal(state.goalReached, true);
@@ -129,9 +134,9 @@ test('prestige uses earned LRC, preserves lifetime progress, and resets only tha
   assert.equal(a.lifetimeLrc, lifetime);
   assert.equal(a.runLrc, 0);
   assert.equal(a.lrc, 0);
-  assert.equal(a.skillPoints, 0);
+  assert.equal(a.skillPoints, 2);
   assert.deepEqual(a.generators, {});
-  assert.deepEqual(a.skills, {});
+  assert.deepEqual(a.skills, { 'solar-cells': 1 });
   assert.equal(a.totalPrestige, 2);
   assert.equal(getStats(a, state).multiplier, 1.2);
   assert.equal(b.lrc, otherBalance);
@@ -260,7 +265,7 @@ test('scoreboard wallets, production bonuses, and milestone rewards are individu
   a.skills['shared-frequency'] = 5;
   a.generators.nova = 1;
   assert.equal(getStats(b, state).multiplier, 1);
-  assert.equal(getStats(a, state).multiplier, 1.15);
+  assert.equal(getStats(a, state).multiplier, 1.125);
   assert.equal(getRoundTarget(state), 500);
   advance(state, 60);
   assert.ok(a.roundLrc > 500);
@@ -301,8 +306,8 @@ test('co-op earnings pool together and either player can spend the pool once', (
   assert.equal(b.runLrc, 13);
   assert.equal(applyAction(state, a.id, { type: 'buyGenerator', id: 'mote' }).ok, false);
   advance(state, 2);
-  assert.equal(state.sharedLrc, 7);
-  assert.deepEqual(getTeamStats(state), { clickPower: 4, idleRate: 3 });
+  assert.equal(state.sharedLrc, 5);
+  assert.deepEqual(getTeamStats(state), { clickPower: 4, idleRate: 2, autoDps: 1 });
   assert.equal(getRoundTarget(state), 1000);
   assert.equal(validateState(state), true);
 });
@@ -318,7 +323,7 @@ test('co-op team totals include every active build and cross-pilot bonuses', () 
   const total = getTeamStats(state);
   assert.equal(total.idleRate, getStats(a, state).idleRate + getStats(b, state).idleRate);
   assert.equal(total.clickPower, getStats(a, state).clickPower + getStats(b, state).clickPower);
-  assert.equal(getStats(b, state).multiplier, 1.06);
+  assert.equal(getStats(b, state).multiplier, 1.05);
   advance(state, 2);
   assert.ok(Math.abs(state.sharedLrc - total.idleRate * 2) < 1e-9);
   assert.equal(state.sharedLrc, a.roundLrc + b.roundLrc);
@@ -376,7 +381,7 @@ test('recorded per-player round awards stay accurate after buying skills and pre
   assert.equal(awarded, 4);
   assert.equal(player.skillPoints, 4);
   applyAction(state, player.id, { type: 'prestige' });
-  assert.equal(player.skillPoints, 0);
+  assert.equal(player.skillPoints, 4);
   assert.equal(state.lastRound.players[0].skillPoints, awarded);
   assert.equal(validateState(state), true);
 });
@@ -415,14 +420,16 @@ test('auto clickers fire real pulses that scale with click upgrades and do not r
   assert.equal(stats.clickPower, 6);
   assert.equal(stats.autoRate, 0.5);
   assert.equal(stats.passiveRate, 1);
-  assert.equal(stats.idleRate, 4);
+  assert.equal(stats.idleRate, 1);
+  assert.equal(stats.autoDps, 3);
   const rng = state.rng;
   advance(state, 1);
   assert.equal(player.lrc, 1);
   assert.equal(player.autoClicks, 0);
   assert.equal(player.autoClock, 0.5);
   advance(state, 1);
-  assert.equal(player.lrc, 8);
+  assert.equal(player.lrc, 2);
+  assert.equal(getOrb(player, state).hp, 6);
   assert.equal(player.autoClicks, 1);
   assert.equal(player.autoClock, 0);
   assert.equal(player.clicks, 0);
@@ -438,7 +445,8 @@ test('automatic harvesting is independent of the manual click limiter', () => {
   player.generators.mote = 40;
   advance(state, 1);
   assert.equal(player.autoClicks, 20);
-  assert.equal(player.lrc, 41);
+  assert.ok(player.lrc > 1);
+  assert.ok(player.orbsDestroyed > 0);
   assert.equal(player.clickTokens, 3);
   assert.equal(player.clicks, 0);
 });
@@ -451,7 +459,8 @@ test('automatic pulses respect the surge boundary during long timer catch-up', (
   advance(split, 50); advance(split, 10);
   assert.deepEqual(long, split);
   assert.equal(long.players[0].autoClicks, 30);
-  assert.equal(long.players[0].lrc, 130, '60 baseline + 25 normal pulses at 2 + 5 surge pulses at 4');
+  assert.ok(long.players[0].lrc > 60, 'Baseline income plus orb destruction rewards');
+  assert.equal(long.players[0].orbsDestroyed, 4);
   assert.equal(long.phase, 'intermission');
 });
 
@@ -464,10 +473,245 @@ test('refractometers multiply manual clicks, passive production, and automatic p
   assert.equal(stats.clickPower, 2.4);
   assert.equal(stats.passiveRate, 8.4);
   assert.equal(stats.autoRate, 0.5);
-  assert.equal(stats.idleRate, 9.6);
+  assert.equal(stats.idleRate, 8.4);
   assert.equal(getStats(b, state).generatorMultiplier, 1);
   advance(state, 2);
   assert.equal(a.autoClicks, 1);
-  assert.equal(a.lrc, 19.2);
+  assert.equal(a.lrc, 16.8);
+  assert.equal(getOrb(a, state).hp, 9.6);
   assert.equal(b.lrc, 2);
+});
+
+test('Buy 10 is atomic, Buy Max spends an exact affordable prefix, and invalid quantities cannot spend', () => {
+  for (const mode of ['scoreboard', 'coop']) {
+    const state = setup(2); applyAction(state, 'pilot-0', { type: 'setMode', mode }); start(state);
+    const player = state.players[1];
+    fund(player, 10000); if (mode === 'coop') state.sharedLrc = 10000;
+    const quote = generatorQuote(player, 'mote', 10, state);
+    const reference = Array.from({ length: 10 }, (_, i) => Math.ceil(25 * 1.17 ** i)).reduce((a, b) => a + b, 0);
+    assert.deepEqual(quote, { quantity: 10, cost: reference });
+    if (mode === 'coop') state.sharedLrc = reference - 1; else player.lrc = reference - 1;
+    const before = structuredClone(state);
+    assert.equal(applyAction(state, player.id, { type: 'buyGenerator', id: 'mote', quantity: 10 }).ok, false);
+    assert.deepEqual(state, before);
+    if (mode === 'coop') state.sharedLrc = reference; else player.lrc = reference;
+    assert.equal(applyAction(state, player.id, { type: 'buyGenerator', id: 'mote', quantity: 10 }).quantity, 10);
+    assert.equal(getBalance(player, state), 0);
+    assert.equal(player.generators.mote, 10);
+    if (mode === 'coop') state.sharedLrc = 1000; else player.lrc = 1000;
+    const maximum = generatorQuote(player, 'mote', 'max', state);
+    const maxResult = applyAction(state, player.id, { type: 'buyGenerator', id: 'mote', quantity: 'max' });
+    assert.equal(maxResult.quantity, maximum.quantity);
+    assert.equal(getBalance(player, state), 1000 - maximum.cost);
+    assert.ok(getBalance(player, state) < generatorCost(player, 'mote'));
+    const saved = structuredClone(state);
+    for (const quantity of [0, -1, 2, '10', Infinity, null]) assert.equal(applyAction(state, player.id, { type: 'buyGenerator', id: 'mote', quantity }).ok, false);
+    assert.deepEqual(state, saved);
+  }
+});
+
+test('orb damage is private in scoreboard and shared in co-op; destroyed orbs pay and get stronger', () => {
+  for (const mode of ['scoreboard', 'coop']) {
+    const state = setup(2); applyAction(state, 'pilot-0', { type: 'setMode', mode }); start(state);
+    const [a, b] = state.players;
+    const before = getOrb(a, state);
+    const result = applyAction(state, a.id, { type: 'click' });
+    assert.equal(result.damage, 2);
+    assert.equal(result.amount, 0.25);
+    assert.equal(getOrb(a, state).hp, 10);
+    assert.equal(getOrb(b, state).hp, mode === 'coop' ? 10 : 12);
+    let reward = 0;
+    for (let i = 0; i < 20 && getOrb(a, state).level === 1; i++) {
+      advance(state, 0.1);
+      const hit = applyAction(state, a.id, { type: 'click' });
+      if (hit.kills) reward = hit.amount;
+    }
+    assert.ok(reward >= before.reward);
+    assert.equal(a.orbsDestroyed, 1);
+    assert.ok(getOrb(a, state).maxHp > before.maxHp);
+    assert.ok(a.highestOrb >= 2);
+    if (mode === 'coop') assert.equal(b.highestOrb, a.highestOrb);
+    assert.equal(validateState(state), true);
+  }
+});
+
+test('orb maximum HP is strictly increasing across every boss boundary before the numeric ceiling', () => {
+  const state = setup(); const player = state.players[0]; let previous = 0;
+  for (let level = 1; level <= 2000; level++) {
+    player.orb = { level, hp: 1 }; player.highestOrb = level;
+    const orb = getOrb(player, state);
+    assert.ok(orb.maxHp > previous, `Orb ${level} must be stronger than ${level - 1}`);
+    assert.equal(orb.boss, level % 10 === 0);
+    assert.equal(orb.resistance, orb.boss ? 0.5 : 0);
+    assert.ok(Number.isFinite(orb.maxHp)); previous = orb.maxHp;
+  }
+});
+
+test('analytical multi-orb combat matches an iterative oracle for partial, boss and high-value attacks', () => {
+  for (let trial = 0; trial < 250; trial++) {
+    const state = createGame({ seed: 0 });
+    const player = addPlayer(state, { id: 'p', name: 'Pilot' }); start(state);
+    const level = 1 + trial % 200;
+    player.orb = { level, hp: 12 * 1.18 ** (level - 1) * (0.2 + (trial % 7) / 10) };
+    player.highestOrb = level; player.totalPrestige = 10 ** (trial % 14); player.generators.star = trial % 1000;
+    if (trial % 3 === 0) player.skills[idOf('bossbreaker')] = 4;
+    if (trial % 4 === 0) player.skills[idOf('prism-bounty')] = 3;
+    if (trial % 5 === 0) player.skills[idOf('royal-spectrum')] = 2;
+    if (trial % 7 === 0) player.skills[idOf('chip-fracture')] = 2;
+    const stats = getStats(player, state);
+    let budget = stats.clickDamage, nextLevel = level, nextHp = player.orb.hp, reward = 0, kills = 0;
+    while (kills < 10000) {
+      const boss = nextLevel % 10 === 0, factor = boss ? stats.bossDamageMultiplier / 2 : 1;
+      const cost = nextHp / factor;
+      if (budget < cost) { nextHp -= budget * factor; break; }
+      budget -= cost;
+      reward += ((boss ? 60 : 12) * 1.14 ** (nextLevel - 1) * (boss ? stats.bossDropMultiplier : 1) + stats.dropFlat) * stats.dropMultiplier;
+      kills++; nextLevel++; nextHp = 12 * 1.18 ** (nextLevel - 1);
+    }
+    const result = applyAction(state, player.id, { type: 'click' });
+    assert.equal(result.critical, false);
+    assert.equal(result.kills, kills);
+    assert.equal(player.orb.level, nextLevel);
+    assert.ok(Math.abs(player.orb.hp - nextHp) / Math.max(1, nextHp) < 1e-10);
+    assert.ok(Math.abs(result.amount - stats.clickIncome - reward) / Math.max(1, reward) < 1e-10);
+    assert.equal(validateState(state), true);
+  }
+});
+
+test('research has functional breadth and a proven multi-day completion floor', () => {
+  const research = SKILLS.filter((skill) => skill.currency === 'skill');
+  const prestige = SKILLS.filter((skill) => skill.currency === 'prestige');
+  assert.equal(research.length, 48); assert.equal(prestige.length, 12);
+  assert.equal(SKILL_BRANCHES.filter((branch) => branch.currency === 'skill').length, 8);
+  assert.equal(new Set(SKILLS.map((skill) => skill.id)).size, 60);
+  assert.equal(RESEARCH_TOTAL_RANKS, 312);
+  const independentlySummedCost = research.reduce((total, skill) => total + Array.from({ length: skill.maxRank }, (_, i) => Math.ceil(skill.cost * skill.costGrowth ** i)).reduce((a, b) => a + b, 0), 0);
+  assert.equal(RESEARCH_TOTAL_COST, independentlySummedCost);
+  assert.ok(RESEARCH_TOTAL_COST / MAX_SKILL_POINTS_PER_ROUND / 1440 > 4);
+  const state = setup(); start(state); const player = state.players[0];
+  player.skills = Object.fromEntries(SKILLS.map((skill) => [skill.id, skill.maxRank]));
+  player.generators = { mote: 20, satellite: 20, prism: 20, star: 20, nova: 20 };
+  player.highestOrb = 200; player.combo = 10;
+  for (const skill of SKILLS) {
+    const full = player.skills[skill.id]; player.skills[skill.id] = 0;
+    const before = getStats(player, state); player.skills[skill.id] = 1;
+    assert.notDeepEqual(getStats(player, state), before, `${skill.name} must have a functional effect`);
+    player.skills[skill.id] = full;
+  }
+  advance(state, 60);
+  assert.equal(state.lastRound.players[0].skillPoints, MAX_SKILL_POINTS_PER_ROUND);
+  assert.equal(validateState(state), true);
+});
+
+test('research prerequisites, cross-branch gates, milestone gates, phase and currencies are enforced', () => {
+  const state = setup(); start(state); const player = state.players[0]; player.skillPoints = 100000;
+  const deep = SKILLS.find((skill) => skill.key === 'quantum-barrage');
+  assert.match(skillAvailability(player, deep.id, state).reason, /Requires/);
+  for (const [id, needed] of Object.entries(deep.requiredRanks)) player.skills[id] = needed;
+  assert.match(skillAvailability(player, deep.id, state).reason, /orb 175/);
+  player.highestOrb = 175;
+  assert.match(skillAvailability(player, deep.id, state).reason, /720 rounds/);
+  player.completedRounds = 720;
+  assert.match(skillAvailability(player, deep.id, state).reason, /Prestige 3/);
+  player.prestigeCount = 3;
+  assert.match(skillAvailability(player, deep.id, state).reason, /10 lifetime/);
+  player.totalPrestige = 10;
+  assert.match(skillAvailability(player, deep.id, state).reason, /between rounds/);
+  advance(state, 60);
+  assert.equal(skillAvailability(player, deep.id, state).available, true);
+  const cost = skillCost(player, deep.id), points = player.skillPoints;
+  assert.equal(applyAction(state, player.id, { type: 'buySkill', id: deep.id }).ok, true);
+  assert.equal(player.skillPoints, points - cost);
+  assert.ok(skillCost(player, deep.id) > cost);
+  const permanent = idOf('eternal-spark');
+  assert.equal(applyAction(state, player.id, { type: 'buySkill', id: permanent }).ok, false);
+  player.prestigePoints = 10;
+  const multiplier = getStats(player, state).multiplier, total = player.totalPrestige;
+  assert.equal(applyAction(state, player.id, { type: 'buySkill', id: permanent }).ok, true);
+  assert.equal(player.prestigePoints, 9);
+  assert.equal(player.totalPrestige, total);
+  assert.equal(getStats(player, state).multiplier, multiplier);
+});
+
+test('click minting and automatic minting are independent from orb destruction', () => {
+  const state = setup(); start(state); const player = state.players[0];
+  player.skills[idOf('light-press')] = 2;
+  const result = applyAction(state, player.id, { type: 'click' });
+  assert.equal(result.kills, 0); assert.equal(result.amount, 1.25);
+  player.generators.mote = 1; player.skills[idOf('autonomous-mint')] = 1;
+  assert.equal(getStats(player, state).autoMint, 0.125);
+  assert.equal(getStats(player, state).idleRate, 1.0625);
+  const before = player.lrc; advance(state, 2);
+  assert.equal(player.lrc - before, 2.125);
+  assert.equal(player.autoClicks, 1);
+});
+
+test('prestige preserves all research, unspent SP, lifetime records, and the co-op orb', () => {
+  for (const mode of ['scoreboard', 'coop']) {
+    const state = setup(2); applyAction(state, 'pilot-0', { type: 'setMode', mode }); start(state);
+    const player = state.players[0]; player.generators.nova = 1;
+    player.skills = { 'tap-tuning': 2, [idOf('light-press')]: 2, [idOf('eternal-spark')]: 1 };
+    applyAction(state, player.id, { type: 'click' }); advance(state, 60);
+    const skills = structuredClone(player.skills), points = player.skillPoints, shared = structuredClone(state.sharedOrb), pool = state.sharedLrc;
+    const best = player.highestOrb, kills = player.orbsDestroyed, rounds = player.completedRounds;
+    assert.equal(applyAction(state, player.id, { type: 'prestige' }).ok, true);
+    assert.deepEqual(player.skills, skills); assert.equal(player.skillPoints, points);
+    assert.deepEqual(player.orb, { level: 1, hp: 12 }); assert.deepEqual(player.generators, {});
+    assert.equal(player.highestOrb, best); assert.equal(player.orbsDestroyed, kills); assert.equal(player.completedRounds, rounds);
+    assert.equal(state.sharedLrc, pool); assert.deepEqual(state.sharedOrb, shared);
+  }
+});
+
+test('eight fully ranked builds with long identities fit the relay and huge finite economy remains valid', () => {
+  const state = createGame({ mode: 'coop' });
+  for (let i = 0; i < 8; i++) {
+    const player = addPlayer(state, { id: `${i}${'x'.repeat(99)}`, name: '界'.repeat(40) });
+    player.skills = Object.fromEntries(SKILLS.map((skill) => [skill.id, skill.maxRank]));
+    player.generators = { mote: 1000, satellite: 1000, prism: 1000, star: 1000, nova: 1000 };
+    player.totalPrestige = 1000; player.highestOrb = 200; player.completedRounds = 1000; player.prestigeCount = 10;
+  }
+  start(state); advance(state, 60);
+  const bytes = Buffer.byteLength(JSON.stringify(state));
+  assert.ok(bytes < 15000, `Full progression state is ${bytes} bytes`);
+  assert.equal(validateState(state), true);
+  const player = state.players[0]; fund(player, 1e100); state.sharedLrc = 1e100;
+  assert.equal(getBalance(player, state), 1e100);
+  assert.equal(validateState(state), true);
+  assert.equal(ECONOMY_LIMIT, 1e150);
+});
+
+test('legacy saves grandfather earned ranks and new saves preserve partial orb health exactly', () => {
+  const state = setup(); start(state); advance(state, 60);
+  const player = state.players[0];
+  player.skills = { 'tap-tuning': 1, 'lucky-photon': 1, 'shared-frequency': 1, resonance: 1, unity: 1 };
+  const legacy = structuredClone(state); delete legacy.sharedOrb;
+  for (const field of ['orb', 'highestOrb', 'orbsDestroyed', 'completedRounds', 'combo', 'comboAt']) delete legacy.players[0][field];
+  const migrated = migrateState(legacy);
+  assert.ok(migrated); assert.deepEqual(migrated.players[0].skills, player.skills);
+  assert.equal(migrated.players[0].completedRounds, 1);
+  assert.match(skillAvailability(migrated.players[0], 'lucky-photon', migrated).reason, /rank 2/);
+  applyAction(state, player.id, { type: 'ready' }); applyAction(state, player.id, { type: 'click' });
+  const restored = migrateState(JSON.parse(JSON.stringify(state)));
+  assert.deepEqual(restored.players[0].orb, player.orb);
+  assert.equal(validateState(restored), true);
+});
+
+test('logarithmic prestige has exact thresholds and stays bounded across the finite economy', () => {
+  const player = setup().players[0];
+  for (let points = 1; points <= 40; points++) {
+    const threshold = 2500 * (2 ** points - 1);
+    player.runLrc = threshold - 1;
+    assert.equal(prestigeGain(player), points - 1);
+    assert.equal(prestigeNextThreshold(player), threshold);
+    player.runLrc = threshold;
+    assert.equal(prestigeGain(player), points);
+    assert.equal(prestigeNextThreshold(player), 2500 * (2 ** (points + 1) - 1));
+  }
+  player.runLrc = ECONOMY_LIMIT;
+  assert.ok(prestigeGain(player) < 500);
+  assert.ok(Number.isFinite(prestigeNextThreshold(player)));
+  // Even 10,000 impossible maximum-economy resets cannot approach the point cap.
+  const impossibleUpperBound = prestigeGain(player) * 10000;
+  assert.ok(impossibleUpperBound < 5e6);
+  assert.ok(impossibleUpperBound < Number.MAX_SAFE_INTEGER / 1e6);
 });

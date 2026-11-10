@@ -1,6 +1,6 @@
 # Refract Idlers
 
-A multiplayer incremental game for Refract: click the middle of the orbit, harvest LRCs, build passive production, and grow a skill tree between rounds. The host chooses Scoreboard or Co-op for the session. Prestige your own build to return with a permanent income bonus.
+A multiplayer incremental game for Refract: damage the orb in the middle of the orbit, collect its LRC drops, build passive production, and research lasting upgrades between rounds. The host chooses Scoreboard or Co-op for the session. Prestige your production build while keeping your research.
 
 Built on the activity approach from [Refract Tic-tac-toe](https://github.com/Celzor/refract-tack-toe), with assets, audio, orbital rendering, and multiplayer bridge code reused or adapted from [RogueRefract](https://github.com/Celzor/RogueRefract).
 
@@ -35,17 +35,21 @@ npm run test:browser
 
 It uses installed Microsoft Edge on Windows by default. Set `BROWSER_EXECUTABLE` to another Chromium executable and `TEST_URL` to a different preview URL when needed. Screenshots are saved to ignored `test-results/`.
 
+Use `npm run test:browser -- --graph-only` for focused research-map, purchase, prerequisite, desktop navigation and mobile touch checks.
+
 ## The game loop
 
-1. The host chooses **Scoreboard** or **Co-op** in the lobby, then starts a **60-second round**. The choice stays fixed for the session. Click or tap the central Refract core to collect LRCs; keyboard controls are shown in the game. Your orbit also starts with **1 passive LRC per second**.
-2. Spend LRCs on generators during a round or between rounds. Scoreboard uses your personal balance; Co-op uses the shared crew bank. Purchased generators belong to the pilot who buys them and carry into subsequent rounds with their skills.
+1. The host chooses **Scoreboard** or **Co-op** in the lobby, then starts a **60-second round**. The choice stays fixed for the session. Click or tap the central orb to damage it. Breaking an orb grants an LRC drop and reveals a stronger orb. Your orbit also starts with **1 passive LRC per second**.
+2. Spend LRCs on generators during a round or between rounds, using **1**, **10**, or **Max** purchases. Scoreboard uses your personal balance; Co-op uses the shared crew bank. Purchased generators belong to the pilot who buys them.
 3. Complete the round to receive **2 skill points**. In Scoreboard, reaching your personal round target awards **1 extra point to you**. In Co-op, reaching the shared target awards **1 extra point to every pilot**. Missing a target still advances the game and awards the base points.
 4. Build your skill tree during the intermission. It has no countdown: each human pilot chooses when to ready up, and the next round starts once everyone is ready.
-5. Once you have earned enough LRCs in your current run, prestige between rounds for a permanent production bonus.
+5. Once you have earned enough LRCs in your current run, prestige between rounds for permanent points. Spend those points on lasting prestige research, while keeping the research and skill points you already earned.
 
-Clicking starts at **2 LRCs**, with a **5% chance** of a triple-value critical click. The final **10 seconds** of each round are a solar surge with double click income. The host limits sustained clicking to 15 accepted clicks per second, with a small allowance for short input bursts.
+Clicking starts at **2 damage** plus a small **0.25 LRC** mint reward, with a **5% chance** of a triple-damage critical hit. The first orb has **12 HP** and drops **12 LRCs**. Every defeated orb is replaced immediately; every tenth orb is a boss. The final **10 seconds** of each round are a solar surge with double click damage. The host limits sustained clicking to 15 accepted clicks per second, with a small allowance for short input bursts.
 
-The Scoreboard target is `round(500 × 1.35^(round − 1))` per pilot. The Co-op target is `round(500 × active pilots × 1.35^(round − 1))` for the crew. Targets count income earned during the round; spending LRCs does not reduce target progress. The interface shows real participants; bot support is used only in engine tests.
+Scoreboard gives each pilot their own orb. Co-op gives the crew one shared orb: every player's clicks and automatic attacks damage the same HP pool. Orb damage and progression persist between rounds, and synchronized snapshots preserve them through reloads and host handover.
+
+The Scoreboard target is `round(500 × (1 + 0.12 × (round − 1))²)` per pilot. The Co-op target is that amount multiplied by active pilots. Targets count income earned during the round; spending LRCs does not reduce target progress. The interface shows real participants; bot support is used only in engine tests.
 
 ### Session modes
 
@@ -55,7 +59,7 @@ The Scoreboard target is `round(500 × 1.35^(round − 1))` per pilot. The Co-op
 | Progress display | Live ranking by session lifetime LRC earnings | Crew production, shared balance and shared target |
 | Skill bonuses | Your skills improve your own production | Crew-branch bonuses also benefit other active pilots |
 | Round bonus | Earn +1 SP by reaching your personal target | Everyone earns +1 SP when the crew reaches its target |
-| Prestige | Resets your balance and build; lifetime ranking earnings stay | Resets your personal build and run earnings; the shared bank stays |
+| Prestige | Resets your balance, machines and orb; research and lifetime ranking earnings stay | Resets your machines and run earnings; research, shared bank and shared orb stay |
 
 Scoreboard is the default. Only the host can change the mode, and only before the first round. Starting a new session is required to choose another mode. Rankings include active pilots only; departed pilots disappear, and late joiners enter with their own current-session earnings. Spending or prestiging does not erase an active pilot's lifetime earnings on the leaderboard.
 
@@ -73,27 +77,44 @@ In Co-op, one pilot can buy a generator using LRCs earned by the others. The gen
 
 Each purchase costs `ceil(base cost × 1.17^owned)`. Skill, crew, and prestige bonuses increase production. Each generator type is capped at 1,000 units.
 
-Auto clickers pulse the core automatically during harvesting rounds. Their payout uses your current click power, including click skills, prestige, Refractometer bonuses, and the final-ten-second surge. Automatic clicks have no critical-hit roll, do not consume your manual click allowance, and are counted separately from manual clicks. The output readout includes their projected average income; actual LRCs arrive on each pulse. Orbital array and Perpetual motion skills increase their pulse rate.
+Bulk purchases charge the sum of the escalating individual prices. **10** buys exactly ten or fails without spending anything; **Max** buys the largest affordable batch up to the generator cap. The host validates the full quote against the current balance, including other pilots' spending from the Co-op bank.
+
+Auto clickers damage the orb automatically during harvesting rounds. Their attacks use your current click damage, including click skills, prestige, Refractometer bonuses, and the final-ten-second surge. Automatic clicks have no critical-hit roll, do not consume your manual click allowance, and are counted separately from manual clicks. Their damage generates LRCs when an orb breaks; passive LRC production continues separately. Orbital array and Perpetual motion skills increase their pulse rate.
 
 Refractometer bonuses add together before multiplying your own production: five units grant +50%. In Co-op, the resulting income flows into the shared bank. Upgrade purchases and automatic production trigger visual feedback. Sound is enabled initially and unlocks after your first interaction; the sound button mutes or restores synthesized effects and remembers your choice on this device. Reduced-motion preferences suppress decorative animation.
 
-### Skill tree
+### Research
 
-Each branch has three linked nodes. Buy at least one rank of the preceding node to unlock the next. Rank costs are `base skill-point cost + current rank`; the three tiers start at **1, 2, and 3 points**. Nodes have five ranks, except Event horizon, which has three.
+The research atlas has **48 connected normal nodes across eight branches**, with six tiers per branch, plus a **12-node permanent prestige graph**. Research ranks and unspent skill points survive every prestige. Pan and zoom the map, select a node to inspect its costs and requirements, and follow prerequisite links across branches. Search and availability highlights help find the next investment while keeping the surrounding graph visible. Expand the map for more space; Escape closes the expanded view. Touch dragging and the zoom controls work on mobile.
 
-| Branch | First node | Second node | Third node |
-| --- | --- | --- | --- |
-| Clicking | **Focused light:** +2 LRC/click per rank | **Critical mass:** +5 percentage points of critical chance per rank | **Singularity:** +25% click income per rank |
-| Idle production | **Solar cells:** +2 passive LRC/s per rank | **Orbital array:** +20% passive income per rank | **Perpetual motion:** +30% generator production per rank |
-| Crew | **Shared frequency:** +3% income per rank | **Resonance:** +2% income and +10% own income per rank | **Event horizon:** +15% own income per rank, plus one extra skill point per completed round once unlocked |
+| Tier | Rank cap | Starting SP cost | Orb milestone | Completed rounds |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 8 | 1 | None | None |
+| 2 | 8 | 4 | 10 | 3 |
+| 3 | 8 | 15 | 25 | 15 |
+| 4 | 6 | 50 | 50 | 60 |
+| 5 | 5 | 180 | 100 | 240 |
+| 6 | 4 | 600 | 175 | 720 |
 
-In Co-op, Shared frequency and Resonance's shared bonuses from active pilots add together and apply to everyone. In Scoreboard, those bonuses apply only to their owner. Prestige, applicable skill bonuses, personal bonuses, and Refractometer bonuses multiply: `(1 + 0.10 × total prestige points) × (1 + applicable shared-branch bonuses) × (1 + personal bonuses) × (1 + 0.10 × Refractometers)`.
+Rank prices grow as `ceil(starting cost × 1.38^current rank)`. Later research also requires earlier ranks, and some nodes need progress in another branch or prestige milestones. These requirements use retained progression rather than forcing the entire tree to restart on prestige. Normal nodes spend skill points; the permanent tree on the Prestige tab spends available prestige points.
+
+The board supports long-term development over many runs: stronger clicks, automation, orb hunting, production, shared bonuses and research interact. Co-op's crew bonuses apply to the active crew, while Scoreboard keeps each pilot's research benefits personal. Buying research is an intermission action so the crew can compare builds before starting the next round.
+
+### Progression audit
+
+Run `npm run balance` for the reproducible 1-hour, 6-hour and 24-hour pacing report. `node scripts/balance.mjs --extended` also checks 10,000 rounds and a subsequent orb push without prestige. Both write `test-results/balance.json`.
+
+Maxing normal research costs **59,816 SP across 312 ranks**. Even at the maximum **10 SP per 60-second round**, it requires at least **5,982 completed rounds**, or **4.15 active days**, before intermission time and milestone gates. This is an optimistic lower bound, not an expected completion time.
+
+The audit compares no manual clicks with two clicks per second. Both scripted policies invest every ten seconds, automatically ready between rounds, buy the cheapest legal research, and prestige for at least five points after fifteen completed rounds since the last reset; the first prestige happens as soon as eligible. No resources or research gates are bypassed. With that policy, the first boss falls after roughly **120 seconds without manual clicks** or **48 seconds at two clicks per second**; the first prestige happens after **four minutes** or **two minutes**, respectively. Both policies reach **32 normal nodes / 215 ranks** after 24 active hours. Ten thousand rounds remain finite without saturating the prestige counter.
+
+These figures describe continuously managed sessions. An unattended session stops at its first intermission after 60 seconds, and there is no offline income. Frequent prestige resets also restart personal orb progression; reaching the deepest orb gates can require deliberately keeping a run going longer. After the 10,000-round audit, holding prestige while continuing the same investment policy reaches orb 175 and completes all normal research in another 55 rounds without manual clicks, or 11 rounds at two clicks per second.
 
 ### Prestige
 
-Earn **2,500 LRCs in your run** to unlock your first prestige. The award is `floor(sqrt(run LRCs / 2500))`: 2,500 earns 1 point, 10,000 earns 2, and 22,500 earns 3. Spending LRCs does not reduce your run total.
+Earn **2,500 LRCs in your run** to unlock your first prestige. The award is `floor(log2(1 + run LRCs / 2500))`: 2,500 earns 1 point, 7,500 earns 2, and 17,500 earns 3. Spending LRCs does not reduce your run total. Logarithmic awards keep repeated prestige resets from rapidly overwhelming the long-term economy.
 
-Each prestige point permanently adds **10% to all your LRC income**. Prestiging resets **your** personal spendable LRCs, run income, generators, skills, and unspent skill points. It preserves lifetime income and prestige totals. In Co-op, the shared bank is preserved in full. Other pilots keep their builds, and the shared round number continues. Prestige points apply automatically; there is no separate prestige shop.
+Each earned prestige point permanently adds **10% to your production**. Prestiging resets **your** personal spendable LRCs, run income, generators and personal orb. It preserves all research ranks, unspent skill points, lifetime income and prestige totals. In Co-op, the shared bank and shared orb are preserved in full. Other pilots keep their builds, and the shared round number continues. The permanent production bonus uses total earned prestige points, so spending available points on prestige research does not remove that bonus.
 
 ## Multiplayer
 
@@ -105,7 +126,7 @@ For a live session:
 2. In Refract, open **Manage instance → Activities** and register that final URL as **Refract Idlers**.
 3. Reload Refract, join a call, and launch the activity. Other participants join the same activity from the call.
 
-The final URL must be reachable by every participant. A loopback URL only reaches the current device. A private Sites preview is for owner review and does not by itself provide shared Refract hosting.
+The final URL must be reachable by every participant. A loopback URL only reaches the current device.
 
 The first participant coordinates the game. The bridge authenticates relayed sender identities, and the host validates clicks, phases, affordability, skill prerequisites, and prestige eligibility. Followers render synchronized snapshots. Late joiners request the current state; after host departure, the next participant continues from the last synchronized snapshot. Up to **eight pilots** play; additional participants spectate.
 
@@ -124,11 +145,15 @@ The Pages workflow checks syntax, runs unit tests, and builds on pull requests a
 | File | Responsibility |
 | --- | --- |
 | `src/game.js` | Round rules, LRC economy, skills, prestige, snapshot validation |
+| `src/skills.js` | Research catalog, rank costs and milestone gates |
 | `src/main.js` | Interface, input, local saves, simulation and relay wiring |
+| `src/research.js` | Connected research maps, pan/zoom and selected-node inspectors |
+| `src/research.css` | Research nodes, prerequisite edges and map layout |
 | `src/arena.js` | Canvas orbit, participant avatars, visual feedback |
 | `src/activity.js` | Authenticated Refract relay and host election |
 | `src/audio.js` | Gesture-unlocked synthesized sound effects |
 | `public/refract-activity.js` | Official Refract iframe helper |
 | `tools/preview.html` | Local multiplayer protocol simulator |
+| `scripts/balance.mjs` | Reproducible long-duration progression audit |
 
 Licensed **AGPL-3.0-only**. See [LICENSE](LICENSE) and [CREDITS.md](CREDITS.md) for source attribution and retained brand ownership.

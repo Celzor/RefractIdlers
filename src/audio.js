@@ -63,7 +63,8 @@ export class GameAudio {
     const now = this.context.currentTime;
     const throttle = { ray: 0.085, critical: 0.14, collision: 0.12, revolution: 0.12,
       levelup: 0.3, boost: 0.25, purchase: 0.12, reroll: 0.15, countdown: 0.6,
-      roundend: 0.5, start: 0.4, click: 0.035, error: 0.15, collect: 0.07, surge: 0.07 };
+      roundend: 0.5, start: 0.4, click: 0.035, error: 0.15, collect: 0.07, surge: 0.07,
+      hit: 0.05, shatter: 0.12, boss: 0.45 };
     if (!(type in throttle) || now - (this.lastPlayed.get(type) ?? -Infinity) < throttle[type]) return;
     if (this.voices.size >= 28) return;
     this.lastPlayed.set(type, now);
@@ -78,6 +79,21 @@ export class GameAudio {
       frequencies.forEach((frequency, i) => note(frequency, i * step, duration, gain, i % 2 ? 'triangle' : 'square'));
 
     switch (type) {
+      case 'hit':
+        note(220, 0, 0.04, 0.12, 'triangle', 130);
+        note(880, 0.005, 0.025, 0.06, 'square');
+        break;
+      case 'shatter':
+        // A small glassy crack followed by coins settling onto the table.
+        note(164, 0, 0.055, 0.16, 'triangle', 82);
+        note(1760, 0.008, 0.06, 0.065, 'square', 1320);
+        arpeggio([1046.5, 1567.98, 2093], 0.035, 0.08, 0.12);
+        break;
+      case 'boss':
+        note(130.81, 0, 0.19, 0.15, 'triangle', 65.41);
+        arpeggio([392, 523.25, 659.25, 783.99, 1046.5], 0.06, 0.15, 0.14);
+        note(1567.98, 0.24, 0.16, 0.06, 'sine');
+        break;
       case 'ray':
         note(784, 0, 0.055, 0.10, 'square');
         note(1046.5, 0.022, 0.055, 0.065);
@@ -135,6 +151,16 @@ export class GameAudio {
         note(174.61, 0.08, 0.1, 0.10, 'triangle');
         break;
     }
+  }
+
+  /** Collapse a batch of orb breaks into one bounded, throttled reward cue. */
+  orbBreak(kills = 1, boss = false) {
+    if (!Number.isFinite(kills) || kills <= 0) return;
+    const weight = Math.log2(1 + Math.min(kills, 1e6));
+    this.play(boss ? 'boss' : 'shatter', {
+      intensity: Math.min(0.85, 0.45 + weight * 0.08),
+      pitch: Math.min(5, Math.floor(weight - 1)),
+    });
   }
 
   _tone(frequency, start, duration, volume, wave, endFrequency, pan) {
