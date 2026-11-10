@@ -141,15 +141,16 @@ export class OrbitArena {
 
   observeOrb(orb, nowMs) {
     if (!orb) { this.previousOrb = null; this.orbIdentity = null; return; }
+    const healthFraction = clamp(orb.hp / orb.maxHp, 0, 1);
     if (this.orbIdentity === orb.identity && this.previousOrb) {
       if (orb.level > this.previousOrb.level && nowMs - this.lastShatterAt > 300) {
         this.shatter(orb.level - this.previousOrb.level, nowMs);
-      } else if (orb.level === this.previousOrb.level && orb.hp < this.previousOrb.hp && nowMs - this.lastBurstAt > 200) {
+      } else if (orb.level === this.previousOrb.level && healthFraction < this.previousOrb.healthFraction - 1e-12 && nowMs - this.lastBurstAt > 200) {
         this.impactUntil = nowMs + 130;
       }
     }
     this.orbIdentity = orb.identity;
-    this.previousOrb = { level: orb.level, hp: orb.hp };
+    this.previousOrb = { level: orb.level, hp: orb.hp, healthFraction };
     this.orbPalette = orbAppearance(orb);
   }
 

@@ -2,6 +2,8 @@
 
 A multiplayer incremental game for Refract: damage the orb in the middle of the orbit, collect its LRC drops, build passive production, and research lasting upgrades between rounds. The host chooses Scoreboard or Co-op for the session. Prestige your production build while keeping your research.
 
+The interface is built for desktop play, with a fixed game frame verified at **1366×768** and **1920×1080**. The core, workshop and Beam share the screen without page scrolling. Controls sit beside the view tabs; the Scoreboard button opens a closable standings dialog. Research uses its own pan-and-zoom map.
+
 Built on the activity approach from [Refract Tic-tac-toe](https://github.com/Celzor/refract-tack-toe), with assets, audio, orbital rendering, and multiplayer bridge code reused or adapted from [RogueRefract](https://github.com/Celzor/RogueRefract).
 
 ## Look and sound
@@ -9,6 +11,8 @@ Built on the activity approach from [Refract Tic-tac-toe](https://github.com/Cel
 The game uses a warm retro tabletop: chunky pixel borders, paper labels, a felt play surface, original pixel machines, and a little orbit of busy workers. New machines appear on the table as you buy them. Clicking and automatic production produce quick coin feedback; purchases play short arcade arpeggios. The synthesized audio combines quiet square and triangle waves with soft coin clinks, a gentle filter, and bounded voice counts.
 
 The visual direction takes inspiration from the tactile incremental-game feel of [Gamblers Table](https://store.steampowered.com/app/3618390/Gamblers_Table/), [Scritchy Scratchy](https://store.steampowered.com/app/3948120/Scritchy_Scratchy/), and [Rusty's Retirement](https://store.steampowered.com/app/2666510/Rustys_Retirement/). The tabletop artwork and pixel-machine sprites were created for Refract Idlers; no sprites, sound recordings, or game assets from those titles are included. Refract branding and companion-project provenance remain listed in [CREDITS.md](CREDITS.md).
+
+**Beam, Refract's Chief Vibe Officer**, keeps a small pixel-art desk beside your orbit. He reacts to new machines, research, bosses, the solar surge, round breaks and prestige. His crystal appearance, playful confidence, daytime boat and nighttime armchair come from the existing Refract companion. The dialogue and game reactions are new adaptations; [Beam's source notes](docs/BEAM-LORE.md) separate established characterization from this game's additions. You can greet or minimize him. Beam is a cosmetic companion, never the orb you attack, and changes no game statistics.
 
 ## Run locally
 
@@ -35,7 +39,7 @@ npm run test:browser
 
 It uses installed Microsoft Edge on Windows by default. Set `BROWSER_EXECUTABLE` to another Chromium executable and `TEST_URL` to a different preview URL when needed. Screenshots are saved to ignored `test-results/`.
 
-Use `npm run test:browser -- --graph-only` for focused research-map, purchase, prerequisite, desktop navigation and mobile touch checks.
+Use `npm run test:browser -- --graph-only` for focused desktop frame and research-map checks, or `--sidebar-only` for the maximum-size Scoreboard and Co-op rosters. Release checks target desktop play.
 
 ## The game loop
 
@@ -45,9 +49,11 @@ Use `npm run test:browser -- --graph-only` for focused research-map, purchase, p
 4. Build your skill tree during the intermission. It has no countdown: each human pilot chooses when to ready up, and the next round starts once everyone is ready.
 5. Once you have earned enough LRCs in your current run, prestige between rounds for permanent points. Spend those points on lasting prestige research, while keeping the research and skill points you already earned.
 
-Clicking starts at **2 damage** plus a small **0.25 LRC** mint reward, with a **5% chance** of a triple-damage critical hit. The first orb has **12 HP** and drops **12 LRCs**. Every defeated orb is replaced immediately; every tenth orb is a boss. The final **10 seconds** of each round are a solar surge with double click damage. The host limits sustained clicking to 15 accepted clicks per second, with a small allowance for short input bursts.
+Clicking starts at **2 damage** plus a small **0.25 LRC** mint reward, with a **5% chance** of a triple-damage critical hit. The first solo orb has **2,000 HP** and drops **300 LRCs**. Its first visible crack appears after **10% damage**: 100 ordinary, unupgraded hits. Deeper fractures appear at 35% and 65% damage. Critical hits, automation, upgrades and the solar surge can reach these thresholds sooner. Every defeated orb is replaced immediately; every tenth orb is an armoured boss. The final **10 seconds** of each round are a solar surge with double click damage. The host limits sustained clicking to 15 accepted clicks per second, with a small allowance for short input bursts.
 
 Scoreboard gives each pilot their own orb. Co-op gives the crew one shared orb: every player's clicks and automatic attacks damage the same HP pool. Orb damage and progression persist between rounds, and synchronized snapshots preserve them through reloads and host handover.
+
+Co-op multiplies orb HP and drops by `1 + 0.85 × (active human pilots − 1)`, with a minimum multiplier of 1. Two pilots face a 3,700-HP first orb; three face 5,400 HP. Joining or leaving changes its size while preserving the percentage of damage already dealt. Older saves migrate to the harder cores with their existing health percentage intact.
 
 The Scoreboard target is `round(500 × (1 + 0.12 × (round − 1))²)` per pilot. The Co-op target is that amount multiplied by active pilots. Targets count income earned during the round; spending LRCs does not reduce target progress. The interface shows real participants; bot support is used only in engine tests.
 
@@ -102,13 +108,20 @@ The board supports long-term development over many runs: stronger clicks, automa
 
 ### Progression audit
 
-Run `npm run balance` for the reproducible 1-hour, 6-hour and 24-hour pacing report. `node scripts/balance.mjs --extended` also checks 10,000 rounds and a subsequent orb push without prestige. Both write `test-results/balance.json`.
+Run `npm run balance` for the reproducible 1-hour, 6-hour and 24-hour pacing report. `node scripts/balance.mjs --extended` also checks 10,000 rounds and up to 24 additional active hours without prestige. Add `--push-hours=168` to reproduce the full deep-gate audit. These commands write `test-results/balance.json`.
 
 Maxing normal research costs **59,816 SP across 312 ranks**. Even at the maximum **10 SP per 60-second round**, it requires at least **5,982 completed rounds**, or **4.15 active days**, before intermission time and milestone gates. This is an optimistic lower bound, not an expected completion time.
 
-The audit compares no manual clicks with two clicks per second. Both scripted policies invest every ten seconds, automatically ready between rounds, buy the cheapest legal research, and prestige for at least five points after fifteen completed rounds since the last reset; the first prestige happens as soon as eligible. No resources or research gates are bypassed. With that policy, the first boss falls after roughly **120 seconds without manual clicks** or **48 seconds at two clicks per second**; the first prestige happens after **four minutes** or **two minutes**, respectively. Both policies reach **32 normal nodes / 215 ranks** after 24 active hours. Ten thousand rounds remain finite without saturating the prestige counter.
+The audit compares no manual clicks with two clicks per second. Both scripted policies invest every ten seconds, automatically ready between rounds, buy the cheapest legal research, and prestige for at least five points after fifteen completed rounds since the last reset; the first prestige happens as soon as eligible. No resources or research gates are bypassed.
 
-These figures describe continuously managed sessions. An unattended session stops at its first intermission after 60 seconds, and there is no offline income. Frequent prestige resets also restart personal orb progression; reaching the deepest orb gates can require deliberately keeping a run going longer. After the 10,000-round audit, holding prestige while continuing the same investment policy reaches orb 175 and completes all normal research in another 55 rounds without manual clicks, or 11 rounds at two clicks per second.
+| Managed play policy | First core broken | First boss cleared | First prestige |
+| --- | ---: | ---: | ---: |
+| No manual clicks | 5 min | 15 min 20 sec | 6 min |
+| Two clicks per second | 3 min 22 sec | About 13 min 7 sec | 5 min |
+
+Both policies reach **32 normal nodes / 215 ranks** after 24 active hours. Ten thousand rounds remain finite without saturating the prestige counter. After that checkpoint, holding prestige reaches orb 175 after another **145.38 active hours without manual clicks**, or **42.89 hours at two clicks per second**. All normal research completes at the following intermission: about **312.05** or **209.57 total active hours**, respectively. These are measured results for the stated policies, not optimal completion times.
+
+These figures describe continuously managed sessions. An unattended session stops at its first intermission after 60 seconds, and there is no offline income. Frequent prestige resets also restart personal orb progression; reaching the deepest orb gates requires deliberately keeping a run going longer under these policies.
 
 ### Prestige
 
@@ -149,6 +162,9 @@ The Pages workflow checks syntax, runs unit tests, and builds on pull requests a
 | `src/main.js` | Interface, input, local saves, simulation and relay wiring |
 | `src/research.js` | Connected research maps, pan/zoom and selected-node inspectors |
 | `src/research.css` | Research nodes, prerequisite edges and map layout |
+| `src/frame.css` | Fixed desktop game frame and compact panels |
+| `src/beam.js`, `src/beam.css` | Cosmetic pixel companion, reactions and motion |
+| `docs/BEAM-LORE.md` | Source-grounded Beam notes and adaptation boundaries |
 | `src/arena.js` | Canvas orbit, participant avatars, visual feedback |
 | `src/activity.js` | Authenticated Refract relay and host election |
 | `src/audio.js` | Gesture-unlocked synthesized sound effects |

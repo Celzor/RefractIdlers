@@ -1,6 +1,6 @@
 {
   "name": "refract-idlers",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "A retro multiplayer light factory. Shatter Refract orbs, automate LRCs, research lasting upgrades, and prestige.",

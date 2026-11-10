@@ -22,7 +22,17 @@ The Refract name and brand mark remain with their owner. Their inclusion does no
 
 ## Refract Idlers
 
-The LRC economy, incremental generators, round rewards, three-branch skill tree, personal prestige rules, and game interface are implemented for Refract Idlers.
+The LRC economy, incremental generators, orb combat, round rewards, 48-node research tree across eight disciplines, 12-node legacy tree, personal prestige rules, and game interface are implemented for Refract Idlers.
+
+## Beam, the Refract companion
+
+Beam's identity and source artwork were researched in the user's local Refract checkout at `refract/oasis-core`, particularly `docs/beam/`, `frontend/src/components/beam/`, `frontend/src/components/turbo/TurboProMaxDialog.tsx`, and `frontend/public/beam/`.
+
+- `public/assets/beam-pixel.svg`: original 64×64 pixel adaptation of Beam, retaining his sapphire/cyan faceted head, asymmetric crystal ears, navy face, cream eyes, amber core, detached crystal limbs and orbiting shard. The boat, armchair and crown are newly drawn pixel interpretations of existing Refract poses and artwork.
+- `src/beam.js` and `src/beam.css`: new cosmetic game companion implementation, with milestone expressions, gentle motion, a harmless poke and a minimize preference. No source PNGs or concept-sheet frames are bundled.
+- **Chief Vibe Officer** and the playful scientific persona come from Refract's Turbo presentation. All in-game companion dialogue and the mapping of weather expressions to game milestones are newly written Idlers adaptations.
+
+Beam and the underlying Refract mascot artwork remain attributed to their original project. The source does not establish the game's LRC economy or orb progression as official mascot lore. [Beam source notes](https://github.com/Celzor/RefractIdlers/blob/main/docs/BEAM-LORE.md) distinguish existing characterization from the new game adaptation and record exact source paths.
 
 ## Fonts
 

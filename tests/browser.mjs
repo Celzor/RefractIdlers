@@ -7,6 +7,8 @@ import * as engine from '../src/game.js';
 
 const base = process.env.TEST_URL || 'http://127.0.0.1:4175/';
 const graphOnly = process.argv.includes('--graph-only');
+const includeMobile = process.argv.includes('--mobile');
+const sidebarOnly = process.argv.includes('--sidebar-only');
 const executable = process.env.BROWSER_EXECUTABLE || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const output = path.resolve('test-results');
 await mkdir(output, { recursive: true });
@@ -51,8 +53,8 @@ async function click(selector, documentExpression = 'document') {
   assert.equal(await evaluate(`Boolean(${element} && !${element}.disabled)`), true, `Enabled control ${selector}`);
   await evaluate(`${element}.click()`);
 }
-async function pointerClick(selector) {
-  const position = await evaluate(`(() => {const element=document.querySelector(${JSON.stringify(selector)});element.scrollIntoView({block:'center'});const rect=element.getBoundingClientRect();return {x:rect.x+rect.width/2,y:rect.y+rect.height/2};})()`);
+async function pointerClick(selector,documentExpression='document') {
+  const position = await evaluate(`(() => {const element=${documentExpression}.querySelector(${JSON.stringify(selector)});element.scrollIntoView({block:'center'});const rect=element.getBoundingClientRect();return {x:rect.x+rect.width/2,y:rect.y+rect.height/2};})()`);
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...position, button: 'left', clickCount: 1 });
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...position, button: 'left', clickCount: 1 });
 }
@@ -84,6 +86,7 @@ async function reload() {
 const readSolo = `JSON.parse(localStorage.getItem(${JSON.stringify(soloKey)}))`;
 const bossFixture = `game.applyAction(state,'you',{type:'start'});const player=state.players[0];player.orb.level=10;player.orb.hp=game.getOrb(player,state).maxHp;player.highestOrb=10;player.orbsDestroyed=9;player.lrc=1e40;player.runLrc=1e40;player.lifetimeLrc=1e40;player.generators={mote:5,satellite:4,prism:3,star:2,nova:1};`;
 async function solo() { return evaluate(readSolo); }
+const orbFor = (state,id=state.players[0]?.id) => engine.getOrb(state.players.find(player=>player.id===id),state);
 async function seed(code) {
   const fixture = await evaluate(`(async () => {
     const game = await import('./src/game.js');
@@ -102,6 +105,43 @@ async function fit(label) {
   assert.ok(metrics.scroll <= metrics.width + 1, `${label}: horizontal overflow ${JSON.stringify(metrics)}`);
   if (metrics.core?.width) assert.ok(metrics.core.width >= 44, `${label}: core has a usable touch target`);
   log(`${label} fits without horizontal overflow`);
+}
+async function desktopFrame(label,selectors=[],documentExpression='document') {
+  const layout=await evaluate(`(() => {
+    const doc=${documentExpression},win=doc.defaultView;
+    const controls=${JSON.stringify(selectors)}.flatMap(selector=>{const nodes=[...doc.querySelectorAll(selector)];if(!nodes.length)throw Error('Missing frame control '+selector);return nodes.map(node=>({selector,rect:node.getBoundingClientRect().toJSON()}));});
+    return {width:win.innerWidth,height:win.innerHeight,scrollWidth:doc.documentElement.scrollWidth,scrollHeight:doc.documentElement.scrollHeight,controls};
+  })()`);
+  assert.ok(layout.scrollWidth<=layout.width+1&&layout.scrollHeight<=layout.height+1,`${label}: document stays inside its frame (${JSON.stringify(layout)})`);
+  for(const {selector,rect}of layout.controls)assert.ok(rect.width>0&&rect.height>0&&rect.left>=-1&&rect.top>=-1&&rect.right<=layout.width+1&&rect.bottom<=layout.height+1,`${label}: ${selector} is fully visible (${JSON.stringify(rect)})`);
+  log(`${label}: controls fit with no page scrolling`);
+}
+async function containedContent(selector,{overlap=true,documentExpression='document'}={}) {
+  const problems=await evaluate(`(() => {const issues=[];for(const root of ${documentExpression}.querySelectorAll(${JSON.stringify(selector)})){
+    const bounds=root.getBoundingClientRect();if(!bounds.width||!bounds.height)continue;
+    const children=[...root.children].map(node=>({node,rect:node.getBoundingClientRect()})).filter(({rect})=>rect.width&&rect.height);
+    for(const {node,rect}of children){const label=node.className||node.tagName;if(rect.left<bounds.left-2||rect.right>bounds.right+2||rect.top<bounds.top-2||rect.bottom>bounds.bottom+2)issues.push(label+' escapes '+root.className);
+      if(node.scrollHeight>node.clientHeight+2)issues.push(label+' clips its text vertically ('+node.scrollHeight+'/'+node.clientHeight+')');}
+    if(${overlap})for(let a=0;a<children.length;a++)for(let b=a+1;b<children.length;b++){const x=children[a].rect,y=children[b].rect;if(Math.min(x.right,y.right)-Math.max(x.left,y.left)>1&&Math.min(x.bottom,y.bottom)-Math.max(x.top,y.top)>1)issues.push((children[a].node.className||children[a].node.tagName)+' overlaps '+(children[b].node.className||children[b].node.tagName));}
+  }return issues;})()`);
+  assert.deepEqual(problems,[],`${selector}: text and controls stay inside their panels without overlap`);
+}
+async function inspectEveryNode(map,inspector) {
+  const issues=await evaluate(`(() => {
+    for(const node of document.querySelectorAll('${map} [data-skill-node]')){
+      node.click();const root=document.querySelector('${inspector}'),bounds=root.getBoundingClientRect();
+      const children=[...root.children].map(item=>({item,rect:item.getBoundingClientRect()})).filter(({rect})=>rect.width&&rect.height);
+      const problems=[];
+      for(const {item,rect}of children){if(rect.left<bounds.left-2||rect.right>bounds.right+2||rect.top<bounds.top-2||rect.bottom>bounds.bottom+2)problems.push(item.className+' escapes inspector');if(item.scrollHeight>item.clientHeight+2)problems.push(item.className+' text overflow');}
+      for(let a=0;a<children.length;a++)for(let b=a+1;b<children.length;b++){const x=children[a].rect,y=children[b].rect;if(Math.min(x.right,y.right)-Math.max(x.left,y.left)>1&&Math.min(x.bottom,y.bottom)-Math.max(x.top,y.top)>1)problems.push(children[a].item.className+' overlaps '+children[b].item.className);}
+      if(problems.length)return {node:node.dataset.skillNode,problems};
+    }return null;
+  })()`);
+  assert.equal(issues,null,`${inspector}: every node's details fit without overlap (${JSON.stringify(issues)})`);
+}
+async function containedElements(parentSelector,childSelector,documentExpression='document') {
+  const escaped=await evaluate(`(() => {const failures=[];for(const root of ${documentExpression}.querySelectorAll(${JSON.stringify(parentSelector)})){const box=root.getBoundingClientRect();for(const child of root.querySelectorAll(${JSON.stringify(childSelector)})){const rect=child.getBoundingClientRect();if(!rect.width||!rect.height)continue;if(rect.left<box.left-1||rect.right>box.right+1||rect.top<box.top-1||rect.bottom>box.bottom+1)failures.push({text:child.textContent,box:box.toJSON(),rect:rect.toJSON()});}}return failures;})()`);
+  assert.deepEqual(escaped,[],`${childSelector} stays inside ${parentSelector}`);
 }
 async function capture(name) {
   const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
@@ -175,6 +215,55 @@ async function freshPreview() {
 const frameDoc = (id) => `document.querySelector('iframe[data-participant-id="${id}"]').contentDocument`;
 const frameWindow = (id) => `document.querySelector('iframe[data-participant-id="${id}"]').contentWindow`;
 const session = (id) => `(() => {const storage=${frameWindow(id)}.sessionStorage;const key=Object.keys(storage).find(key=>key.startsWith('refract-idlers:session:')&&key.endsWith(':${id}'));return key?JSON.parse(storage.getItem(key)):null;})()`;
+async function eightPlayerSidebars(){
+  // Layout-only protocol fixture: eight roster entries and two actual clients.
+  for(const mode of ['scoreboard','coop']){
+    await freshPreview();
+    if(mode==='coop')await click('[data-mode="coop"]',frameDoc(101));
+    const roster=[{id:101,name:'Alex'},{id:202,name:'Sam'},{id:303,name:'Taylor'},{id:404,name:'Alexandria'},{id:505,name:'Christopher'},{id:606,name:'Anastasia'},{id:707,name:'Benjamin'},{id:808,name:'Celzor'}];
+    await evaluate(`(()=>{for(const id of [101,202])document.querySelector('iframe[data-participant-id="'+id+'"]').contentWindow.postMessage({protocol:'refract-activity/1',type:'participants',participants:${JSON.stringify(roster)}},location.origin);})()`);
+    await waitFor(`${session(101)}?.players?.length===8 && ${session(202)}?.players?.length===8`);
+    await click('#round-action',frameDoc(101));
+    await waitFor(`${session(101)}?.phase==='round'`);
+    await send('Emulation.setDeviceMetricsOverride',{width:1366,height:768,deviceScaleFactor:1,mobile:false});
+    await evaluate(`(()=>{const frame=document.querySelector('iframe[data-participant-id="101"]');Object.assign(frame.style,{position:'fixed',inset:'0',width:'100vw',height:'100vh',zIndex:'9999',border:'0',background:'#302a25'});document.body.style.overflow='hidden';})()`);
+    const doc=frameDoc(101);
+    await desktopFrame(`Eight-player ${mode} 1366x768`,['#core','#round-action','[data-buy-generator]','#beam-companion'],doc);
+    if(mode==='scoreboard'){
+      await desktopFrame('Scorebook launcher',['#scoreboard-toggle'],doc);
+      await capture('desktop-1366-eight-player-orbit');
+      await pointerClick('#scoreboard-toggle',doc);
+      await waitFor(`${doc}.querySelector('#scoreboard-dialog').open`,'Scorebook opens as a dialog');
+      assert.equal(await evaluate(`${doc}.querySelectorAll('#scoreboard-list .scoreboard-row').length`),8,'All eight scoreboard entries are rendered');
+      await desktopFrame('Eight-player scoreboard dialog',['#scoreboard-dialog','#scoreboard-close','#scoreboard-list .scoreboard-row'],doc);
+      assert.equal(await evaluate(`(()=>{const dialog=${doc}.querySelector('#scoreboard-dialog');return dialog.scrollHeight<=dialog.clientHeight+1;})()`),true,'The eight-player scorebook needs no internal scrollbar');
+      const behindDialogClicks=(await evaluate(session(101))).players.find(player=>player.id==='101').clicks;
+      const behindDialogHealth=await evaluate(`${doc}.querySelector('#orb-health-fill').style.width`);
+      await evaluate(`${doc}.activeElement.blur()`);
+      await send('Input.dispatchKeyEvent',{type:'keyDown',key:' ',code:'Space',windowsVirtualKeyCode:32});
+      await send('Input.dispatchKeyEvent',{type:'keyUp',key:' ',code:'Space',windowsVirtualKeyCode:32});
+      await pause(1600);
+      assert.equal(await evaluate(`${doc}.querySelector('#scoreboard-dialog').open`),true,'Space leaves the scorebook open');
+      assert.equal(await evaluate(`${doc}.querySelector('#orb-health-fill').style.width`),behindDialogHealth,'Space cannot damage the core behind the scorebook');
+      assert.equal((await evaluate(session(101))).players.find(player=>player.id==='101').clicks,behindDialogClicks,'Space behind the dialog creates no gameplay action');
+      await capture('desktop-1366-eight-player-scoreboard');
+      await click('#scoreboard-close',doc);
+      assert.equal(await evaluate(`${doc}.querySelector('#scoreboard-dialog').open`),false,'Close button dismisses the scorebook');
+      assert.equal(await evaluate(`${doc}.activeElement.id`),'scoreboard-toggle','Closing the scorebook restores focus to its launcher');
+      await pointerClick('#scoreboard-toggle',doc);
+      await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+      await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+      await waitFor(`!${doc}.querySelector('#scoreboard-dialog').open`,'Escape closes the scorebook');
+      assert.equal(await evaluate(`${doc}.activeElement.id`),'scoreboard-toggle','Escape restores focus to the scorebook launcher');
+    }else{
+      assert.equal(await evaluate(`${doc}.querySelectorAll('#crew .crew-member').length`),8,'All eight co-op crew entries are rendered');
+      await desktopFrame('Eight-player co-op roster',['#crew'],doc);
+      await containedContent('#crew',{documentExpression:doc});
+      await containedElements('#crew-panel','.crew-member',doc);
+      await capture('desktop-1366-eight-player-coop');
+    }
+  }
+}
 
 try {
   browser = spawn(executable, ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
@@ -211,6 +300,37 @@ try {
   const loadedFonts = await evaluate(`[...document.fonts].filter(face=>face.status==='loaded').map(face=>face.family.replaceAll('"','').replaceAll("'",''))`);
   assert.ok(loadedFonts.includes('Pixel') && loadedFonts.includes('Terminal'), `Local retro fonts loaded: ${loadedFonts.join(', ')}`);
   log('Local Pixel and Terminal fonts loaded without fallback');
+  if(sidebarOnly)await eightPlayerSidebars();else{
+  for(const [width,height]of [[1366,768],[1920,1080]]){
+    await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
+    await seed('');
+    await desktopFrame(`Desktop ${width}x${height} lobby`,['#lobby-start','[data-mode]','[data-tab]','#beam-companion','#scoreboard-toggle','#sound','#help','#multiplayer']);
+    assert.equal(await evaluate(`Boolean(document.querySelector('#beam-companion img, #beam-companion svg, #beam-companion canvas'))`),true,'Beam has a visible pixel-art representation');
+    await capture(`desktop-${width}-lobby`);
+    await seed(bossFixture);
+    await desktopFrame(`Desktop ${width}x${height} orbit`,['#core','#orb-health','#round-action','[data-buy-quantity]','[data-buy-generator]','#beam-companion']);
+    await containedContent('.stat > div',{overlap:false});
+    await containedElements('.stat','small');
+    await capture(`desktop-${width}-frame-orbit`);
+    await seed(`game.applyAction(state,'you',{type:'start'});game.advance(state,60);const p=state.players[0];state.round=800;p.completedRounds=800;p.highestOrb=180;p.orbsDestroyed=179;p.prestigeCount=3;p.totalPrestige=100;p.prestigePoints=100;p.skillPoints=10000;p.lrc=p.runLrc=p.lifetimeLrc=10000;`);
+    await showResearch('quantum-barrage');
+    await desktopFrame(`Desktop ${width}x${height} research`,['#research-map','#research-inspector','#research-search','#research-available','#research-inspector [data-buy-skill]','#research-ready']);
+    await containedContent('#research-inspector');
+    await inspectEveryNode('#research-map','#research-inspector');
+    await showResearch('quantum-barrage');
+    await capture(`desktop-${width}-frame-research`);
+    const deepestLegacy=engine.SKILLS.filter(skill=>skill.currency==='prestige').at(-1).key;
+    await showResearch(deepestLegacy);
+    await desktopFrame(`Desktop ${width}x${height} prestige`,['#prestige-action','#legacy-map','#legacy-inspector','#legacy-inspector [data-buy-skill]']);
+    await containedContent('#legacy-inspector');
+    await inspectEveryNode('#legacy-map','#legacy-inspector');
+    await showResearch(deepestLegacy);
+    await containedContent('.prestige-rules');
+    await containedElements('.prestige-machine','.prestige-rules span');
+    await capture(`desktop-${width}-frame-prestige`);
+  }
+  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+  await seed('');
   assert.equal(await evaluate(`document.querySelector('[data-mode="scoreboard"]').getAttribute('aria-pressed')`), 'true', 'Scoreboard is the default mode');
   await fit('Desktop lobby');
   await capture('desktop-lobby');
@@ -220,7 +340,10 @@ try {
   await click('#core');
   await waitFor(`${readSolo}?.players?.[0]?.clicks >= 1`);
   assert.ok((await solo()).players[0].lrc >= 0.25, 'Core hit grants the small mint reward');
-  assert.ok((await solo()).players[0].orb.hp < 12, 'Core hit damages the starting orb');
+  const firstHitOrb=orbFor(await solo());
+  assert.equal(firstHitOrb.maxHp,2000,'A fresh solo core has 2,000 HP');
+  assert.ok(firstHitOrb.hp < firstHitOrb.maxHp, 'Core hit damages the starting orb');
+  assert.equal(firstHitOrb.fractureStage,0,'One ordinary hit does not visibly crack the hard core');
   log('Core hit damages the orb and grants the small mint reward');
   const initialSound = await evaluate(`document.querySelector('#sound').getAttribute('aria-pressed')`);
   await pointerClick('#sound');
@@ -234,9 +357,26 @@ try {
   await send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Space', key: ' ', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
   await waitFor(`${readSolo}?.players?.[0]?.clicks === ${clicksBeforeSpace+1}`);
   log('Sound toggle works and holding Space does not create repeated clicks');
-  await evaluate(`(async () => {for(let i=0;i<6;i++){document.querySelector('#core').click();await new Promise(resolve=>setTimeout(resolve,90));}})()`);
+  await seed(`game.applyAction(state,'you',{type:'start'});state.players[0].orb.hp=game.getOrb(state.players[0],state).maxHp*.9+2;state.rng=1;`);
+  assert.equal(await evaluate(`document.querySelector('#core').dataset.fracture`),'0','The core remains uncracked before ten percent damage');
+  await click('#core');
+  await waitFor(`document.querySelector('#core').dataset.fracture==='1'`,'The first crack appears at ten percent damage');
+  await waitFor(`${readSolo}?.players?.[0]?.clicks===1`,'The first crack snapshot is persisted');
+  assert.ok(Math.abs(orbFor(await solo()).damageFraction-.1)<1e-10,'The visible crack matches the actual HP damage fraction');
+  await capture('desktop-first-core-crack');
+  const beamClicks=(await solo()).players[0].clicks;
+  const beforeBeamHp=await evaluate(`document.querySelector('#orb-health-text').textContent`);
+  await pointerClick('#beam-companion .beam-poke');
+  assert.equal(await evaluate(`document.querySelector('#beam-companion').dataset.mood`),'cheer','Beam visibly responds to a harmless greeting');
+  assert.equal(await evaluate(`document.querySelector('#orb-health-text').textContent`),beforeBeamHp,'Greeting Beam does not damage the core');
+  assert.equal((await solo()).players[0].clicks,beamClicks,'Beam is a companion, not a core attack target');
+  log('Hard-core crack threshold and separate Beam companion target');
+  await seed(`game.applyAction(state,'you',{type:'start'});state.players[0].orb.hp=1;`);
+  const orbBeforeBreak=orbFor(await solo());
+  const lrcBeforeBreak=(await solo()).players[0].lifetimeLrc;
+  await click('#core');
   await waitFor(`${readSolo}?.players?.[0]?.orb?.level >= 2`);
-  assert.ok((await solo()).players[0].lifetimeLrc >= 12, 'Breaking the orb grants a real LRC drop');
+  assert.ok((await solo()).players[0].lifetimeLrc >= lrcBeforeBreak+orbBeforeBreak.reward, 'Breaking the orb grants its advertised LRC drop');
   log('Breaking the orb pays a drop and advances to a stronger orb');
 
   await seed(`game.applyAction(state,'you',{type:'start'}); game.advance(state,30);`);
@@ -251,24 +391,28 @@ try {
   await waitFor(`!document.querySelector('#core').disabled`);
   assert.equal((await solo()).players[0].generators.mote, 1, 'Generator survives mid-round reload');
   assert.equal((await solo()).phase, 'round', 'Reload resumes the current round');
-  assert.ok((await solo()).players[0].orb.hp < 12, 'Damaged orb survives mid-round reload');
+  assert.ok(orbFor(await solo()).hp < orbFor(await solo()).maxHp, 'Damaged orb survives mid-round reload');
   await fit('Desktop active round');
   await capture('desktop-orbit');
   log('Auto clicker purchases, automatic damage and mid-round HP persistence');
   const legacySave=await solo();
-  delete legacySave.sharedOrb;
+  engine.advance(legacySave,legacySave.remaining);
+  delete legacySave.combatVersion;
+  legacySave.sharedOrb={level:1,hp:9};
   for(const player of legacySave.players) {
-    for(const key of ['orb','highestOrb','orbsDestroyed','completedRounds','combo','comboAt']) delete player[key];
+    for(const key of ['highestOrb','orbsDestroyed','completedRounds','combo','comboAt']) delete player[key];
+    player.orb={level:1,hp:6};
     player.skills['tap-tuning']=1;
   }
   const {identifier:legacyScript}=await send('Page.addScriptToEvaluateOnNewDocument',{source:`localStorage.setItem(${JSON.stringify(soloKey)},${JSON.stringify(JSON.stringify(legacySave))});`});
   try { await reload(); } finally { await send('Page.removeScriptToEvaluateOnNewDocument',{identifier:legacyScript}); }
-  await waitFor(`${readSolo}?.players?.[0]?.orb?.hp>0`);
+  await waitFor(`${readSolo}?.combatVersion===2 && ${readSolo}?.players?.[0]?.orb?.hp>6`);
   const migratedPlayer=(await solo()).players[0];
   assert.equal(migratedPlayer.generators.mote,1,'Legacy save migration keeps machines');
   assert.equal(migratedPlayer.skills['tap-tuning'],1,'Legacy save migration keeps earned research');
-  assert.ok(migratedPlayer.orb.hp>0 && migratedPlayer.highestOrb>=1,'Legacy save initializes valid orb progression');
-  log('Pre-orb saves migrate without losing machines or earned research');
+  assert.equal(migratedPlayer.orb.hp/orbFor(await solo()).maxHp,.5,'Legacy 6/12 HP retains exactly half health in the harder combat system');
+  assert.equal((await solo()).combatVersion,2,'Migrated snapshots use the current combat version');
+  log('Legacy combat saves retain damage fraction, machines and earned research');
 
   await seed(`game.applyAction(state,'you',{type:'start'});game.advance(state,60);`);
   await click('[data-tab="orbit"]');
@@ -295,10 +439,7 @@ try {
   log('Buy10 is atomic and Max buys the full affordable batch');
   }
 
-  await seed(`game.applyAction(state,'you',{type:'start'}); for(let round=0;round<4;round++){
-    for(let i=0;i<(round===3?118:120);i++){game.applyAction(state,'you',{type:'click'});game.advance(state,0.5);}
-    if(round<3)game.applyAction(state,'you',{type:'ready'});
-  }`);
+  await seed(`game.applyAction(state,'you',{type:'start'});for(let round=0;round<4;round++){game.advance(state,60);if(round<3)game.applyAction(state,'you',{type:'ready'});}state.players[0].highestOrb=10;state.players[0].orbsDestroyed=9;`);
   await waitFor(`${readSolo}?.phase === 'intermission'`);
   await click('[data-tab="skills"]');
   await selectResearch('lucky-photon');
@@ -415,7 +556,7 @@ try {
 
   if(!graphOnly){
   await seed(`game.applyAction(state,'you',{type:'start'});
-    for(let round=0;round<10;round++){
+    for(let round=0;round<40&&Object.keys(state.players[0].generators).length<5;round++){
       for(let second=0;second<60;second++){
         game.advance(state,1);
         for(const generator of [...game.GENERATORS].reverse()){
@@ -444,7 +585,7 @@ try {
   await capture('desktop-boss-orb');
   }
 
-  for (const [width, height] of [[390,844],[360,740]]) {
+  for (const [width, height] of includeMobile?[[390,844],[360,740]]:[]) {
     await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: true });
     await seed('');
     await fit(`Mobile ${width}px lobby`);
@@ -500,23 +641,25 @@ try {
   await click('#core', frameDoc(202));
   await waitFor(`${session(101)}?.players?.find(p=>p.id==='202')?.clicks >= 1 && ${session(202)}?.players?.find(p=>p.id==='202')?.clicks >= 1`);
   const separateOrbs = await evaluate(session(101));
-  assert.equal(separateOrbs.players.find(p=>p.id==='101').orb.hp, 12, 'Scoreboard host orb is untouched by another player');
-  assert.ok(separateOrbs.players.find(p=>p.id==='202').orb.hp < 12, 'Scoreboard follower damages only their own orb');
-  assert.equal(await evaluate(`${frameDoc(101)}.querySelector('#scoreboard-panel').hidden`), false, 'Scoreboard is visible in Scoreboard mode');
+  assert.equal(orbFor(separateOrbs,'101').hp,orbFor(separateOrbs,'101').maxHp, 'Scoreboard host orb is untouched by another player');
+  assert.ok(orbFor(separateOrbs,'202').hp < orbFor(separateOrbs,'202').maxHp, 'Scoreboard follower damages only their own orb');
+  await click('#scoreboard-toggle',frameDoc(101));
+  await waitFor(`${frameDoc(101)}.querySelector('#scoreboard-dialog').open`);
   await waitFor(`${frameDoc(101)}.querySelector('#scoreboard-list .scoreboard-row')?.dataset.playerId === '202'`);
+  await click('#scoreboard-close',frameDoc(101));
   assert.equal(await evaluate(`${frameDoc(101)}.querySelector('[data-mode="coop"]').disabled`), true, 'The session mode locks after the run begins');
   log('Two independent frames share rounds and authenticated clicks');
 
   // Advance a persisted snapshot through public game APIs, then reload the host.
   // The normal bridge must recover its epoch and synchronize the near-round-end state.
-  const sessionFixture = await evaluate(`(async () => {
+  const sessionFixture = await evaluate(`(() => {
     const frame=${frameWindow(101)};const storage=frame.sessionStorage;
     const key=Object.keys(storage).find(key=>key.startsWith('refract-idlers:session:')&&key.endsWith(':101'));
-    const state=JSON.parse(storage.getItem(key));const game=await import('../src/game.js');
-    game.advance(state,Math.max(0,state.remaining-0.4));
-    if(!game.validateState(state))throw Error('Invalid multiplayer fixture');
+    const state=JSON.parse(storage.getItem(key));
     return {key,state};
   })()`);
+  engine.advance(sessionFixture.state,Math.max(0,sessionFixture.state.remaining-0.4));
+  assert.equal(engine.validateState(sessionFixture.state),true,'Valid near-round-end multiplayer fixture');
   const { identifier: sessionScript } = await send('Page.addScriptToEvaluateOnNewDocument', {
     source: `sessionStorage.setItem(${JSON.stringify(sessionFixture.key)},${JSON.stringify(JSON.stringify(sessionFixture.state))});`,
   });
@@ -556,13 +699,28 @@ try {
   await waitFor(`${session(101)}?.mode === 'coop' && ${session(202)}?.mode === 'coop'`);
   await click('#round-action', frameDoc(101));
   await waitFor(`${session(202)}?.phase === 'round'`);
-  assert.equal(await evaluate(`${frameDoc(101)}.querySelector('#scoreboard-panel').hidden`), true, 'Co-op hides competitive rankings');
+  assert.equal(await evaluate(`${frameDoc(101)}.querySelector('#scoreboard-dialog').open`), false, 'Co-op keeps competitive rankings out of the playfield');
   assert.equal(await evaluate(`${frameDoc(101)}.querySelector('#coop-panel').hidden`), false, 'Co-op shows shared progress');
+  const fullCrewOrb=orbFor(await evaluate(session(101)),'101');
+  assert.equal(fullCrewOrb.crewSize,2,'The shared core counts two active humans');
+  assert.equal(fullCrewOrb.maxHp,fullCrewOrb.unscaledMaxHp*1.85,'Two pilots face a core with 85% more HP');
   await click('#core', frameDoc(202));
-  await waitFor(`${session(101)}?.sharedOrb?.hp < 12 && ${session(202)}?.sharedOrb?.hp < 12`);
+  await waitFor(`${session(101)}?.sharedOrb?.hp < ${fullCrewOrb.maxHp} && ${session(202)}?.sharedOrb?.hp < ${fullCrewOrb.maxHp}`);
   const firstSharedHit = (await evaluate(session(101))).sharedOrb;
   await click('#core', frameDoc(101));
-  await waitFor(`${session(202)}?.sharedOrb?.hp < ${firstSharedHit.hp} || ${session(202)}?.sharedOrb?.level > ${firstSharedHit.level}`);
+  await waitFor(`[${session(101)},${session(202)}].every(state=>state?.sharedOrb?.hp<${firstSharedHit.hp}||state?.sharedOrb?.level>${firstSharedHit.level})`);
+  const beforeJoinOrb=orbFor(await evaluate(session(101)),'101');
+  await click('#toggle-third');
+  await waitFor(`${session(101)}?.players?.length===3 && ${session(303)}?.players?.length===3`);
+  const afterJoinOrb=orbFor(await evaluate(session(101)),'101');
+  assert.equal(afterJoinOrb.crewSize,3,'A late join increases active co-op crew size');
+  assert.equal(afterJoinOrb.maxHp,afterJoinOrb.unscaledMaxHp*2.7,'A third pilot increases the core difficulty');
+  assert.ok(Math.abs(afterJoinOrb.hp/afterJoinOrb.maxHp-beforeJoinOrb.hp/beforeJoinOrb.maxHp)<1e-10,'Joining preserves the shared damage percentage');
+  await click('#toggle-third');
+  await waitFor(`${session(101)}?.players?.length===2 && ${session(202)}?.players?.length===2`);
+  const afterLeaveOrb=orbFor(await evaluate(session(101)),'101');
+  assert.equal(afterLeaveOrb.maxHp,beforeJoinOrb.maxHp,'Leaving rescales to the remaining crew');
+  assert.ok(Math.abs(afterLeaveOrb.hp/afterLeaveOrb.maxHp-beforeJoinOrb.hp/beforeJoinOrb.maxHp)<1e-10,'Leaving preserves the shared damage percentage');
   for(let i=0;i<80;i++) {
     if((await evaluate(session(101))).sharedLrc>=30)break;
     await click('#core',frameDoc(101));
@@ -611,9 +769,15 @@ try {
   log('Co-op prestige keeps the shared bank and the other pilot’s build');
   await click('[aria-label="Leave as Alex"]');
   await waitFor(`${session(202)}?.players?.length===1`);
-  assert.deepEqual((await evaluate(session(202))).sharedOrb,sharedAfterPrestige.sharedOrb,'Co-op host departure preserves shared orb damage and level');
+  const sharedAfterDeparture=await evaluate(session(202));
+  const departureOrb=orbFor(sharedAfterDeparture,'202');
+  const previousCrewOrb=orbFor(sharedAfterPrestige,'202');
+  assert.equal(departureOrb.level,previousCrewOrb.level,'Co-op host departure preserves the shared core level');
+  assert.ok(Math.abs(departureOrb.hp/departureOrb.maxHp-previousCrewOrb.hp/previousCrewOrb.maxHp)<1e-10,'Co-op host departure preserves the shared damage percentage');
   assert.equal((await evaluate(session(202))).sharedLrc,sharedAfterPrestige.sharedLrc,'Co-op host departure preserves the paused shared bank');
   log('Co-op host handover preserves shared HP and the bank');
+  await eightPlayerSidebars();
+  }
   }
   assert.deepEqual(errors, [], 'No browser runtime exceptions');
   console.log(`Refract Idlers ${graphOnly?'research graph':'browser'} acceptance passed.`);

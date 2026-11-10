@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="crispEdges" aria-labelledby="beam-title">
+  <title id="beam-title">Beam, Refract's little light, in pixels</title>
+  <!-- Original pixel adaptation of the Refract Beam mascot. See CREDITS.md. -->
+  <defs>
+    <g id="beam-head">
+      <path fill="#15243b" d="M17 8h5v3h5v6h7V8h4V2h5v5h4v11h4v5h3v17h-4v5H18v-4h-4V23h3z"/>
+      <path fill="#2576bf" d="M19 11h3v3h5v7h-8zm17 1h4V6h3v4h2v11h-9zM18 21h31v4h3v14h-4v4H20v-4h-4V25h2z"/>
+      <path fill="#6bebeb" d="M20 13h2v5h3v4h-6v-9zm20-1h3v10h-8v-7h5zM19 22h16v4H19zm25 0h5v4h-8v-4zM16 27h4v11h-4z"/>
+      <path fill="#b1f2ed" d="M40 8h2v11h-2zM20 13h2v6h-2zM22 22h10v2H22zM17 26h2v8h-2z"/>
+      <path fill="#a292dd" d="M45 13v9h4v5h-5V17h-2v-4zm4 15h3v9h-3zm-2 10h3v3h-6v2h-5v-3h8z"/>
+      <path fill="#234d96" d="M20 39h24v4H20zM18 25h4v13h-4zM46 26h4v12h-4z"/>
+      <path fill="#0e2038" d="M24 25h19v2h4v10h-3v4H23v-3h-3v-9h4z"/>
+      <path fill="#183149" d="M24 25h19v2H24zM20 29h2v8h-2zM24 39h18v2H24z"/>
+    </g>
+    <g id="beam-body">
+      <path fill="#15243b" d="M24 42h18v3h4v8h-5v4H25v-3h-5v-8h4z"/>
+      <path fill="#2b78b7" d="M25 44h16v3h3v5h-5v3H26v-3h-4v-5h3z"/>
+      <path fill="#68dfdf" d="M25 44h5v4h-4v4h-4v-5h3zm14 2h3v6h-4v3h-3v-4h4z"/>
+      <path fill="#a293d2" d="M39 43h3v4h2v3h-4v-3h-1zM25 52h4v3h-3z"/>
+      <path fill="#5c4147" d="M30 45h6v2h3v4h-3v3h-5v-3h-3v-4h2z"/>
+      <path fill="#e9aa58" d="M31 46h4v2h2v3h-3v2h-2v-2h-2v-3h1z"/>
+      <path fill="#ffdf89" d="M31 47h4v3h-4z"/>
+    </g>
+    <g id="beam-eyes">
+      <path fill="#fff0bf" d="M25 28h5v7h-5zM37 28h5v7h-5z"/>
+      <path fill="#fffbe6" d="M25 28h2v3h-2zM37 28h2v3h-2z"/>
+      <path fill="#c3a87c" d="M26 35h3v1h-3zM38 35h3v1h-3z"/>
+      <path fill="#edc783" d="M31 37h2v1h3v-1h2v2h-7z"/>
+    </g>
+    <g id="beam-eyes-cheer">
+      <path fill="#fff0bf" d="M25 29h5v2h2v3h-2v-2h-5v2h-2v-3h2zm12 0h5v2h2v3h-2v-2h-5v2h-2v-3h2zM30 36h8v3h-2v1h-4v-1h-2z"/>
+    </g>
+    <g id="beam-eyes-worried">
+      <path fill="#7bc5d2" d="M24 27h3v-2h3v2h-2v2h-4zm13-2h3v2h3v2h-4v-2h-2z"/>
+      <path fill="#fff0bf" d="M25 30h5v6h-5zm12 0h5v6h-5zM32 38h4v2h-4z"/>
+    </g>
+    <g id="beam-eyes-windy">
+      <path fill="#fff0bf" d="M24 29h3v2h4v3h-6v-2h-1zm13 2h4v-2h3v3h-1v2h-6zM31 37h5v-1h3v2h-3v1h-5z"/>
+    </g>
+    <g id="beam-eyes-blink">
+      <path fill="#efd89f" d="M24 32h7v2h-7zm12 0h7v2h-7zM31 37h2v1h3v-1h2v2h-7z"/>
+    </g>
+    <g id="beam-hand-left">
+      <path fill="#15243b" d="M7 30h5v3h2v7h-6v-2H5v-5h2z"/>
+      <path fill="#67dedc" d="M8 32h3v3h1v3H8v-2H7v-2h1z"/>
+      <path fill="#b7f3e9" d="M8 32h2v3H8z"/>
+    </g>
+    <g id="beam-hand-right">
+      <path fill="#15243b" d="M53 41h6v3h2v5h-3v2h-6v-7h1z"/>
+      <path fill="#489bc8" d="M54 43h4v3h1v2h-3v1h-2z"/>
+      <path fill="#91eee2" d="M54 43h3v3h-3z"/>
+    </g>
+    <g id="beam-feet">
+      <path fill="#15243b" d="M23 57h6v4h-2v2h-7v-4h3zm14 0h6v2h3v4h-7v-2h-2z"/>
+      <path fill="#57c8d4" d="M24 58h3v3h-5v-1h2zm15 0h3v2h2v1h-5z"/>
+      <path fill="#a4eee6" d="M24 58h3v1h-3zm15 0h3v1h-3z"/>
+    </g>
+    <g id="beam-shard">
+      <path fill="#15243b" d="M57 13h3v3h2v5h-3v3h-3v-4h-2v-4h3z"/>
+      <path fill="#a599df" d="M57 16h3v4h-3z"/>
+      <path fill="#a7ece9" d="M58 15h1v5h-1zm-2 2h2v2h-2z"/>
+    </g>
+    <g id="beam-chair">
+      <path fill="#23343b" d="M17 27h30v3h4v19h5v12H10V49h4V30h3z"/>
+      <path fill="#37666c" d="M18 29h28v3h3v17H16V32h2zM12 49h8v10h-8zm32 0h10v10H44z"/>
+      <path fill="#55969b" d="M18 29h28v2H18zM12 49h8v2h-8zm32 0h10v2H44z"/>
+      <path fill="#2b535c" d="M21 48h22v11H21z"/>
+      <path fill="#72513c" d="M14 61h5v3h-5zm33 0h5v3h-5z"/>
+    </g>
+    <g id="beam-boat">
+      <path fill="#322d31" d="M7 46h51v7h-3v5h-5v4H17v-3h-5v-5H9v-4H7z"/>
+      <path fill="#b1834f" d="M10 48h45v5h-3v4h-5v3H19v-3h-5v-4h-2v-3h-2z"/>
+      <path fill="#d0a268" d="M10 47h45v3H10z"/>
+      <path fill="#896242" d="M15 54h36v2H15zm5 4h27v2H20z"/>
+      <path fill="#3c7379" d="M17 44h32v3H17z"/>
+      <path fill="#efd29a" d="M13 48h10v1H13z"/>
+    </g>
+    <g id="beam-crown">
+      <path fill="#674448" d="M22 2h4v3h4V1h5v4h4V2h4v12H22z"/>
+      <path fill="#edb85f" d="M24 4h1v4h7V3h1v5h8V4h1v8H24z"/>
+      <path fill="#fff0b1" d="M24 10h18v2H24z"/>
+      <path fill="#e48065" d="M31 8h3v3h-3z"/>
+    </g>
+    <g id="beam-night">
+      <path fill="#e3cf9a" d="M6 11h6v2H8v6h4v2H6v-2H4v-6h2zM53 7h2v2h-2zm6 25h1v3h-1zM8 32h1v2H8z"/>
+    </g>
+    <g id="beam-sun">
+      <path fill="#e9b959" d="M7 12h4v4H7zM8 8h2v2H8zm0 10h2v2H8zM3 13h2v2H3zm10 0h2v2h-2z"/>
+    </g>
+    <g id="beam-wind">
+      <path fill="#8ca9b2" d="M1 20h10v1H1zm2 5h8v1H3zm47 4h12v1H50zm3 4h10v1H53z"/>
+    </g>
+    <g id="beam-floating">
+      <use href="#beam-body"/><use href="#beam-head"/><use href="#beam-eyes"/>
+      <use href="#beam-hand-left"/><use href="#beam-hand-right"/>
+      <use href="#beam-feet"/><use href="#beam-shard"/>
+    </g>
+  </defs>
+  <use href="#beam-floating"/>
+</svg>

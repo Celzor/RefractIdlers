@@ -119,7 +119,7 @@ export function orbAppearance(orb) {
   const hp = Number.isFinite(orb?.hp) ? Math.max(0, orb.hp) : 1;
   const maxHp = Number.isFinite(orb?.maxHp) && orb.maxHp > 0 ? orb.maxHp : Math.max(1, hp);
   const health = Math.min(1, hp / maxHp);
-  const damageTier = health > 0.75 ? 0 : health > 0.5 ? 1 : health > 0.25 ? 2 : 3;
+  const damageTier = health > 0.9 + 1e-10 ? 0 : health > 0.65 + 1e-10 ? 1 : health > 0.35 + 1e-10 ? 2 : 3;
   const boss = orb?.boss === true || orb?.isBoss === true;
   const theme = (level - 1) % ORB_THEMES.length;
   return { ...ORB_THEMES[theme], damageTier, boss, key: `${theme}:${damageTier}:${boss ? 1 : 0}` };

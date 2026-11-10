@@ -1,9 +1,9 @@
 /** Host-authoritative orbital economy. All elapsed time is in seconds. */
 import { SKILLS, SKILL_BRANCHES, RESEARCH_TOTAL_RANKS, RESEARCH_TOTAL_COST, MAX_SKILL_POINTS_PER_ROUND } from './skills.js';
 export { SKILLS, SKILL_BRANCHES, RESEARCH_TOTAL_RANKS, RESEARCH_TOTAL_COST, MAX_SKILL_POINTS_PER_ROUND };
-export const MAX_PLAYERS = 8, ROUND_DURATION = 60, PRESTIGE_THRESHOLD = 2500, ECONOMY_LIMIT = 1e150;
+export const MAX_PLAYERS = 8, ROUND_DURATION = 60, PRESTIGE_THRESHOLD = 2500, ECONOMY_LIMIT = 1e150, COMBAT_VERSION = 2;
 const LIMIT = ECONOMY_LIMIT, COUNT_LIMIT = Number.MAX_SAFE_INTEGER, MAX_LEVEL = 1e6;
-const HP_GROWTH = 1.18, REWARD_GROWTH = 1.14;
+const BASE_HP = 2000, BASE_REWARD = 300, HP_GROWTH = 1.18, REWARD_GROWTH = 1.14;
 const COLORS = ['#9a8cff','#58ddca','#ffb86c','#f080b8','#7eb8ff','#d7e889','#bc9cf7','#f5d589'];
 const record = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const bounded = (v,max=LIMIT) => Number.isFinite(v) && v >= 0 && v <= max;
@@ -15,9 +15,9 @@ const fail = (reason) => ({ok:false,reason});
 const rank = (p,id) => p.skills[id] || 0;
 const boss = (level) => level % 10 === 0;
 const power = (base,growth,exponent) => Math.min(LIMIT,base * growth ** exponent);
-const orbHp = (level) => power(12,HP_GROWTH,level-1);
-const baseReward = (level) => power(boss(level)?60:12,REWARD_GROWTH,level-1);
-const freshOrb = () => ({level:1,hp:12});
+const orbHp = (level,scale=1) => power(BASE_HP*scale,HP_GROWTH,level-1);
+const baseReward = (level,scale=1) => power(BASE_REWARD*(boss(level)?5:1)*scale,REWARD_GROWTH,level-1);
+const freshOrb = () => ({level:1,hp:BASE_HP});
 export const GENERATORS = Object.freeze([
   {id:'mote',name:'Auto clicker',kind:'auto',description:'Strikes the orb automatically every two seconds. Scales with your damage.',baseCost:25,baseRate:0,autoRate:0.5,icon:'✧'},
   {id:'satellite',name:'Refract orb farm',kind:'passive',description:'Grow luminous Refract orbs for 6 base LRC per second.',baseCost:140,baseRate:6,icon:'◎'},
@@ -29,32 +29,44 @@ const skillById = new Map(SKILLS.map(s=>[s.id,s]));
 const generatorById = new Map(GENERATORS.map(g=>[g.id,g]));
 
 export function createGame({seed=0x5eed,mode='scoreboard'}={}) {
-  return {version:1,mode:mode==='coop'?'coop':'scoreboard',sharedLrc:0,sharedOrb:freshOrb(),phase:'lobby',round:0,
+  return {version:1,combatVersion:COMBAT_VERSION,mode:mode==='coop'?'coop':'scoreboard',sharedLrc:0,sharedOrb:freshOrb(),phase:'lobby',round:0,
     roundDuration:60,remaining:60,now:0,players:[],teamLrc:0,goal:500,goalReached:false,lastRound:null,rng:seed>>>0};
 }
 function safeAvatar(value) {
   if(typeof value!=='string'||value.length>2048)return null;
   try{return ['https:','http:'].includes(new URL(value).protocol)?value:null;}catch{return null;}
 }
+export function getCoopDifficulty(state) {
+  const crewSize=state?.mode==='coop'?Math.max(1,state.players.filter(p=>!p.bot).length):1;
+  return {crewSize,crewScale:1+0.85*(crewSize-1)};
+}
+function resizeSharedOrb(state,previousMax) {
+  const nextMax=orbHp(state.sharedOrb.level,getCoopDifficulty(state).crewScale);
+  if(nextMax===previousMax)return;
+  state.sharedOrb.hp=Math.max(Number.MIN_VALUE,Math.min(nextMax,state.sharedOrb.hp/previousMax*nextMax));
+}
+function createPlayer(state,person) {
+  return {id:person.id,name:String(person.name||'Pilot').slice(0,40),avatarUrl:safeAvatar(person.avatarUrl),color:COLORS[state.players.length%8],bot:Boolean(person.bot),
+    lrc:0,runLrc:0,lifetimeLrc:0,roundLrc:0,clicks:0,roundClicks:0,autoClicks:0,autoClock:0,skillPoints:0,skills:{},generators:{},
+    prestigePoints:0,totalPrestige:0,prestigeCount:0,orb:freshOrb(),highestOrb:state.mode==='coop'?state.sharedOrb.level:1,orbsDestroyed:0,
+    completedRounds:0,combo:0,comboAt:0,ready:false,clickTokens:3,botClock:0};
+}
 export function addPlayer(state,person) {
   if(!record(person)||!text(person.id,100))return null;
   const existing=state.players.find(p=>p.id===person.id);if(existing)return existing;
   if(state.players.length>=8)return null;
-  const p={id:person.id,name:String(person.name||'Pilot').slice(0,40),avatarUrl:safeAvatar(person.avatarUrl),color:COLORS[state.players.length%8],bot:Boolean(person.bot),
-    lrc:0,runLrc:0,lifetimeLrc:0,roundLrc:0,clicks:0,roundClicks:0,autoClicks:0,autoClock:0,skillPoints:0,skills:{},generators:{},
-    prestigePoints:0,totalPrestige:0,prestigeCount:0,orb:freshOrb(),highestOrb:state.mode==='coop'?state.sharedOrb.level:1,orbsDestroyed:0,
-    completedRounds:0,combo:0,comboAt:0,ready:false,clickTokens:3,botClock:0};
-  state.players.push(p);return p;
+  const previousMax=orbHp(state.sharedOrb.level,getCoopDifficulty(state).crewScale),p=createPlayer(state,person);
+  state.players.push(p);resizeSharedOrb(state,previousMax);return p;
 }
 export function reconcilePlayers(state,people) {
   if(!Array.isArray(people))return;
   const unique=[];
   for(const person of people){if(record(person)&&text(person.id,100)&&!unique.some(p=>p.id===person.id))unique.push(person);if(unique.length===8)break;}
-  const previous=new Map(state.players.map(p=>[p.id,p]));state.players=[];
-  for(const person of unique){const p=previous.get(person.id)||addPlayer(state,person);if(!state.players.includes(p))state.players.push(p);
+  const previousMax=orbHp(state.sharedOrb.level,getCoopDifficulty(state).crewScale),previous=new Map(state.players.map(p=>[p.id,p]));state.players=[];
+  for(const person of unique){const p=previous.get(person.id)||createPlayer(state,person);state.players.push(p);
     p.name=String(person.name||'Pilot').slice(0,40);p.avatarUrl=safeAvatar(person.avatarUrl);p.bot=Boolean(person.bot);
     if(state.mode==='coop')p.highestOrb=Math.max(p.highestOrb,state.sharedOrb.level);}
-  if(state.phase==='intermission')maybeStartNextRound(state);
+  resizeSharedOrb(state,previousMax);if(state.phase==='intermission')maybeStartNextRound(state);
 }
 function effectsOf(p) {
   const e={};for(const [id,owned]of Object.entries(p.skills)){const s=skillById.get(id);if(!s||!owned)continue;
@@ -125,9 +137,11 @@ function earn(state,p,amount){
   if(state.mode==='coop')state.sharedLrc=cap(state.sharedLrc+amount);state.goalReached=state.teamLrc>=state.goal;return amount;
 }
 const orbState=(p,state)=>state.mode==='coop'?state.sharedOrb:p.orb;
-function rewardAt(level,s,automatic=false){return cap((baseReward(level)*(boss(level)?s.bossDropMultiplier:1)+s.dropFlat)*s.dropMultiplier*(automatic?s.autoDropMultiplier:1));}
+function rewardAt(level,s,automatic=false,scale=1){return cap((baseReward(level,scale)*(boss(level)?s.bossDropMultiplier:1)+s.dropFlat*scale)*s.dropMultiplier*(automatic?s.autoDropMultiplier:1));}
 export function getOrb(p,state){const orb=state.mode==='coop'?state.sharedOrb:p?.orb||freshOrb(),s=p?getStats(p,state):null;
-  return {...orb,maxHp:orbHp(orb.level),boss:boss(orb.level),resistance:boss(orb.level)?0.5:0,reward:s?rewardAt(orb.level,s):baseReward(orb.level)};}
+  const {crewSize,crewScale}=getCoopDifficulty(state),maxHp=orbHp(orb.level,crewScale),damageFraction=Math.max(0,Math.min(1,1-orb.hp/maxHp));
+  const fractureStage=[0.1,0.35,0.65].filter(threshold=>damageFraction+1e-12>=threshold).length;
+  return {...orb,maxHp,unscaledMaxHp:orbHp(orb.level),crewSize,crewScale,damageFraction,fractureStage,boss:boss(orb.level),resistance:boss(orb.level)?0.5:0,reward:s?rewardAt(orb.level,s,false,crewScale):baseReward(orb.level,crewScale)};}
 // Analytical geometric sums keep enormous attacks logarithmic in orb count.
 function geometricSum(base,exponent,length,step,growth){
   if(length<=0)return 0;const log=Math.log(growth),last=(Math.log(LIMIT)-Math.log(base))/log;
@@ -136,20 +150,20 @@ function geometricSum(base,exponent,length,step,growth){
   return (normal?initial*Math.expm1(normal*step*log)/Math.expm1(step*log):0)+(length-normal)*LIMIT;
 }
 function bossSeries(start,length,base,growth){const first=Math.ceil(start/10)*10,n=Math.max(0,Math.floor((start+length-1-first)/10)+1);return geometricSum(base,first-1,n,10,growth);}
-function hpCost(start,length,s){const bosses=bossSeries(start,length,12,HP_GROWTH);return Math.max(0,geometricSum(12,start-1,length,1,HP_GROWTH)-bosses+bosses*2/s.bossDamageMultiplier);}
-function rewardSum(start,length,s,automatic){const raw=geometricSum(12,start-1,length,1,REWARD_GROWTH)-bossSeries(start,length,12,REWARD_GROWTH)+bossSeries(start,length,60,REWARD_GROWTH)*s.bossDropMultiplier;
-  return cap((Math.max(0,raw)+length*s.dropFlat)*s.dropMultiplier*(automatic?s.autoDropMultiplier:1));}
+function hpCost(start,length,s,scale){const bosses=bossSeries(start,length,BASE_HP*scale,HP_GROWTH);return Math.max(0,geometricSum(BASE_HP*scale,start-1,length,1,HP_GROWTH)-bosses+bosses*2/s.bossDamageMultiplier);}
+function rewardSum(start,length,s,automatic,scale){const raw=geometricSum(BASE_REWARD*scale,start-1,length,1,REWARD_GROWTH)-bossSeries(start,length,BASE_REWARD*scale,REWARD_GROWTH)+bossSeries(start,length,BASE_REWARD*5*scale,REWARD_GROWTH)*s.bossDropMultiplier;
+  return cap((Math.max(0,raw)+length*s.dropFlat*scale)*s.dropMultiplier*(automatic?s.autoDropMultiplier:1));}
 function damageOrb(state,p,damage,s,automatic=false){
-  const orb=orbState(p,state);let budget=cap(damage),kills=0,reward=0;
+  const orb=orbState(p,state),scale=getCoopDifficulty(state).crewScale;let budget=cap(damage),kills=0,reward=0;
   const factor=boss(orb.level)?s.bossDamageMultiplier/2:1,firstCost=orb.hp/factor;
   if(budget<firstCost){orb.hp=Math.max(Number.MIN_VALUE,orb.hp-budget*factor);return {kills,amount:0};}
-  budget=Math.max(0,budget-firstCost);reward=rewardAt(orb.level,s,automatic);kills=1;orb.level=Math.min(MAX_LEVEL,orb.level+1);
+  budget=Math.max(0,budget-firstCost);reward=rewardAt(orb.level,s,automatic,scale);kills=1;orb.level=Math.min(MAX_LEVEL,orb.level+1);
   const maxFull=MAX_LEVEL-orb.level;let low=0,high=Math.min(maxFull,1);
-  while(high<maxFull&&hpCost(orb.level,high,s)<=budget)high=Math.min(maxFull,high*2);
-  while(low<high){const middle=Math.ceil((low+high)/2);if(hpCost(orb.level,middle,s)<=budget)low=middle;else high=middle-1;}
-  if(low){budget=Math.max(0,budget-hpCost(orb.level,low,s));reward=cap(reward+rewardSum(orb.level,low,s,automatic));orb.level+=low;kills+=low;}
-  const nextFactor=boss(orb.level)?s.bossDamageMultiplier/2:1,nextHp=orbHp(orb.level);
-  if(orb.level===MAX_LEVEL&&budget*nextFactor>=nextHp){const extra=Math.floor(budget/(nextHp/nextFactor));reward=cap(reward+extra*rewardAt(orb.level,s,automatic));kills+=extra;budget=Math.max(0,budget-extra*nextHp/nextFactor);}
+  while(high<maxFull&&hpCost(orb.level,high,s,scale)<=budget)high=Math.min(maxFull,high*2);
+  while(low<high){const middle=Math.ceil((low+high)/2);if(hpCost(orb.level,middle,s,scale)<=budget)low=middle;else high=middle-1;}
+  if(low){budget=Math.max(0,budget-hpCost(orb.level,low,s,scale));reward=cap(reward+rewardSum(orb.level,low,s,automatic,scale));orb.level+=low;kills+=low;}
+  const nextFactor=boss(orb.level)?s.bossDamageMultiplier/2:1,nextHp=orbHp(orb.level,scale);
+  if(orb.level===MAX_LEVEL&&budget*nextFactor>=nextHp){const extra=Math.floor(budget/(nextHp/nextFactor));reward=cap(reward+extra*rewardAt(orb.level,s,automatic,scale));kills+=extra;budget=Math.max(0,budget-extra*nextHp/nextFactor);}
   orb.hp=Math.max(Number.MIN_VALUE,Math.min(nextHp,nextHp-budget*nextFactor));p.orbsDestroyed=count(p.orbsDestroyed+kills);
   if(state.mode==='coop')for(const member of state.players)member.highestOrb=Math.max(member.highestOrb,orb.level);else p.highestOrb=Math.max(p.highestOrb,orb.level);
   return {kills,amount:earn(state,p,reward)};
@@ -167,7 +181,7 @@ function finishRound(state){
 export function applyAction(state,playerId,action){
   const p=state.players.find(p=>p.id===playerId);if(!p)return fail('This pilot is not in the activity.');if(!record(action)||typeof action.type!=='string')return fail('Invalid action.');
   if(Object.hasOwn(action,'round')&&(!integer(action.round,1e6)||action.round!==state.round))return fail('That action belongs to an earlier round. Resync and try again.');
-  if(action.type==='setMode'){if(state.phase!=='lobby')return fail('Choose a mode before the first round starts.');if(state.players[0]?.id!==playerId)return fail('Only the host can choose the session mode.');if(!['scoreboard','coop'].includes(action.mode))return fail('Unknown game mode.');state.mode=action.mode;return {ok:true};}
+  if(action.type==='setMode'){if(state.phase!=='lobby')return fail('Choose a mode before the first round starts.');if(state.players[0]?.id!==playerId)return fail('Only the host can choose the session mode.');if(!['scoreboard','coop'].includes(action.mode))return fail('Unknown game mode.');const previousMax=orbHp(state.sharedOrb.level,getCoopDifficulty(state).crewScale);state.mode=action.mode;resizeSharedOrb(state,previousMax);return {ok:true};}
   if(action.type==='start'){if(state.phase!=='lobby')return fail('The run has already started.');if(state.players[0]?.id!==playerId)return fail('Only the host can start the run.');startRound(state);return {ok:true};}
   if(action.type==='click'){
     if(state.phase!=='round')return fail('Harvesting resumes next round.');if(p.clickTokens<1)return fail('The core is recharging.');p.clickTokens--;
@@ -203,7 +217,7 @@ export function advance(state,dtSeconds){
       if(p.bot){p.botClock+=elapsed;const clicks=Math.min(3,Math.floor(p.botClock/0.8));p.botClock%=0.8;for(let i=0;i<clicks;i++)applyAction(state,p.id,{type:'click'});if(getBalance(p,state)>=generatorCost(p,'mote'))applyAction(state,p.id,{type:'buyGenerator',id:'mote'});}}
     state.now=cap(state.now+elapsed);state.remaining=Math.max(0,state.remaining-elapsed);if(state.remaining<1e-8)finishRound(state);pending=Math.max(0,pending-elapsed);}
 }
-function validOrb(orb){return record(orb)&&integer(orb.level,MAX_LEVEL)&&orb.level>=1&&bounded(orb.hp,orbHp(orb.level)*(1+1e-12))&&orb.hp>0;}
+function validOrb(orb,scale=1){return record(orb)&&integer(orb.level,MAX_LEVEL)&&orb.level>=1&&bounded(orb.hp,orbHp(orb.level,scale)*(1+1e-12))&&orb.hp>0;}
 function validPlayer(p){
   if(!record(p)||!text(p.id,100)||!text(p.name,40)||!/^#[\da-f]{6}$/i.test(p.color)||typeof p.bot!=='boolean'||typeof p.ready!=='boolean'
     ||!(p.avatarUrl===null||safeAvatar(p.avatarUrl)===p.avatarUrl)||!record(p.skills)||!record(p.generators)||!validOrb(p.orb))return false;
@@ -216,7 +230,7 @@ function validPlayer(p){
   for(const [id,value]of Object.entries(p.generators))if(!generatorById.has(id)||!integer(value,1000))return false;return true;
 }
 export function validateState(state){
-  if(!record(state)||state.version!==1||!['lobby','round','intermission'].includes(state.phase)||!['scoreboard','coop'].includes(state.mode)||!bounded(state.sharedLrc)||!validOrb(state.sharedOrb)
+  if(!record(state)||state.version!==1||state.combatVersion!==COMBAT_VERSION||!Array.isArray(state.players)||!state.players.every(record)||!['lobby','round','intermission'].includes(state.phase)||!['scoreboard','coop'].includes(state.mode)||!bounded(state.sharedLrc)||!validOrb(state.sharedOrb,getCoopDifficulty(state).crewScale)
     ||(state.mode==='scoreboard'&&state.sharedLrc!==0)||!integer(state.round,1e6)||state.roundDuration!==60||!bounded(state.remaining,60)||!bounded(state.now)||!bounded(state.teamLrc)||!bounded(state.goal)||state.goal<=0
     ||typeof state.goalReached!=='boolean'||state.goalReached!==(state.teamLrc>=state.goal)||!integer(state.rng,0xffffffff)||!Array.isArray(state.players)||state.players.length>8
     ||!state.players.every(validPlayer)||new Set(state.players.map(p=>p.id)).size!==state.players.length)return false;
@@ -228,10 +242,19 @@ export function validateState(state){
   try{return new TextEncoder().encode(JSON.stringify(state)).length<15000;}catch{return false;}
 }
 export function migrateState(saved){
-  if(!record(saved)||saved.version!==1)return null;try{const next=structuredClone(saved);
-    if(!Object.hasOwn(next,'mode'))next.mode='scoreboard';if(!Object.hasOwn(next,'sharedLrc'))next.sharedLrc=0;if(!Object.hasOwn(next,'sharedOrb'))next.sharedOrb=freshOrb();
-    if(Array.isArray(next.players))for(const p of next.players)if(record(p)){const defaults={autoClicks:0,autoClock:0,orb:freshOrb(),highestOrb:1,orbsDestroyed:0,completedRounds:Math.max(0,(next.round||0)-(next.phase==='round'?1:0)),combo:0,comboAt:0};
+  if(!record(saved)||saved.version!==1||Object.hasOwn(saved,'combatVersion')&&![1,COMBAT_VERSION].includes(saved.combatVersion))return null;try{const next=structuredClone(saved),legacy=next.combatVersion!==COMBAT_VERSION;
+    const defaultOrb=()=>legacy?{level:1,hp:12}:freshOrb();
+    if(!Object.hasOwn(next,'mode'))next.mode='scoreboard';if(!Object.hasOwn(next,'sharedLrc'))next.sharedLrc=0;
+    if(!Object.hasOwn(next,'sharedOrb'))next.sharedOrb=!legacy&&Array.isArray(next.players)&&next.players.every(record)?{level:1,hp:orbHp(1,getCoopDifficulty(next).crewScale)}:defaultOrb();
+    if(Array.isArray(next.players))for(const p of next.players)if(record(p)){const defaults={autoClicks:0,autoClock:0,orb:defaultOrb(),highestOrb:1,orbsDestroyed:0,completedRounds:Math.max(0,(next.round||0)-(next.phase==='round'?1:0)),combo:0,comboAt:0};
       for(const [key,value]of Object.entries(defaults))if(!Object.hasOwn(p,key))p[key]=value;}
+    if(legacy){
+      const convert=(orb,scale=1)=>{if(!record(orb)||!integer(orb.level,MAX_LEVEL)||orb.level<1)return false;
+        const oldMax=power(12,HP_GROWTH,orb.level-1);if(!bounded(orb.hp,oldMax*(1+1e-12))||orb.hp<=0)return false;
+        orb.hp=Math.max(Number.MIN_VALUE,Math.min(1,orb.hp/oldMax)*orbHp(orb.level,scale));return true;};
+      if(!Array.isArray(next.players)||!next.players.every(record)||!convert(next.sharedOrb,getCoopDifficulty(next).crewScale)||!next.players.every(p=>convert(p.orb)))return null;
+      next.combatVersion=COMBAT_VERSION;
+    }
     if(record(next.lastRound)&&Array.isArray(next.lastRound.players))for(const p of next.lastRound.players)if(record(p)&&!Object.hasOwn(p,'skillPoints'))p.skillPoints=next.lastRound.skillPoints;
     return validateState(next)?next:null;}catch{return null;}
 }

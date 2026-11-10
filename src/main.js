@@ -4,6 +4,7 @@ import { OrbitArena } from './arena.js';
 import { GameAudio } from './audio.js';
 import { generatorIcon, orbIcon, orbAppearanceKey } from './icons.js';
 import { initializeResearch, renderResearch } from './research.js';
+import { BeamCompanion } from './beam.js';
 
 const $ = (selector) => document.querySelector(selector);
 const fmt = (value, digits = 0) => value >= 1e15 ? value.toExponential(2).replace('+','') : new Intl.NumberFormat('en', { maximumFractionDigits:digits, ...(value >= 1e4 ? {notation:'compact',maximumFractionDigits:1} : {}) }).format(value || 0);
@@ -14,6 +15,7 @@ let soundEnabled = true;
 try { soundEnabled = localStorage.getItem('refract-idlers:sound') !== 'off'; } catch { /* preferences are optional */ }
 const audio = new GameAudio({enabled:soundEnabled});
 const arena = new OrbitArena($('#orbit-canvas'));
+const beam = new BeamCompanion($('#beam-companion'));
 let state = createGame();
 let selfId = 'you';
 let initialized = false;
@@ -201,7 +203,7 @@ function render(force = false) {
   const usable = initialized && synchronized && !!player;
   const stats = player ? getStats(player,state) : {clickPower:2,clickDamage:2,clickIncome:0,idleRate:1,autoDps:0};
   const observedPlayer = player || state.players[0];
-  const orb = observedPlayer ? getOrb(observedPlayer,state) : {level:1,hp:12,maxHp:12,reward:12,boss:false};
+  const orb = observedPlayer ? getOrb(observedPlayer,state) : {level:1,hp:2000,maxHp:2000,reward:300,boss:false,fractureStage:0,crewSize:1,crewScale:1};
   const coop = state.mode === 'coop';
   const teamStats = getTeamStats(state);
   const balance = player ? getBalance(player,state) : 0;
@@ -237,9 +239,12 @@ function render(force = false) {
   $('#round-label').textContent = !initialized ? 'CONNECTING TO THE ORBIT' : !synchronized ? 'SYNCING WITH THE CREW' : state.phase === 'lobby' ? 'READY TO REFRACT' : shopping ? `ROUND ${String(state.round).padStart(2,'0')} / BUILD PHASE` : `ROUND ${String(state.round).padStart(2,'0')} / HARVESTING`;
   $('#core').disabled = !usable || !playing;
   $('#core-label').textContent = playing ? `${fmt(stats.clickDamage,1)} BASE DAMAGE / HIT` : shopping ? 'CLOSED FOR UPGRADES' : 'THE REFRACT ORB';
-  $('#core-hint').textContent = playing ? 'BREAK THE ORB / PRESS SPACE' : shopping ? 'The machines are taking a break.' : 'Break the orb. Collect the light.';
+  $('#core-hint').textContent = playing ? 'CLICK / SPACE · CHIP AWAY AT THE SHELL' : shopping ? 'Beam has called a blueprint break.' : 'Stored light. Very stubborn packaging.';
   $('#orb-name').textContent = `${orb.boss ? 'BOSS' : coop ? 'SHARED ORB' : 'REFRACT ORB'} / ${String(orb.level).padStart(3,'0')}`;
   $('#orb-reward').textContent = `${orb.boss ? '50% armour · ' : ''}${fmt(orb.reward)} LRC drop`;
+  $('#shell-condition').textContent = ['SHELL INTACT','FIRST FRACTURE','SHELL SPLITTING','CORE EXPOSED'][orb.fractureStage || 0];
+  $('#core-difficulty').textContent = coop ? `${orb.crewSize} crew · ${fmt(orb.crewScale,2)}× toughness & drops` : orb.level === 1 ? '100 base hits to first crack' : 'Every shell holds more light';
+  $('#core').dataset.fracture = String(orb.fractureStage || 0);
   const healthPercent = Math.max(0,Math.min(100,orb.hp / orb.maxHp * 100));
   $('#orb-health-fill').style.width = `${healthPercent}%`;
   $('#orb-health').setAttribute('aria-valuenow',String(Math.round(healthPercent)));
@@ -248,7 +253,8 @@ function render(force = false) {
   $('.orb-meter').classList.toggle('boss',orb.boss);
   $('#core').classList.toggle('boss',orb.boss);
   $('#core').setAttribute('aria-label',`Damage ${orb.boss ? 'boss' : 'orb'} ${orb.level}. ${fmt(orb.hp)} health remaining.`);
-  $('#auto-damage').textContent = fmt(stats.autoDps,1);
+  $('#auto-damage').textContent = fmt(coop ? teamStats.autoDps : stats.autoDps,1);
+  $('#auto-damage').parentElement.title = coop ? 'Combined automatic damage from the whole crew.' : 'Automatic damage from your machines.';
   $('#click-income').textContent = fmt(stats.clickIncome,2);
   $('#orbs-broken').textContent = fmt(player?.orbsDestroyed);
   const imageKey = orbAppearanceKey(orb);
@@ -269,6 +275,8 @@ function render(force = false) {
   const action = $('#round-action');
   action.disabled = !usable || playing || (!shopping && !bridge.isHost);
   action.textContent = !synchronized ? 'Syncing…' : !player ? 'Spectating' : playing ? 'Orbit in progress' : shopping ? (player.ready ? `Unready · ${ready}/${humans.length}` : 'Ready for next round ↗') : bridge.isHost ? 'Begin round ↗' : 'Waiting for host';
+  $('#research-ready').disabled = action.disabled;
+  $('#research-ready').textContent = action.textContent;
   $('#round-description').textContent = shopping ? 'Your next round starts when everyone is ready.' : playing ? coop ? 'One orb. Every hit helps the crew.' : 'Break the orb. The next one is tougher.' : coop ? 'One orb. One pool. A whole crew of light.' : 'Your build. Your score. Your place in the orbit.';
   $('#round-subtitle').textContent = shopping ? `${ready} / ${humans.length} pilots ready · spend or save your skill points` : playing ? `${fmt(stats.idleRate,1)} LRC / sec ${coop ? 'from your upgrades into the crew pool.' : 'from your automated orbit.'}` : '60-second rounds. A new build after every orbit.';
   $('#round-summary').hidden = !shopping;
@@ -278,7 +286,9 @@ function render(force = false) {
   }
   $('#skill-phase-note').textContent = shopping ? 'The orbit is resting. Choose your upgrades, then ready up in The orbit.' : playing ? 'Your next build phase opens at the end of this round. Preview your path below.' : 'Finish your first round to earn skill points.';
   $('#save-status').textContent = !storageAvailable ? 'Storage unavailable · keep this tab open' : bridge?.mode === 'refract' ? 'Shared run · session saved' : 'Progress saved on this device';
-  $('#skill-reward-note').textContent = `2 SP per round, +1 for ${coop ? 'the shared' : 'your personal'} goal. Event horizon and research insight add more.`;
+  $('#save-status').title = $('#save-status').textContent;
+  const roundResult = state.lastRound?.players.find((entry) => entry.id === selfId);
+  $('#skill-reward-note').textContent = shopping ? `Round ${state.round} filed · +${roundResult?.skillPoints || 0} SP · ${fmt(coop ? state.lastRound?.teamLrc : roundResult?.lrc)} ${coop ? 'crew ' : ''}LRC. Spend, save, then ready up.` : '2 SP per round; goals and research add more. Beam has stamped the blueprints.';
   $('#generator-eyebrow').textContent = coop ? 'PAID FROM THE CREW POT' : 'MACHINES FOR SALE';
   $('#generator-description').textContent = coop ? 'Every machine feeds the same pot.' : 'A little less clicking. A lot more light.';
   $('#automation-note').innerHTML = coop ? 'Your machines feed the shared pool.<br><b>Personal prestige keeps the pool intact.</b>' : 'Machines work throughout each round.<br><b>They rest while you grow your skill tree.</b>';
@@ -305,6 +315,8 @@ function render(force = false) {
   $('#crew-count').textContent = `${state.players.length} / 8`;
   $('#crew-mode').textContent = bridge?.mode === 'refract' ? 'Shared Refract activity' : 'Invite your people through Refract';
   $('#scoreboard-panel').hidden = coop;
+  $('#scoreboard-toggle').hidden = coop;
+  if (coop && $('#scoreboard-dialog').open) $('#scoreboard-dialog').close();
   $('#coop-panel').hidden = !coop;
   $('#crew-panel').hidden = !coop;
   $('#coop-contribution').textContent = fmt(player?.roundLrc);
@@ -330,19 +342,23 @@ function render(force = false) {
     }
     previousVisualPlayer = {id:player.id,generators:{...player.generators},autoClicks:player.autoClicks || 0};
   }
+  beam.render(state,selfId);
 }
 
 function info(title,content) {
-  $('#dialog-content').innerHTML = `<p class="eyebrow">THE FACTORY HANDBOOK</p><h2>${title}</h2>${content}`;
+  $('#dialog-content').innerHTML = `<p class="eyebrow">BEAM’S HIGHLY SCIENTIFIC HANDBOOK</p><h2>${title}</h2>${content}`;
   if (!$('#info-dialog').open) $('#info-dialog').showModal();
 }
 function multiplayerInfo() {
-  info('Find your people.', '<p>Launch <b>Refract Idlers</b> from a Refract call. The host chooses one mode for everyone before the first round.</p><p><b>Scoreboard:</b> break your own increasingly tough orbs and climb the live ranking. It only includes pilots currently in this session. Spending credits and prestiging keep your earned score.</p><p><b>Co-op:</b> attack one shared orb. All drops and machine income feed one LRC pool, which everyone can spend. Research stays personal; shared-energy skills strengthen the crew.</p><p>Everyone readies up between rounds. If the host leaves, the next pilot takes over. Up to eight pilots play.</p><a class="primary-button" href="tools/preview.html">Open multiplayer lab ↗</a><p>For a real call, an instance admin must register your publicly hosted game URL under Manage instance → Activities.</p>');
+  info('Find your people.', '<p>Launch <b>Refract Idlers</b> from a Refract call. The host chooses one mode for everyone before the first round.</p><p><b>Scoreboard:</b> break your own increasingly tough orbs and climb the live ranking. It only includes pilots currently in this session. Spending credits and prestiging keep your earned score.</p><p><b>Co-op:</b> attack one shared orb. All drops and machine income feed one LRC pool, which everyone can spend. Research stays personal; shared-energy skills strengthen the crew. Each extra active player adds 85% core health and drops. Crew changes preserve the damage already done.</p><p>Everyone readies up between rounds. If the host leaves, the next pilot takes over. Up to eight pilots play.</p><a class="primary-button" href="tools/preview.html">Open multiplayer lab ↗</a><p>For a real call, an instance admin must register your publicly hosted game URL under Manage instance → Activities.</p>');
 }
-$('#help').addEventListener('click', () => info('Break a little light.', '<ol><li><b>Choose an orbit.</b> The host selects Scoreboard for personal orbs and live rankings, or Co-op for one shared orb and LRC pool.</li><li><b>Break orbs.</b> Click the orb, tap on touch, or press Space to damage it. Destroying it drops LRCs and reveals a stronger orb. Every tenth orb is a boss. The final 10 seconds boost damage.</li><li><b>Build the factory.</b> Auto clickers damage orbs. Farms, arrays and stars make LRCs. Refractometers amplify output. Use ×1, ×10 or Max; prices include every machine in the batch.</li><li><b>Research.</b> Complete 60-second rounds for skill points. Explore eight disciplines, follow prerequisite links, and unlock deeper tiers through orb, round and prestige milestones. Click-minting upgrades turn every hit into extra LRCs.</li><li><b>Prestige.</b> Your own run earnings grant permanent points. Spend them in the legacy workshop. Research, unused SP and lifetime records survive; your machines and run restart. In Co-op the shared orb and bank stay.</li></ol><p>Solo progress saves on this device. Shared runs belong to the Refract session. Production runs during harvesting rounds while the activity is open; there are no offline earnings.</p>'));
+$('#help').addEventListener('click', () => info('Welcome to the Light Works.', '<p><b>Beam, Chief Vibe Officer, reporting for duty.</b> The orbs are stored light in very stubborn shells. Beam supervises the paperwork, the vibes, and absolutely none of the heavy lifting.</p><ol><li><b>Choose your shift.</b> Your host picks Scoreboard (personal orbs and scores) or Co-op (one shared orb and wallet). Current crew only; spending never lowers your score.</li><li><b>Crack the shell.</b> Click or press Space. The first core has 2,000 HP: 100 ordinary, unupgraded hits reach its first crack. Every tenth core is armoured. Co-op adds 85% toughness and drops per extra crew member.</li><li><b>Put light to work.</b> Clickers chip shells; farms, arrays and stars earn LRCs; refractometers multiply production. Buy ×1, ×10 or Max. Click-minting research pays you for every hit.</li><li><b>Follow the blueprints.</b> Every 60-second round earns SP. Drag the connected tree, zoom, and select a node for its requirements. Research between rounds, then ready up. Everyone must be ready.</li><li><b>Refocus.</b> Trade your own run earnings for permanent prestige points. Each earned point adds 10% production. Keep research, SP and records; rebuild your machines. The Co-op pool and core survive.</li><li><b>Say hello to Beam.</b> Poke his portrait for a greeting. His little desk reacts to discoveries, bosses and breaks. The crown is earned through enthusiasm. It has no statistical value.</li></ol><p>Solo progress saves here; shared runs belong to the Refract session. Production runs during active rounds while the game is open. No offline earnings. Beam insists breaks are breaks.</p><p class="handbook-links"><a href="CREDITS.md" target="_blank" rel="noopener">Credits &amp; source</a><span>Refract Idlers v0.3</span></p>'));
 $('#multiplayer').addEventListener('click', multiplayerInfo);
+$('#scoreboard-toggle').addEventListener('click', () => $('#scoreboard-dialog').showModal());
+$('#scoreboard-close').addEventListener('click', () => $('#scoreboard-dialog').close());
+$('#scoreboard-dialog').addEventListener('click', (event) => { if (event.target === event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.currentTarget.close(); } });
 $('#crew').addEventListener('click', (event) => { if (event.target.closest('#invite-crew')) multiplayerInfo(); });
-$('.dialog-close').addEventListener('click', () => $('#info-dialog').close());
+$('#info-dialog .dialog-close').addEventListener('click', () => $('#info-dialog').close());
 $('#info-dialog').addEventListener('click', (event) => { if (event.target === $('#info-dialog')) { const rect = event.target.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.target.close(); } });
 function syncSoundButton() {
   $('#sound').setAttribute('aria-pressed',String(audio.enabled));
@@ -362,9 +378,10 @@ for (const button of document.querySelectorAll('[data-mode]')) button.addEventLi
 for (const button of document.querySelectorAll('.back-orbit')) button.addEventListener('click', () => showTab('orbit'));
 $('#core').addEventListener('click', () => send({type:'click'}));
 $('#round-action').addEventListener('click', () => send({type:state.phase === 'lobby' ? 'start' : 'ready'}));
+$('#research-ready').addEventListener('click', () => send({type:state.phase === 'lobby' ? 'start' : 'ready'}));
 $('#lobby-start').addEventListener('click', () => send({type:'start'}));
 document.addEventListener('keydown', (event) => {
-  if (event.code !== 'Space' || event.repeat || $('#info-dialog').open || /INPUT|TEXTAREA|SELECT|BUTTON|A/.test(event.target.tagName) || event.target.isContentEditable || tab !== 'orbit' || $('#core').disabled) return;
+  if (event.code !== 'Space' || event.repeat || document.querySelector('dialog[open]') || /INPUT|TEXTAREA|SELECT|BUTTON|A/.test(event.target.tagName) || event.target.isContentEditable || tab !== 'orbit' || $('#core').disabled) return;
   event.preventDefault(); send({type:'click'});
 });
 for (const button of document.querySelectorAll('[data-buy-quantity]')) button.addEventListener('click', () => {

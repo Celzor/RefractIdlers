@@ -16,7 +16,7 @@ The host chooses one mode in the initial lobby. It stays fixed for that session.
 | Round bonus | Reach a personal income milestone | Everyone benefits when the shared milestone is reached |
 | Ranking | Currently active pilots only | Shared progress and individual contribution attribution |
 
-Up to eight pilots are active. Additional participants spectate. Departed pilots leave the live ranking and stop producing; their already-earned co-op LRCs remain in the bank, and shared orb damage remains. The engine supports bots for tests, but there is no bot toggle in the interface.
+Up to eight pilots are active. Additional participants spectate. Departed pilots leave the live ranking and stop producing; their already-earned co-op LRCs remain in the bank, and the shared orb's damaged percentage remains. The engine supports bots for tests, but there is no bot toggle in the interface.
 
 ## The 60-second loop
 
@@ -36,14 +36,28 @@ Scoreboard uses that personal amount. Co-op multiplies it by the number of pilot
 
 ## Destructible orbs
 
-An unmodified manual click deals **2 damage** and separately mints **0.25 LRC**. The first orb has **12 HP** and pays **12 LRC** when destroyed. A new orb appears immediately. Excess damage carries into subsequent orbs.
+An unmodified manual click deals **2 damage** and separately mints **0.25 LRC**. The first personal core has **2,000 HP** and pays **300 LRC** when destroyed. A new, stronger core appears immediately. Excess damage carries into subsequent cores.
+
+The first visible shell fracture appears at **10% damage**, requiring **100 ordinary unmodified hits** against the first personal core. Later crack stages appear at **35% and 65% damage**. The shell is the visual outer surface of the same health pool; reaching a crack stage does not destroy the core or pay a separate reward. Critical hits, surge, research and automation accelerate the work. Baseline production and manual minting continue to fund the first machines while the durable shell is chipped away.
 
 ```text
-maximum HP at level n = 12 × 1.18^(n − 1)
-base destruction reward = 12 × 1.14^(n − 1)
+unscaled maximum HP at level n = 2,000 × 1.18^(n − 1)
+unscaled destruction reward = 300 × 1.14^(n − 1)
 ```
 
 Every tenth orb is a boss. Bosses have **50% damage resistance** and **five times the base reward**. Maximum HP follows the same increasing curve, so orb 11 still has more HP than orb 10. Bossbreaker and related research improve damage against the resistance; boss-reward research improves the boss drop. HP and rewards eventually saturate at the documented finite economy ceiling.
+
+Scoreboard always uses the personal curve, regardless of how many other pilots are present. Co-op multiplies maximum HP and destruction rewards by:
+
+```text
+crew scale = 1 + 0.85 × (max(1, active human pilots) − 1)
+```
+
+Two humans face 1.85× HP and receive 1.85× destruction rewards; eight face 6.95× HP and rewards. Equal participation therefore gives a modest time benefit while maintaining reward value per damage. The multiplier also applies to flat drop research. Spectators and internal practice bots do not raise difficulty. Continuous production, manual minting, personal research prices and the prestige formula do not receive this difficulty multiplier.
+
+Joining, leaving and host handover preserve **remaining HP as a fraction of maximum HP**, then apply the new crew scale. For example, a half-damaged 3,700-HP core becomes a half-damaged 5,400-HP core when a third human joins. It remains at the same level; no kill or payout occurs. Reordering the same roster preserves HP exactly. Personal cores are never resized. The same rule holds when the last human leaves and when a crew returns, and near the finite HP ceiling.
+
+`getOrb` exposes `crewSize`, `crewScale`, `unscaledMaxHp`, `damageFraction` and `fractureStage` alongside the current HP, level, reward and boss fields. `getCoopDifficulty` provides the crew fields independently. Crack stages use the normalized damage fraction, so roster changes do not erase or create visible cracks.
 
 Manual hits have a base 5% critical chance and a 3× critical damage multiplier. Research adds critical chance, critical multiplier, a chance of an extra hit, and combo damage. Critical chance is capped at 80%; extra-hit chance is capped at 90%. A successful bonus-hit roll adds a second hit to the same input. Holding a key does not create repeated input in the UI, and the host's token bucket allows 15 accepted manual inputs per second with a burst of three.
 
@@ -162,10 +176,12 @@ Refract supplies authenticated participants and a relay. The first participant c
 
 Standalone saves are device-local. Shared snapshots use browser session storage. There is no account-backed save, cross-device progression, global ranking, or offline catch-up. Closing every participating session can end that shared run. Research is permanent within retained progression, not independent of browser storage.
 
-The engine migrates older saves by adding missing orb/counter fields and preserves already-earned legacy ranks even if new research prerequisites are higher. Future purchases enforce the new gates. Existing partial orb health is preserved exactly. The original nine skill IDs remain stable; compact IDs for newer nodes keep large multiplayer snapshots within the relay envelope. Readable catalog keys and names remain available for UI and audits.
+The engine migrates older saves by adding missing orb/counter fields and preserves already-earned legacy ranks even if new research prerequisites are higher. Future purchases enforce the new gates. New saves and snapshots require `combatVersion: 2` while retaining overall state `version: 1`. Legacy saves with no combat version or combat version 1 convert the old 12-HP curve to the 2,000-HP curve **by remaining-health fraction**; shared cores also receive the current human-crew scale. A legacy core at 25% health stays at 25% health. Current-version saves preserve partial HP exactly, and unsupported future combat versions or invalid old HP are rejected. Migration clones the input and never grants money, kills, levels, research or prestige.
+
+The original nine skill IDs remain stable; compact IDs for newer nodes keep large multiplayer snapshots within the relay envelope. Readable catalog keys and names remain available for UI and audits.
 
 - Monetary values and damage are finite and capped at `10^150`; integer counters use the safe-integer ceiling.
 - Machines cap at 1,000 of each kind. Orb level has a finite implementation limit of one million; saturated HP/rewards remain finite.
 - Snapshots must remain below 15,000 UTF-8 bytes, leaving room for the 16 KiB relay envelope. Avatar URLs are supplied separately from the roster. Tests cover eight fully ranked builds with long IDs and Unicode names.
 - Validation covers malformed numbers, catalog ranks, duplicate IDs, phase fields, orb HP, and payload size. Save migration is never used to accept network state.
-- Automated checks include 250 independent combat-oracle cases, atomic bulk purchases, mode isolation, pooled state retention, research gates/effects, reward caps, multi-day cost bounds, migration, persistence, and host handover.
+- Automated checks include 250 independent combat-oracle cases across personal and scaled co-op cores, the 100-hit first-fracture threshold, roster changes and legacy health-fraction migration, atomic bulk purchases, mode isolation, pooled state retention, research gates/effects, reward caps, multi-day cost bounds, persistence, and host handover.

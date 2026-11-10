@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, addPlayer, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, getOrb, generatorCost, generatorQuote, skillCost, skillAvailability, prestigeGain, prestigeNextThreshold, validateState, migrateState, SKILLS, SKILL_BRANCHES, RESEARCH_TOTAL_COST, RESEARCH_TOTAL_RANKS, MAX_SKILL_POINTS_PER_ROUND, ECONOMY_LIMIT } from '../src/game.js';
+import { createGame, addPlayer, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, getOrb, getCoopDifficulty, generatorCost, generatorQuote, skillCost, skillAvailability, prestigeGain, prestigeNextThreshold, validateState, migrateState, SKILLS, SKILL_BRANCHES, RESEARCH_TOTAL_COST, RESEARCH_TOTAL_RANKS, MAX_SKILL_POINTS_PER_ROUND, ECONOMY_LIMIT, COMBAT_VERSION } from '../src/game.js';
 const idOf = (key) => SKILLS.find((skill) => skill.key === key).id;
 
 function setup(count = 1) {
@@ -29,7 +29,7 @@ test('clicks earn LRC and a host-owned token bucket limits input spam', () => {
   for (let i = 0; i < 3; i++) assert.equal(applyAction(state, player.id, { type: 'click' }).ok, true);
   const earned = player.lrc;
   assert.ok(earned >= 0.75);
-  assert.ok(getOrb(player, state).hp < 12);
+  assert.ok(getOrb(player, state).hp < getOrb(player, state).maxHp);
   assert.equal(applyAction(state, player.id, { type: 'click' }).ok, false);
   assert.equal(player.lrc, earned);
   advance(state, 0.1);
@@ -429,7 +429,7 @@ test('auto clickers fire real pulses that scale with click upgrades and do not r
   assert.equal(player.autoClock, 0.5);
   advance(state, 1);
   assert.equal(player.lrc, 2);
-  assert.equal(getOrb(player, state).hp, 6);
+  assert.equal(getOrb(player, state).hp, 1994);
   assert.equal(player.autoClicks, 1);
   assert.equal(player.autoClock, 0);
   assert.equal(player.clicks, 0);
@@ -445,8 +445,9 @@ test('automatic harvesting is independent of the manual click limiter', () => {
   player.generators.mote = 40;
   advance(state, 1);
   assert.equal(player.autoClicks, 20);
-  assert.ok(player.lrc > 1);
-  assert.ok(player.orbsDestroyed > 0);
+  assert.equal(player.lrc, 1);
+  assert.equal(getOrb(player, state).hp, 1960);
+  assert.equal(player.orbsDestroyed, 0);
   assert.equal(player.clickTokens, 3);
   assert.equal(player.clicks, 0);
 });
@@ -459,8 +460,9 @@ test('automatic pulses respect the surge boundary during long timer catch-up', (
   advance(split, 50); advance(split, 10);
   assert.deepEqual(long, split);
   assert.equal(long.players[0].autoClicks, 30);
-  assert.ok(long.players[0].lrc > 60, 'Baseline income plus orb destruction rewards');
-  assert.equal(long.players[0].orbsDestroyed, 4);
+  assert.equal(long.players[0].lrc, 60, 'Income continues while automatic strikes chip the tough shell');
+  assert.equal(long.players[0].orbsDestroyed, 0);
+  assert.equal(getOrb(long.players[0], long).hp, 1930, '25 normal and 5 surge strikes deal 70 total damage');
   assert.equal(long.phase, 'intermission');
 });
 
@@ -478,7 +480,7 @@ test('refractometers multiply manual clicks, passive production, and automatic p
   advance(state, 2);
   assert.equal(a.autoClicks, 1);
   assert.equal(a.lrc, 16.8);
-  assert.equal(getOrb(a, state).hp, 9.6);
+  assert.equal(getOrb(a, state).hp, 1997.6);
   assert.equal(b.lrc, 2);
 });
 
@@ -518,15 +520,14 @@ test('orb damage is private in scoreboard and shared in co-op; destroyed orbs pa
     const result = applyAction(state, a.id, { type: 'click' });
     assert.equal(result.damage, 2);
     assert.equal(result.amount, 0.25);
-    assert.equal(getOrb(a, state).hp, 10);
-    assert.equal(getOrb(b, state).hp, mode === 'coop' ? 10 : 12);
-    let reward = 0;
-    for (let i = 0; i < 20 && getOrb(a, state).level === 1; i++) {
-      advance(state, 0.1);
-      const hit = applyAction(state, a.id, { type: 'click' });
-      if (hit.kills) reward = hit.amount;
-    }
-    assert.ok(reward >= before.reward);
+    assert.equal(getOrb(a, state).hp, before.maxHp - 2);
+    assert.equal(getOrb(b, state).hp, mode === 'coop' ? before.maxHp - 2 : 2000);
+    // Finish a nearly depleted core, keeping payout/spillover independent of click spam.
+    const core = mode === 'coop' ? state.sharedOrb : a.orb;
+    core.hp = 1;
+    const finishingHit = applyAction(state, a.id, { type: 'click' });
+    assert.equal(finishingHit.kills, 1);
+    assert.equal(finishingHit.amount, before.reward + 0.25);
     assert.equal(a.orbsDestroyed, 1);
     assert.ok(getOrb(a, state).maxHp > before.maxHp);
     assert.ok(a.highestOrb >= 2);
@@ -549,30 +550,35 @@ test('orb maximum HP is strictly increasing across every boss boundary before th
 
 test('analytical multi-orb combat matches an iterative oracle for partial, boss and high-value attacks', () => {
   for (let trial = 0; trial < 250; trial++) {
-    const state = createGame({ seed: 0 });
-    const player = addPlayer(state, { id: 'p', name: 'Pilot' }); start(state);
+    const state = createGame({ seed: 0, mode: trial % 2 ? 'coop' : 'scoreboard' });
+    const player = addPlayer(state, { id: 'p', name: 'Pilot' });
+    const crewSize = 1 + trial % 8;
+    for (let i = 1; i < crewSize; i++) addPlayer(state, { id: `crew-${i}`, name: 'Crew' });
+    start(state);
+    const scale = state.mode === 'coop' ? 1 + 0.85 * (crewSize - 1) : 1;
     const level = 1 + trial % 200;
-    player.orb = { level, hp: 12 * 1.18 ** (level - 1) * (0.2 + (trial % 7) / 10) };
+    const core = { level, hp: 2000 * scale * 1.18 ** (level - 1) * (0.2 + (trial % 7) / 10) };
+    if (state.mode === 'coop') state.sharedOrb = core; else player.orb = core;
     player.highestOrb = level; player.totalPrestige = 10 ** (trial % 14); player.generators.star = trial % 1000;
     if (trial % 3 === 0) player.skills[idOf('bossbreaker')] = 4;
     if (trial % 4 === 0) player.skills[idOf('prism-bounty')] = 3;
     if (trial % 5 === 0) player.skills[idOf('royal-spectrum')] = 2;
     if (trial % 7 === 0) player.skills[idOf('chip-fracture')] = 2;
     const stats = getStats(player, state);
-    let budget = stats.clickDamage, nextLevel = level, nextHp = player.orb.hp, reward = 0, kills = 0;
+    let budget = stats.clickDamage, nextLevel = level, nextHp = core.hp, reward = 0, kills = 0;
     while (kills < 10000) {
       const boss = nextLevel % 10 === 0, factor = boss ? stats.bossDamageMultiplier / 2 : 1;
       const cost = nextHp / factor;
       if (budget < cost) { nextHp -= budget * factor; break; }
       budget -= cost;
-      reward += ((boss ? 60 : 12) * 1.14 ** (nextLevel - 1) * (boss ? stats.bossDropMultiplier : 1) + stats.dropFlat) * stats.dropMultiplier;
-      kills++; nextLevel++; nextHp = 12 * 1.18 ** (nextLevel - 1);
+      reward += ((boss ? 1500 : 300) * 1.14 ** (nextLevel - 1) * (boss ? stats.bossDropMultiplier : 1) + stats.dropFlat) * scale * stats.dropMultiplier;
+      kills++; nextLevel++; nextHp = 2000 * scale * 1.18 ** (nextLevel - 1);
     }
     const result = applyAction(state, player.id, { type: 'click' });
     assert.equal(result.critical, false);
     assert.equal(result.kills, kills);
-    assert.equal(player.orb.level, nextLevel);
-    assert.ok(Math.abs(player.orb.hp - nextHp) / Math.max(1, nextHp) < 1e-10);
+    assert.equal(core.level, nextLevel);
+    assert.ok(Math.abs(core.hp - nextHp) / Math.max(1, nextHp) < 1e-10);
     assert.ok(Math.abs(result.amount - stats.clickIncome - reward) / Math.max(1, reward) < 1e-10);
     assert.equal(validateState(state), true);
   }
@@ -656,7 +662,7 @@ test('prestige preserves all research, unspent SP, lifetime records, and the co-
     const best = player.highestOrb, kills = player.orbsDestroyed, rounds = player.completedRounds;
     assert.equal(applyAction(state, player.id, { type: 'prestige' }).ok, true);
     assert.deepEqual(player.skills, skills); assert.equal(player.skillPoints, points);
-    assert.deepEqual(player.orb, { level: 1, hp: 12 }); assert.deepEqual(player.generators, {});
+    assert.deepEqual(player.orb, { level: 1, hp: 2000 }); assert.deepEqual(player.generators, {});
     assert.equal(player.highestOrb, best); assert.equal(player.orbsDestroyed, kills); assert.equal(player.completedRounds, rounds);
     assert.equal(state.sharedLrc, pool); assert.deepEqual(state.sharedOrb, shared);
   }
@@ -714,4 +720,127 @@ test('logarithmic prestige has exact thresholds and stays bounded across the fin
   const impossibleUpperBound = prestigeGain(player) * 10000;
   assert.ok(impossibleUpperBound < 5e6);
   assert.ok(impossibleUpperBound < Number.MAX_SAFE_INTEGER / 1e6);
+});
+
+test('the first shell needs 100 ordinary hits for its first fracture and pays 300 LRC on destruction', () => {
+  const state = setup(); start(state); const player = state.players[0];
+  assert.equal(COMBAT_VERSION, 2); assert.equal(state.combatVersion, 2);
+  assert.equal(getOrb(player, state).maxHp, 2000);
+  assert.equal(getOrb(player, state).reward, 300);
+  for (let hit = 1; hit <= 100; hit++) {
+    state.rng = 0; // The first draw from this seed is noncritical; test ordinary damage exactly.
+    const result = applyAction(state, player.id, { type: 'click' });
+    assert.equal(result.damage, 2); assert.equal(result.kills, 0); assert.equal(result.amount, 0.25);
+    assert.equal(getOrb(player, state).fractureStage, hit < 100 ? 0 : 1);
+    advance(state, 0.1);
+  }
+  assert.equal(player.orb.hp, 1800);
+  assert.ok(Math.abs(getOrb(player, state).damageFraction - 0.1) < 1e-12);
+  for (const [hp, stage] of [[1301, 1], [1300, 2], [701, 2], [700, 3]]) {
+    player.orb.hp = hp; assert.equal(getOrb(player, state).fractureStage, stage);
+  }
+  player.orb.hp = 2; state.rng = 0;
+  const finish = applyAction(state, player.id, { type: 'click' });
+  assert.equal(finish.kills, 1); assert.equal(finish.amount, 300.25);
+  assert.deepEqual(player.orb, { level: 2, hp: 2360 });
+  assert.equal(getOrb(player, state).fractureStage, 0);
+  assert.equal(validateState(state), true);
+});
+
+test('co-op difficulty and drops scale with active humans while personal cores and practice bots stay independent', () => {
+  const state = createGame({ mode: 'coop' });
+  for (let size = 1; size <= 8; size++) {
+    const player = addPlayer(state, { id: `crew-${size}`, name: `Crew ${size}` });
+    const orb = getOrb(player, state), expected = 1 + 0.85 * (size - 1);
+    assert.deepEqual(getCoopDifficulty(state), { crewSize: size, crewScale: expected });
+    assert.equal(orb.unscaledMaxHp, 2000); assert.equal(orb.maxHp, 2000 * expected);
+    assert.equal(orb.hp, orb.maxHp); assert.equal(orb.reward, 300 * expected);
+    assert.equal(player.orb.hp, 2000);
+    assert.ok(expected / size <= 1 && expected / size > 0.85, 'Equal participation provides a modest co-op time benefit');
+    assert.equal(validateState(state), true);
+  }
+  const before = structuredClone(state);
+  assert.equal(addPlayer(state, { id: 'spectator', name: 'Spectator' }), null);
+  assert.deepEqual(state, before);
+  const practice = createGame({ mode: 'coop' });
+  const human = addPlayer(practice, { id: 'human', name: 'Human' });
+  addPlayer(practice, { id: 'practice', name: 'Practice', bot: true });
+  assert.equal(getOrb(human, practice).maxHp, 2000);
+  const personal = setup(8);
+  for (const player of personal.players) assert.equal(getOrb(player, personal).maxHp, 2000);
+});
+
+test('co-op joins, departures, host handover and rejoin preserve damage fraction without payouts', () => {
+  const state = createGame({ mode: 'coop' });
+  const first = addPlayer(state, { id: 'a', name: 'First' });
+  addPlayer(state, { id: 'b', name: 'Second' }); start(state);
+  applyAction(state, first.id, { type: 'click' });
+  const fraction = getOrb(first, state).hp / getOrb(first, state).maxHp, pool = state.sharedLrc;
+  const check = () => {
+    const orb = getOrb(state.players[0], state);
+    assert.ok(Math.abs(orb.hp / orb.maxHp - fraction) < 1e-12);
+    assert.equal(orb.level, 1); assert.equal(state.sharedLrc, pool);
+    assert.equal(validateState(state), true);
+  };
+  addPlayer(state, { id: 'c', name: 'Third' }); check();
+  assert.equal(state.sharedOrb.hp, fraction * 5400);
+  const exact = state.sharedOrb.hp;
+  reconcilePlayers(state, [{ id: 'b', name: 'Second' }, { id: 'a', name: 'First' }, { id: 'c', name: 'Third' }]);
+  assert.equal(state.players[0].id, 'b'); assert.equal(state.sharedOrb.hp, exact); check();
+  reconcilePlayers(state, [{ id: 'b', name: 'Second' }]); check();
+  assert.equal(getOrb(state.players[0], state).maxHp, 2000);
+  reconcilePlayers(state, []); check();
+  reconcilePlayers(state, [{ id: 'b', name: 'Returned' }, { id: 'a', name: 'Returned host' }]); check();
+  assert.equal(getOrb(state.players[0], state).maxHp, 3700);
+  assert.equal(state.players[0].orbsDestroyed, 0);
+  assert.equal(state.players[1].orbsDestroyed, 0);
+});
+
+test('scoreboard roster changes preserve exact personal HP and lobby mode switches resize only shared HP', () => {
+  const state = setup(2), player = state.players[1];
+  state.sharedOrb.hp = 1500;
+  applyAction(state, 'pilot-0', { type: 'setMode', mode: 'coop' });
+  assert.equal(state.sharedOrb.hp, 2775);
+  applyAction(state, 'pilot-0', { type: 'setMode', mode: 'scoreboard' });
+  assert.equal(state.sharedOrb.hp, 1500);
+  start(state); applyAction(state, player.id, { type: 'click' });
+  const orb = structuredClone(player.orb);
+  reconcilePlayers(state, [{ id: player.id, name: player.name }, { id: 'new', name: 'New' }]);
+  assert.deepEqual(player.orb, orb);
+  assert.equal(getOrb(player, state).crewScale, 1);
+  assert.equal(validateState(state), true);
+});
+
+test('combat migration retains legacy damage fractions, rejects corrupt cores and preserves new saves exactly', () => {
+  for (const mode of ['scoreboard', 'coop']) {
+    const state = setup(3); applyAction(state, 'pilot-0', { type: 'setMode', mode }); start(state);
+    const legacy = structuredClone(state); delete legacy.combatVersion;
+    legacy.sharedOrb = { level: 10, hp: 12 * 1.18 ** 9 * 0.4 };
+    for (const player of legacy.players) { player.orb = { level: 20, hp: 12 * 1.18 ** 19 * 0.75 }; player.highestOrb = 20; }
+    const original = structuredClone(legacy), migrated = migrateState(legacy);
+    assert.ok(migrated); assert.equal(migrated.combatVersion, 2);
+    const scale = mode === 'coop' ? 2.7 : 1;
+    assert.ok(Math.abs(migrated.sharedOrb.hp / (2000 * scale * 1.18 ** 9) - 0.4) < 1e-12);
+    for (const player of migrated.players) assert.ok(Math.abs(player.orb.hp / (2000 * 1.18 ** 19) - 0.75) < 1e-12);
+    assert.equal(validateState(legacy), false, 'Legacy network snapshots cannot bypass combat migration');
+    assert.equal(validateState(migrated), true); assert.deepEqual(legacy, original);
+    assert.deepEqual(migrateState(migrated), migrated);
+    const corrupt = structuredClone(legacy); corrupt.sharedOrb.hp = 12 * 1.18 ** 9 * 1.5;
+    assert.equal(migrateState(corrupt), null);
+    legacy.combatVersion = 1; assert.deepEqual(migrateState(legacy), migrated);
+    legacy.combatVersion = 3; assert.equal(migrateState(legacy), null);
+  }
+  const preCombat = setup(); delete preCombat.combatVersion; delete preCombat.sharedOrb;
+  for (const player of preCombat.players) delete player.orb;
+  const fresh = migrateState(preCombat);
+  assert.equal(fresh.players[0].orb.hp, 2000); assert.equal(fresh.sharedOrb.hp, 2000);
+  const capped = createGame({ mode: 'coop' });
+  const player = addPlayer(capped, { id: 'cap', name: 'Cap' });
+  player.highestOrb = 1000000; player.orb = { level: 1000000, hp: 1e149 };
+  capped.sharedOrb = { level: 1000000, hp: 1e149 }; delete capped.combatVersion;
+  const migrated = migrateState(capped);
+  assert.equal(migrated.players[0].orb.hp, 1e149);
+  addPlayer(migrated, { id: 'join', name: 'Join' });
+  assert.equal(migrated.sharedOrb.hp, 1e149, 'At the finite HP ceiling, roster changes still preserve damage');
+  assert.equal(validateState(migrated), true);
 });
