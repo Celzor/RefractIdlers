@@ -1,0 +1,17 @@
+{
+  "name": "refract-idlers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A multiplayer orbital incremental game for Refract. Harvest LRCs, grow your constellation, and prestige.",
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "preview": "node scripts/serve.mjs --dist",
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "node --test --test-isolation=none tests/*.test.js",
+    "test:browser": "node tests/browser.mjs"
+  },
+  "engines": { "node": ">=24" },
+  "license": "AGPL-3.0-only"
+}

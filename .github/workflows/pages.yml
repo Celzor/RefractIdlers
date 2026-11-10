@@ -1,0 +1,75 @@
+name: Check and deploy Refract Idlers
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    outputs:
+      pages_enabled: ${{ steps.pages.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: Check whether Pages is enabled
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        id: pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          const response = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/pages`, {
+            headers: {
+              Accept: 'application/vnd.github+json',
+              Authorization: `Bearer ${process.env.GH_TOKEN}`,
+              'X-GitHub-Api-Version': '2022-11-28'
+            }
+          });
+          if (response.status !== 200 && response.status !== 404) {
+            throw new Error(`Could not inspect Pages configuration: HTTP ${response.status}`);
+          }
+          const config = response.status === 200 ? await response.json() : null;
+          const enabled = config?.build_type === 'workflow';
+          appendFileSync(process.env.GITHUB_OUTPUT, `enabled=${enabled}\n`);
+          console.log(enabled ? 'GitHub Actions Pages deployment is enabled.' : 'Build passed. Select GitHub Actions in repository Pages settings to enable deployment.');
+          NODE
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.pages.outputs.enabled == 'true'
+        with:
+          path: dist
+
+  deploy:
+    needs: check
+    if: needs.check.outputs.pages_enabled == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

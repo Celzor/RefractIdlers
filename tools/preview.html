@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Refract Idlers · Multiplayer preview</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #0c0e17; color: #eef0fc; font: 14px/1.5 system-ui, sans-serif; }
+    .shell { max-width: 1900px; padding: 24px; margin: auto; }
+    .masthead { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
+    .eyebrow { color: #9f92ff; text-transform: uppercase; font-size: 11px; font-weight: 700; letter-spacing: .15em; }
+    h1 { font-size: 26px; margin: 6px 0; letter-spacing: -.03em; }
+    p { color: #a6acc8; margin: 4px 0; }
+    a { color: #c4baff; }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 16px 0; }
+    button, .back-link { border: 1px solid #373b53; border-radius: 9px; background: #1c2033; padding: 9px 13px; color: #e9eaff; font: inherit; cursor: pointer; text-decoration: none; }
+    button:hover, .back-link:hover { background: #2b304c; border-color: #8f83e9; }
+    button:focus-visible, a:focus-visible { outline: 2px solid #b9aaff; outline-offset: 3px; }
+    .primary { background: #6656bf; border-color: #a594ff; }
+    #participant-summary { color: #b5bcd6; margin-left: auto; }
+    #views { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr)); gap: 16px; }
+    .view { min-width: 0; border: 1px solid #30344c; border-radius: 14px; overflow: hidden; background: #111521; }
+    .view-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #30344c; }
+    .person { flex: 1; }
+    .person h2 { margin: 0; font-size: 15px; }
+    .person p { font-size: 11px; }
+    .view-header button { padding: 7px 10px; font-size: 12px; }
+    .avatar { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: #6b5e9d; font-weight: 700; }
+    .frame-container { height: 850px; }
+    iframe { display: block; width: 100%; height: 100%; border: 0; }
+    .empty-view { display: grid; align-content: center; justify-items: center; padding: 40px; height: 100%; text-align: center; gap: 12px; }
+    .empty-view strong { font-size: 22px; }
+    details { border: 1px solid #30344c; border-radius: 10px; margin-top: 20px; padding: 14px; color: #a6acc8; }
+    summary { cursor: pointer; color: #e6e7f3; }
+    #event-log { padding-left: 24px; font: 12px/1.8 ui-monospace, monospace; }
+    .note { padding: 12px 15px; border-left: 2px solid #9081e0; background: #171a2a; font-size: 13px; }
+    [hidden] { display: none !important; }
+    @media (max-width: 650px) { .shell { padding: 14px; } .masthead { align-items: start; } h1 { font-size: 22px; } .frame-container { height: 900px; } .view-header { flex-wrap: wrap; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div><span class="eyebrow">Refract Idlers / developer preview</span><h1>One orbit. A shared crew.</h1><p>Two actual game frames connected through a local Refract protocol simulator.</p></div>
+      <a class="back-link" href="../index.html">Solo game ↗</a>
+    </header>
+    <p class="note">This tests multiplayer locally in your browser. To play with friends on different devices, register the hosted game as a Refract activity and join the same call.</p>
+    <div class="controls">
+      <button type="button" id="toggle-third">Add third player</button>
+      <button type="button" id="new-session">New session</button>
+      <span id="participant-summary" aria-live="polite"></span>
+    </div>
+    <section id="views" aria-label="Player views"></section>
+    <details><summary>Relay events · <span id="event-count">0 events</span></summary><ol id="event-log"></ol></details>
+  </main>
+  <script type="module" src="./preview.js"></script>
+</body>
+</html>
