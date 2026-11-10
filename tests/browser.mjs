@@ -59,6 +59,7 @@ async function navigate(url = base) {
   await send('Page.navigate', { url });
   await waitLoad(before);
   await waitFor(`document.readyState === 'complete'`);
+  await evaluate('document.fonts.ready.then(() => true)');
 }
 async function waitLoad(before) {
   for (let attempt=0;attempt<100;attempt++) { if(loads>before)return; await pause(100); }
@@ -69,6 +70,7 @@ async function reload() {
   await send('Page.reload', { ignoreCache: true });
   await waitLoad(before);
   await waitFor(`document.querySelector('#connection')?.textContent.includes('Solo') && document.querySelector('#round-action')`);
+  await evaluate('document.fonts.ready.then(() => true)');
 }
 const readSolo = `JSON.parse(localStorage.getItem(${JSON.stringify(soloKey)}))`;
 async function solo() { return evaluate(readSolo); }
@@ -140,6 +142,9 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   await navigate();
   await waitFor(`document.querySelector('#connection')?.textContent.includes('Solo')`);
+  const loadedFonts = await evaluate(`[...document.fonts].filter(face=>face.status==='loaded').map(face=>face.family.replaceAll('"','').replaceAll("'",''))`);
+  assert.ok(loadedFonts.includes('Pixel') && loadedFonts.includes('Terminal'), `Local retro fonts loaded: ${loadedFonts.join(', ')}`);
+  log('Local Pixel and Terminal fonts loaded without fallback');
   assert.equal(await evaluate(`document.querySelector('[data-mode="scoreboard"]').getAttribute('aria-pressed')`), 'true', 'Scoreboard is the default mode');
   await fit('Desktop lobby');
   await capture('desktop-lobby');
@@ -195,8 +200,10 @@ try {
   await seed(`game.applyAction(state,'you',{type:'start'}); for(let i=0;i<50;i++){game.advance(state,60);if(i<49)game.applyAction(state,'you',{type:'ready'});}game.applyAction(state,'you',{type:'buyGenerator',id:'mote'});game.applyAction(state,'you',{type:'buySkill',id:'tap-tuning'});`);
   const beforePrestige = await solo();
   await click('[data-tab="prestige"]');
+  await capture('desktop-prestige');
   await click('#prestige-action');
   await waitFor(`document.querySelector('#confirm-prestige')`);
+  await capture('desktop-prestige-confirm');
   await click('#confirm-prestige');
   await waitFor(`${readSolo}?.players?.[0]?.prestigeCount === 1`);
   const afterPrestige = (await solo()).players[0];

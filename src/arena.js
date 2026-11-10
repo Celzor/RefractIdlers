@@ -1,32 +1,28 @@
-/**
- * Refract Idlers orbital stage.
- * Adapted from RogueRefract's OrbitArena (AGPL-3.0-only): tilted projection,
- * deterministic starfield, spectrum, avatar rendering and burst particles.
- * The accessible HTML core button is supplied by the application at 50%, 49%.
- */
+import { drawGeneratorSprite, PIXEL_PALETTE as P } from './icons.js';
+
+/** Original pixel tabletop, retaining RogueRefract's tilted orbit projection. */
 const TAU = Math.PI * 2;
-const SPECTRUM = ['#fc6d9d', '#ffad69', '#ffe39a', '#b7f7b1', '#7ee8f2', '#9b9bff', '#d99dff'];
-const RADII = [0.58, 0.76, 0.94, 1.12];
+const RADII = [0.62, 0.82, 1.04];
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
-const safeColor = (value, fallback = '#87e6c3') => /^#[\da-f]{6}$/i.test(value) ? value : fallback;
 const noise = (value) => ((Math.sin(value) * 43758.5453) % 1 + 1) % 1;
+const font = (size) => `${size}px "Press Start 2P", ui-monospace, monospace`;
 
 export class OrbitArena {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.width = 600;
-    this.height = 430;
+    this.width = 320;
+    this.height = 210;
+    this.cssWidth = 640;
     this.particles = [];
     this.floats = [];
-    this.ripples = [];
     this.images = new Map();
     this.positions = new Map();
     this.instrumentCounts = new Map();
-    this.upgradeFlashes = new Map();
+    this.purchaseTimes = new Map();
+    this.instrumentTime = 0;
     this.lastAutoClicks = null;
     this.autoPulseAt = -Infinity;
-    this.instrumentTime = 0;
     this.lastFrame = null;
     this.destroyed = false;
     this.media = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -35,390 +31,253 @@ export class OrbitArena {
     this.media?.addEventListener?.('change', this.onMotionChange);
     this.resizeObserver = new ResizeObserver(([entry]) => this.resize(entry.contentRect.width, entry.contentRect.height));
     this.resizeObserver.observe(canvas);
-    this.stars = Array.from({ length: 96 }, (_, i) => ({
-      x: noise(i * 127.1 + 31), y: noise(i * 311.7 + 9),
-      r: i % 11 === 0 ? 1.3 : 0.65, color: i % 5 ? '#bed4dd' : '#b4f1d2',
-    }));
+    canvas.style.imageRendering = 'pixelated';
   }
 
   resize(width, height) {
     if (this.destroyed) return;
-    this.width = Math.max(1, width);
-    this.height = Math.max(1, height);
-    const ratio = Math.min(globalThis.devicePixelRatio || 1, 2);
-    this.canvas.width = Math.round(this.width * ratio);
-    this.canvas.height = Math.round(this.height * ratio);
-    this.ctx?.setTransform(ratio, 0, 0, ratio, 0, 0);
+    this.cssWidth = width;
+    // Deliberately low resolution: the browser scales every pixel without blur.
+    this.width = Math.max(1, Math.round(width / 2));
+    this.height = Math.max(1, Math.round(height / 2));
+    this.canvas.width = this.width;
+    this.canvas.height = this.height;
+    if (this.ctx) this.ctx.imageSmoothingEnabled = false;
   }
 
-  project(angle, lane = 2, extra = 1) {
-    const radius = RADII[clamp(lane, 0, RADII.length - 1)] * extra;
-    const rx = this.width * 0.38 * radius;
-    const ry = Math.min(this.height * 0.32, this.width * 0.24) * radius;
-    const x = Math.cos(angle) * rx;
-    return { x: this.width / 2 + x, y: this.height * 0.49 + Math.sin(angle) * ry - x * 0.17 };
+  project(angle, lane = 1, extra = 1) {
+    const radius = RADII[clamp(Math.round(lane), 0, RADII.length - 1)] * extra;
+    const x = Math.cos(angle) * this.width * 0.38 * radius;
+    return { x: Math.round(this.width / 2 + x),
+      y: Math.round(this.height * 0.49 + Math.sin(angle) * Math.min(this.height * 0.32, this.width * 0.3) * radius - x * 0.17) };
   }
 
-  orbitPath(lane, from = 0, to = TAU, steps = 140) {
-    const c = this.ctx;
-    c.beginPath();
-    for (let i = 0; i <= steps; i++) {
-      const p = this.project(from + (to - from) * i / steps, lane);
-      if (!i) c.moveTo(p.x, p.y); else c.lineTo(p.x, p.y);
-    }
+  pixel(x, y, color, width = 1, height = width) {
+    this.ctx.fillStyle = color;
+    this.ctx.fillRect(Math.round(x), Math.round(y), width, height);
   }
 
-  burst({ amount = 0, critical = false, color = '#99f1cd' } = {}) {
+  spark(x, y, color, radius = 3) {
+    this.pixel(x, y - radius, color, 1, radius * 2 + 1);
+    this.pixel(x - radius, y, color, radius * 2 + 1, 1);
+  }
+
+  burst({ amount = 0, critical = false } = {}) {
     if (this.destroyed) return;
-    const tint = critical ? '#ffe39a' : safeColor(color);
     const x = this.width / 2, y = this.height * 0.49;
     if (!this.reducedMotion) {
-      for (let i = 0, count = critical ? 26 : 12; i < count; i++) {
+      for (let i = 0, count = critical ? 12 : 6; i < count; i++) {
         const angle = Math.random() * TAU;
-        const velocity = 30 + Math.random() * (critical ? 125 : 85);
-        this.particles.push({ x: x + Math.cos(angle) * 54, y: y + Math.sin(angle) * 54,
-          vx: Math.cos(angle) * velocity, vy: Math.sin(angle) * velocity,
-          life: 1, color: i % 3 === 0 ? SPECTRUM[i % SPECTRUM.length] : tint });
+        const velocity = 13 + Math.random() * 22;
+        this.particles.push({ x: x + Math.cos(angle) * 27, y: y + Math.sin(angle) * 27,
+          vx: Math.cos(angle) * velocity, vy: Math.sin(angle) * velocity - 8,
+          life: 1, color: i % 3 ? P.yellow : P.cream });
       }
-      this.ripples.push({ life: 1, color: tint });
     }
     if (Number.isFinite(amount) && amount > 0) {
-      this.floats.push({ x: x + (this.reducedMotion ? 0 : (Math.random() - 0.5) * 60),
-        y: y - 64, life: 1, color: tint, critical,
-        text: `${critical ? 'CRIT ' : ''}+${amount >= 1000 ? `${(amount / 1000).toFixed(1)}k` : Number(amount.toFixed(1))}` });
+      const number = amount >= 1000000 ? `${(amount / 1000000).toFixed(1)}m`
+        : amount >= 1000 ? `${(amount / 1000).toFixed(1)}k` : String(Number(amount.toFixed(1)));
+      this.floats.push({ x: x + (this.reducedMotion ? 0 : Math.round((Math.random() - 0.5) * 24)),
+        y: y - 34, life: 1, critical, text: `${critical ? '!' : '+'}${number}` });
     }
-    this.particles = this.particles.slice(-160);
-    this.ripples = this.ripples.slice(-5);
-    this.floats = this.floats.slice(-12);
+    this.particles = this.particles.slice(-60);
+    this.floats = this.floats.slice(-8);
   }
 
   render(state, selfId, nowMs) {
     const c = this.ctx;
     if (!c || this.destroyed || !state) return;
-    const { width: w, height: h } = this;
     const dt = clamp((nowMs - (this.lastFrame ?? nowMs)) / 1000, 0, 0.05);
     this.lastFrame = nowMs;
-    const time = this.reducedMotion ? 8 : nowMs / 1000;
     const active = state.phase === 'round';
-    const surge = active && state.remaining <= 10;
-    const centerX = w / 2, centerY = h * 0.49;
-    c.clearRect(0, 0, w, h);
-
-    const glow = c.createRadialGradient(centerX, centerY, 10, centerX, centerY, w * 0.49);
-    glow.addColorStop(0, surge ? '#b99a3625' : '#62d8bd1b');
-    glow.addColorStop(0.5, '#24566a0d');
-    glow.addColorStop(1, '#13212a00');
-    c.fillStyle = glow; c.fillRect(0, 0, w, h);
-
-    for (let i = 0; i < this.stars.length; i++) {
-      const star = this.stars[i];
-      c.globalAlpha = 0.12 + (this.reducedMotion ? 0.14 : (Math.sin(time * 0.45 + i) + 1) * 0.1);
-      c.fillStyle = star.color;
-      c.fillRect(star.x * w, star.y * h, star.r, star.r);
-      if (i % 23 === 0) {
-        c.globalAlpha *= 0.45;
-        c.fillRect(star.x * w - 2.5, star.y * h + 0.5, 6, 0.5);
-        c.fillRect(star.x * w + 0.5, star.y * h - 2.5, 0.5, 6);
-      }
-    }
-    c.globalAlpha = 1;
-
-    for (let lane = RADII.length - 1; lane >= 0; lane--) {
-      this.orbitPath(lane);
-      c.strokeStyle = lane === 2 ? '#7ed9c23a' : '#8198ab29';
-      c.lineWidth = lane === 2 ? 1 : 0.7;
-      c.stroke();
-      for (let j = 0; j < 60; j++) {
-        const p = this.project(j / 60 * TAU, lane);
-        c.fillStyle = j % 5 === 0 ? '#a9d3ce40' : '#8eaaa71a';
-        c.fillRect(p.x - 0.75, p.y - 0.75, j % 5 === 0 ? 1.5 : 1, j % 5 === 0 ? 1.5 : 1);
-      }
-      const start = time * (0.075 + lane * 0.02) + lane * 1.9;
-      this.orbitPath(lane, start, start + 0.6, 24);
-      c.strokeStyle = `${SPECTRUM[(lane + 3) % SPECTRUM.length]}55`;
-      c.lineWidth = 1.5;
-      c.stroke();
-    }
-
-    // RogueRefract's outward spectrum rays now carry light toward the core.
-    for (let i = 0; i < 7; i++) {
-      const angle = i * TAU / 7 + time * 0.06;
-      const end = this.project(angle, 3, 0.98);
-      const color = SPECTRUM[i];
-      const gradient = c.createLinearGradient(centerX, centerY, end.x, end.y);
-      gradient.addColorStop(0, `${color}38`);
-      gradient.addColorStop(0.7, `${color}0c`);
-      gradient.addColorStop(1, `${color}00`);
-      c.beginPath(); c.moveTo(centerX, centerY); c.lineTo(end.x, end.y);
-      c.strokeStyle = gradient; c.lineWidth = 0.8; c.stroke();
-      if (active) {
-        const travel = (time * (surge ? 0.7 : 0.3) + i * 0.17) % 1;
-        const x = end.x + (centerX - end.x) * travel;
-        const y = end.y + (centerY - end.y) * travel;
-        if (Math.hypot(x - centerX, y - centerY) > 59) {
-          c.globalAlpha = 0.6; c.fillStyle = color;
-          c.beginPath(); c.arc(x, y, 1.5, 0, TAU); c.fill();
-          c.globalAlpha = 1;
-        }
-      }
-    }
-
     if (active && !this.reducedMotion) this.instrumentTime += dt;
+    const visualTime = this.reducedMotion ? 3 : nowMs / 1000;
+    const w = this.width, h = this.height;
+    c.imageSmoothingEnabled = false;
+    c.globalAlpha = 1;
+    c.fillStyle = '#613a3a'; c.fillRect(0, 0, w, h);
+
+    // Felt texture and a stitched border make this a game board, not outer space.
+    for (let i = 0; i < 115; i++) {
+      this.pixel(noise(i * 127.1 + 31) * w, noise(i * 311.7 + 9) * h, i % 4 ? '#684040' : '#573333');
+    }
+    for (let x = 8; x < w - 8; x += 7) { this.pixel(x, 5, '#966957', 3, 1); this.pixel(x, h - 6, '#966957', 3, 1); }
+    for (let y = 12; y < h - 8; y += 7) { this.pixel(5, y, '#966957', 1, 3); this.pixel(w - 6, y, '#966957', 1, 3); }
+    this.drawGardenCorner(12, h - 24, false);
+    this.drawGardenCorner(w - 39, 14, true);
+    this.pixel(15, 15, '#442c28', 8, 5); this.pixel(16, 14, P.wood, 6, 4);
+    this.pixel(17, 14, P.yellow, 1, 2);
+
+    // Discrete stitched orbital rings preserve the tilted Refract voice stage.
+    for (let lane = 0; lane < RADII.length; lane++) {
+      const samples = Math.round(this.width * (1.5 + lane * 0.4));
+      for (let i = 0; i < samples; i++) {
+        if (i % 8 > 3) continue;
+        const p = this.project(i / samples * TAU, lane);
+        this.pixel(p.x, p.y, lane === 1 ? '#bf9875' : '#92634f');
+      }
+      for (let i = 0; i < 8; i++) {
+        const p = this.project(i * TAU / 8, lane);
+        this.pixel(p.x - 1, p.y - 1, '#d1ae7e', 2, 2);
+      }
+    }
+
+    // A little engraved stand frames the separate, keyboard-accessible core.
+    const cx = Math.round(w / 2), cy = Math.round(h * 0.49);
+    this.pixel(cx - 24, cy + 23, '#442d2b', 48, 8);
+    this.pixel(cx - 20, cy + 29, '#4f312e', 40, 3);
+    if (active && state.remaining <= 10) {
+      const phase = this.reducedMotion ? 0 : Math.floor(visualTime * 2) % 2;
+      this.spark(cx - 34, cy - 15 + phase, P.yellow, 3);
+      this.spark(cx + 33, cy + 10 - phase, P.yellow, 3);
+    }
+
     this.drawInstruments(state, selfId, nowMs, active);
 
-    // Core halo aligns with the semantic HTML harvesting button.
-    const halo = c.createRadialGradient(centerX, centerY, 48, centerX, centerY, 110);
-    halo.addColorStop(0, surge ? '#ffcf7224' : '#9af1d323');
-    halo.addColorStop(1, '#9af1d300');
-    c.fillStyle = halo; c.beginPath(); c.arc(centerX, centerY, 110, 0, TAU); c.fill();
-    c.strokeStyle = surge ? '#ffe39a40' : '#a6ead02b'; c.lineWidth = 0.7;
-    c.beginPath(); c.arc(centerX, centerY, 64, 0, TAU); c.stroke();
-    c.setLineDash([1, 7]); c.strokeStyle = '#a6ead036';
-    c.beginPath(); c.arc(centerX, centerY, 72, 0, TAU); c.stroke(); c.setLineDash([]);
-
     const players = (state.players ?? []).slice(0, 8);
-    const visibleIds = new Set(players.map((player) => player.id));
-    for (const id of this.positions.keys()) if (!visibleIds.has(id)) this.positions.delete(id);
+    const ids = new Set(players.map((player) => player.id));
+    for (const id of this.positions.keys()) if (!ids.has(id)) this.positions.delete(id);
     const positioned = players.map((player, index) => {
-      const lane = [2, 3, 1, 3, 2, 1, 3, 2][index];
-      const angle = index * TAU / Math.max(1, players.length) + time * (0.12 + index % 3 * 0.025) - 0.45;
-      const position = this.project(angle, lane);
+      const angle = index * TAU / Math.max(1, players.length) + visualTime * 0.08 - 0.3;
+      const position = this.project(angle, 1);
       this.positions.set(player.id, position);
-      const color = safeColor(player.color, SPECTRUM[(index + 3) % SPECTRUM.length]);
-      this.orbitPath(lane, angle - 0.48, angle, 24);
-      c.strokeStyle = `${color}65`; c.lineWidth = player.id === selfId ? 2.5 : 1.8; c.lineCap = 'round'; c.stroke();
-      c.lineCap = 'butt';
-      return { player, position, color };
+      return { player, position };
     }).sort((a, b) => a.position.y - b.position.y);
-    for (const { player, position, color } of positioned) this.drawPlayer(player, position, color, selfId);
+    for (const { player, position } of positioned) this.drawPlayer(player, position, selfId);
 
-    for (const ripple of this.ripples) {
-      ripple.life -= dt * 2;
-      c.globalAlpha = Math.max(0, ripple.life * 0.45);
-      c.strokeStyle = ripple.color; c.lineWidth = 1;
-      c.beginPath(); c.arc(centerX, centerY, 58 + (1 - ripple.life) * 55, 0, TAU); c.stroke();
-    }
-    this.ripples = this.ripples.filter((ripple) => ripple.life > 0);
     for (const particle of this.particles) {
-      particle.life -= dt * 1.6;
+      particle.life -= dt * 1.8;
       particle.x += particle.vx * dt; particle.y += particle.vy * dt;
-      c.globalAlpha = Math.max(0, particle.life);
-      c.fillStyle = particle.color; c.fillRect(particle.x, particle.y, 2, 2);
+      particle.vy += dt * 26;
+      if (particle.life > 0.2) this.pixel(particle.x, particle.y, particle.color, 2, 2);
     }
     this.particles = this.particles.filter((particle) => particle.life > 0);
     for (const float of this.floats) {
-      float.life -= dt * 0.85;
-      if (!this.reducedMotion) float.y -= dt * 32;
-      c.globalAlpha = clamp(float.life * 2, 0, 1);
-      c.fillStyle = float.color; c.textAlign = 'center';
-      c.font = `${float.critical ? 800 : 700} ${float.critical ? 18 : 15}px system-ui, sans-serif`;
-      c.fillText(float.text, float.x, float.y);
+      float.life -= dt * 0.9;
+      if (!this.reducedMotion) float.y -= dt * 12;
+      c.font = font(float.critical ? 6 : 5); c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+      c.fillStyle = P.ink; c.fillText(float.text, Math.round(float.x) + 1, Math.round(float.y) + 1);
+      c.fillStyle = float.critical ? P.yellow : P.cream;
+      c.fillText(float.text, Math.round(float.x), Math.round(float.y));
     }
     this.floats = this.floats.filter((float) => float.life > 0);
-    c.globalAlpha = 1;
   }
 
-  /** Owned upgrades become small working instruments, capped independently of income. */
+  drawGardenCorner(x, y, flower) {
+    this.pixel(x + 1, y + 8, '#392923', 27, 8);
+    this.pixel(x, y + 7, '#80523b', 26, 6);
+    this.pixel(x + 3, y + 10, '#a46c46', 21, 2);
+    for (let i = 0; i < 4; i++) {
+      const px = x + 3 + i * 6;
+      this.pixel(px, y + 3 - i % 2, P.green, 2, 6);
+      this.pixel(px - 2, y + 4, P.sage, 2, 2);
+      this.pixel(px + 2, y + 2, P.leaf, 2, 2);
+      if (flower && i % 2 === 0) {
+        this.pixel(px - 1, y, P.yellow, 4, 3); this.pixel(px, y + 1, P.orange, 2, 1);
+      }
+    }
+  }
+
   drawInstruments(state, selfId, nowMs, active) {
-    const c = this.ctx;
-    const people = state.mode === 'coop' ? state.players ?? []
-      : (state.players ?? []).filter((player) => player.id === selfId);
+    const people = state.mode === 'coop' ? state.players ?? [] : (state.players ?? []).filter((player) => player.id === selfId);
     const counts = { mote: 0, satellite: 0, prism: 0, star: 0, nova: 0 };
     let autoClicks = 0;
-    for (const person of people) {
-      for (const id of Object.keys(counts)) counts[id] += Math.max(0, Number(person.generators?.[id]) || 0);
-      autoClicks += Math.max(0, Number(person.autoClicks) || 0);
+    for (const player of people) {
+      for (const id of Object.keys(counts)) counts[id] += Math.max(0, Number(player.generators?.[id]) || 0);
+      autoClicks += Math.max(0, Number(player.autoClicks) || 0);
     }
     if (this.lastAutoClicks !== null && autoClicks > this.lastAutoClicks && active) this.autoPulseAt = nowMs;
     this.lastAutoClicks = autoClicks;
+    const running = active && !this.reducedMotion;
+    const anchors = { mote: 3.48, satellite: 2.18, prism: 5.6, star: 0.52, nova: 4.55 };
+    const periods = { mote: 2, satellite: 5, prism: 3.5, star: 6, nova: 5 };
+    const colors = { mote: P.yellow, satellite: P.sky, prism: P.cream, star: P.purple, nova: P.yellow };
     for (const [id, count] of Object.entries(counts)) {
       const previous = this.instrumentCounts.get(id);
-      if (previous !== undefined && count > previous) this.upgradeFlashes.set(id, nowMs);
-      if (!count) this.upgradeFlashes.delete(id);
+      if (previous !== undefined && count > previous) this.purchaseTimes.set(id, nowMs);
       this.instrumentCounts.set(id, count);
-    }
-    const moving = active && !this.reducedMotion;
-    // Stable positions between rounds also make each new purchase easy to spot.
-    const rotation = this.reducedMotion ? 0 : this.instrumentTime * 0.025;
-    const progress = (period, offset = 0) => this.reducedMotion ? 0.45 : (this.instrumentTime / period + offset) % 1;
-    const small = this.width < 430;
-    const scale = small ? 0.82 : 1;
-    const begin = (id, position, color) => {
-      c.save(); c.translate(position.x, position.y); c.scale(scale, scale);
-      c.strokeStyle = color; c.fillStyle = '#102129'; c.lineWidth = 1;
-      c.lineCap = 'round'; c.lineJoin = 'round';
-      const age = nowMs - (this.upgradeFlashes.get(id) ?? -Infinity);
-      if (age >= 0 && age < 1100) {
-        c.save(); c.globalAlpha = this.reducedMotion ? 0.3 : (1 - age / 1100) * 0.6;
-        c.strokeStyle = color;
-        c.beginPath(); c.arc(0, 0, this.reducedMotion ? 20 : 17 + age / 80, 0, TAU); c.stroke();
-        c.restore();
+      if (count < 1) { this.purchaseTimes.delete(id); continue; }
+      const position = this.project(anchors[id], 2);
+      const x = clamp(position.x - 16, 8, this.width - 40), y = clamp(position.y - 16, 9, this.height - 39);
+      const center = { x: x + 16, y: y + 16 };
+      const phase = this.reducedMotion ? 0.6 : this.instrumentTime / periods[id] % 1;
+      // Every type gets one readable 32px miniature; big counts don't crowd the board.
+      this.pixel(x - 2, y + 28, '#392923', 36, 6);
+      this.pixel(x, y + 28, '#80523b', 32, 4);
+      if (id === 'satellite') {
+        this.pixel(x - 2, y + 27, P.sage, 5, 2); this.pixel(x + 29, y + 26, P.leaf, 4, 3);
       }
-    };
-
-    // One representative drone per unit, capped at three. The tip sends one
-    // quiet beam on its two-second cycle; actual automatic taps also cue it.
-    for (let i = 0; i < Math.min(3, counts.mote); i++) {
-      const position = this.project(0.15 + i * 1.9 + rotation, 2);
-      const phase = progress(2, i / 3);
-      const confirmedTap = i === 0 && nowMs - this.autoPulseAt < 240;
-      const tap = moving && (phase < 0.16 || confirmedTap);
-      if (tap) this.drawTransfer(position, '#a6eed5', clamp(confirmedTap ? (nowMs - this.autoPulseAt) / 240 : phase / 0.16, 0, 1), 0.48);
-      begin('mote', position, '#a6eed5');
-      c.rotate(-0.17);
-      c.beginPath(); c.moveTo(-5, -6); c.lineTo(5, -6); c.lineTo(8, -2); c.lineTo(8, 4);
-      c.lineTo(3, 7); c.lineTo(-3, 7); c.lineTo(-8, 4); c.lineTo(-8, -2); c.closePath(); c.fill(); c.stroke();
-      c.strokeStyle = '#8bc6b2'; c.globalAlpha = 0.75;
-      c.beginPath(); c.moveTo(-8, -2); c.lineTo(-12, -2); c.lineTo(-14, 2); c.lineTo(-10, 4);
-      c.moveTo(8, -2); c.lineTo(12, -2); c.lineTo(14, 2); c.lineTo(10, 4); c.stroke();
-      c.globalAlpha = 1; c.fillStyle = tap ? '#d7ffec' : '#72bba3';
-      c.shadowColor = '#a6eed5'; c.shadowBlur = tap ? 9 : 0;
-      c.beginPath(); c.arc(0, 0, tap ? 2.8 : 2, 0, TAU); c.fill(); c.shadowBlur = 0;
-      c.strokeStyle = '#a6eed5'; c.beginPath(); c.moveTo(0, 8); c.lineTo(0, tap ? 12 : 10); c.stroke();
-      c.restore();
-    }
-
-    // Farm pods cradle three growing light orbs. Harvesting moves a single
-    // orb toward the core, then the cultivation cycle starts over.
-    for (let i = 0; i < Math.min(2, counts.satellite); i++) {
-      const position = this.project(2.6 + i * 2.5 + rotation, 3);
-      const phase = progress(5, i * 0.46);
-      if (moving && phase > 0.8) this.drawTransfer(position, '#a6caef', (phase - 0.8) / 0.2, 0.6);
-      begin('satellite', position, '#a6caef');
-      c.rotate(-0.17);
-      c.beginPath(); c.ellipse(0, 7, 15, 4.5, 0, 0, TAU); c.fill(); c.stroke();
-      c.globalAlpha = 0.5; c.beginPath(); c.arc(0, -2, 13, Math.PI * 1.02, TAU * 0.99); c.stroke();
-      c.globalAlpha = 1;
-      for (let j = 0; j < 3; j++) {
-        const growing = this.reducedMotion ? 0.6 : (phase + j * 0.16) % 1;
-        const orbSize = 1.8 + Math.min(1, growing / 0.75) * (j === 1 ? 3.3 : 1.8);
-        const x = (j - 1) * 8, y = j === 1 ? -5 : 1;
-        c.globalAlpha = growing > 0.8 ? 1 - (growing - 0.8) / 0.2 : 0.85;
-        c.fillStyle = '#c3e6ff'; c.shadowColor = '#a6caef'; c.shadowBlur = moving ? 6 : 0;
-        c.beginPath(); c.arc(x, y, orbSize, 0, TAU); c.fill();
-        c.shadowBlur = 0; c.strokeStyle = '#e2f4ff'; c.lineWidth = 0.7; c.stroke();
-        c.fillStyle = '#effaff'; c.beginPath(); c.arc(x - orbSize * 0.25, y - orbSize * 0.3, 0.9, 0, TAU); c.fill();
+      drawGeneratorSprite(this.ctx, id, x, y, { phase, running });
+      if (count > 1) {
+        this.ctx.font = font(4); this.ctx.textAlign = 'right';
+        const text = count >= 1000 ? '1k+' : String(count);
+        const size = Math.ceil(this.ctx.measureText(text).width) + 4;
+        this.pixel(x + 30 - size, y + 28, P.ink, size, 7);
+        this.ctx.fillStyle = P.paper; this.ctx.fillText(text, x + 28, y + 33);
       }
-      c.restore();
-    }
-
-    // Three collector segments glint in sequence across the array surface.
-    for (let i = 0; i < Math.min(2, counts.prism); i++) {
-      const position = this.project(4.1 + i * 2.7 + rotation, 3);
-      const phase = progress(3.5, i * 0.5);
-      if (moving && phase > 0.78) this.drawTransfer(position, '#f4d99b', (phase - 0.78) / 0.22, 0.33);
-      begin('prism', position, '#e5c788');
-      c.transform(1, 0.13, -0.23, 1, 0, 0);
-      c.beginPath(); c.roundRect(-15, -10, 30, 19, 2); c.fill(); c.stroke();
-      for (let j = 0; j < 3; j++) {
-        const glow = moving ? Math.max(0, 1 - Math.abs(phase * 4 - j - 0.5) / 0.7) : 0.2;
-        c.fillStyle = `rgba(245,211,146,${0.08 + glow * 0.22})`;
-        c.fillRect(-12 + j * 8.5, -7, 6, 13);
-        c.strokeStyle = '#a5916055'; c.lineWidth = 0.5;
-        c.strokeRect(-12 + j * 8.5, -7, 6, 13);
-        c.beginPath(); c.moveTo(-12 + j * 8.5, -0.5); c.lineTo(-6 + j * 8.5, -0.5); c.stroke();
+      if (running) {
+        const recentTap = id === 'mote' && nowMs - this.autoPulseAt < 350;
+        const tapPhase = recentTap ? (nowMs - this.autoPulseAt) / 350 : phase / 0.18;
+        if (id === 'mote' && (phase < 0.18 || recentTap)) this.drawTransfer(center, colors[id], tapPhase);
+        if (id === 'satellite' && phase > 0.8) this.drawTransfer(center, colors[id], (phase - 0.8) / 0.2);
+        if (id === 'prism' && phase > 0.85) this.drawTransfer(center, colors[id], (phase - 0.85) / 0.15);
       }
-      c.strokeStyle = '#e5c788'; c.lineWidth = 1;
-      c.beginPath(); c.moveTo(0, 10); c.lineTo(0, 14); c.moveTo(-5, 14); c.lineTo(5, 14); c.stroke();
-      c.restore();
-    }
-
-    // Refractometers inspect a prism with a rotating scanner; their actual
-    // output multiplier is applied only by the simulation.
-    for (let i = 0; i < Math.min(2, counts.star); i++) {
-      const position = this.project(1.35 + i * 3 + rotation, 3);
-      const phase = progress(7, i * 0.5);
-      begin('star', position, '#d2b5f0');
-      c.beginPath(); c.arc(0, 0, 13, 0, TAU); c.fill();
-      c.strokeStyle = '#c1a0e05c'; c.stroke();
-      c.strokeStyle = '#dfc6f7'; c.beginPath(); c.arc(0, 0, 13, phase * TAU, phase * TAU + 1.2); c.stroke();
-      c.fillStyle = '#a282c91f'; c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, 11, phase * TAU, phase * TAU + 0.65); c.closePath(); c.fill();
-      c.strokeStyle = '#cdb0e9'; c.fillStyle = '#332740';
-      c.beginPath(); c.moveTo(0, -7); c.lineTo(7, 6); c.lineTo(-7, 6); c.closePath(); c.fill(); c.stroke();
-      c.lineWidth = 0.6; c.beginPath(); c.moveTo(0, -7); c.lineTo(1, 1); c.lineTo(7, 6); c.moveTo(1, 1); c.lineTo(-7, 6); c.stroke();
-      c.globalAlpha = 0.65;
-      c.beginPath(); c.moveTo(-19, 0); c.lineTo(-5, 0); c.stroke();
-      for (let j = -1; j <= 1; j++) {
-        c.strokeStyle = ['#9edbd4', '#ddbeeb', '#eed194'][j + 1];
-        c.beginPath(); c.moveTo(5, 0); c.lineTo(19, j * 5); c.stroke();
+      const purchaseAge = nowMs - (this.purchaseTimes.get(id) ?? -Infinity);
+      if (purchaseAge >= 0 && purchaseAge < 900) {
+        const step = this.reducedMotion ? 0 : Math.floor(purchaseAge / 250);
+        this.spark(x - 2 - step, y + 5, P.yellow, 2);
+        this.spark(x + 34 + step, y + 17, P.cream, 2);
       }
-      c.restore();
-    }
-
-    if (counts.nova > 0) {
-      const position = this.project(5.3 + rotation, 2);
-      const phase = progress(6);
-      begin('nova', position, '#ffd4a0');
-      const radius = 6 + (moving ? Math.sin(phase * TAU) * 0.5 : 0);
-      const halo = c.createRadialGradient(0, 0, 3, 0, 0, 24);
-      halo.addColorStop(0, '#ffe0ad5c'); halo.addColorStop(1, '#ffcb8b00');
-      c.fillStyle = halo; c.beginPath(); c.arc(0, 0, 24, 0, TAU); c.fill();
-      c.strokeStyle = '#ffce9b70';
-      c.beginPath(); c.ellipse(0, 0, 17, 8, -0.45, 0, TAU); c.stroke();
-      c.fillStyle = '#fce2b7'; c.shadowColor = '#ffd099'; c.shadowBlur = 10;
-      c.beginPath(); c.arc(0, 0, radius, 0, TAU); c.fill(); c.shadowBlur = 0;
-      c.fillStyle = '#fff5dc'; c.beginPath(); c.arc(-1.5, -1.8, 2.3, 0, TAU); c.fill();
-      c.restore();
     }
   }
 
-  drawTransfer(source, color, progress, opacity = 0.4) {
-    const c = this.ctx;
+  drawTransfer(source, color, progress) {
+    const p = clamp(progress, 0, 1);
     const dx = this.width / 2 - source.x, dy = this.height * 0.49 - source.y;
     const distance = Math.hypot(dx, dy);
-    if (distance < 75) return;
-    const end = { x: source.x + dx * (1 - 59 / distance), y: source.y + dy * (1 - 59 / distance) };
-    c.save();
-    const beam = c.createLinearGradient(source.x, source.y, end.x, end.y);
-    beam.addColorStop(0, `${color}05`); beam.addColorStop(0.5, `${color}65`); beam.addColorStop(1, `${color}20`);
-    c.strokeStyle = beam; c.lineWidth = 0.8; c.globalAlpha = opacity;
-    c.beginPath(); c.moveTo(source.x, source.y); c.lineTo(end.x, end.y); c.stroke();
-    c.fillStyle = color; c.globalAlpha = opacity * Math.sin(Math.PI * progress);
-    c.shadowColor = color; c.shadowBlur = 5;
-    c.beginPath(); c.arc(source.x + (end.x - source.x) * progress, source.y + (end.y - source.y) * progress, 2, 0, TAU); c.fill();
-    c.restore();
+    if (distance < 36) return;
+    const fraction = 1 - 28 / distance;
+    const x = source.x + dx * fraction * p, y = source.y + dy * fraction * p;
+    this.pixel(x - 1, y - 1, P.ink, 5, 5);
+    this.pixel(x, y, color, 3, 3);
+    this.pixel(x, y, P.cream, 1, 1);
+    for (let i = 1; i < 4; i++) {
+      const trail = Math.max(0, p - i * 0.06);
+      this.pixel(source.x + dx * fraction * trail, source.y + dy * fraction * trail, color);
+    }
   }
 
-  drawPlayer(player, position, color, selfId) {
+  drawPlayer(player, position, selfId) {
     const c = this.ctx;
     const { x, y } = position;
     const own = player.id === selfId;
-    const size = this.width < 430 ? 16 : 20;
-    c.save();
-    c.shadowColor = color; c.shadowBlur = own ? 15 : 7;
-    c.fillStyle = '#101d25'; c.strokeStyle = color; c.lineWidth = own ? 1.7 : 1;
-    c.beginPath(); c.arc(x, y, size + 3, 0, TAU); c.fill(); c.stroke();
-    c.shadowBlur = 0;
-    c.save(); c.beginPath(); c.arc(x, y, size, 0, TAU); c.clip();
+    const size = this.cssWidth < 440 ? 7 : 8;
+    this.pixel(x - size - 2, y - size - 2, P.ink, size * 2 + 4, size * 2 + 4);
+    this.pixel(x - size - 1, y - size - 1, own ? P.yellow : P.paper, size * 2 + 2, size * 2 + 2);
+    this.pixel(x - size, y - size, P.wood, size * 2, size * 2);
     const image = this.getAvatar(player.avatarUrl);
     if (image?.complete && image.naturalWidth > 0) {
       const crop = Math.min(image.naturalWidth, image.naturalHeight);
       c.drawImage(image, (image.naturalWidth - crop) / 2, (image.naturalHeight - crop) / 2, crop, crop,
-        x - size, y - size, size * 2, size * 2);
+        Math.round(x - size), Math.round(y - size), size * 2, size * 2);
     } else {
-      const fill = c.createLinearGradient(x - size, y - size, x + size, y + size);
-      fill.addColorStop(0, `${color}35`); fill.addColorStop(1, `${color}0c`);
-      c.fillStyle = fill; c.fillRect(x - size, y - size, size * 2, size * 2);
-      c.font = `700 ${size * 0.75}px system-ui, sans-serif`;
-      c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = color;
-      const initials = String(player.name ?? '?').trim().split(/\s+/).slice(0, 2).map((word) => Array.from(word)[0] ?? '').join('').toUpperCase();
-      c.fillText(initials || '?', x, y + 0.5);
+      // A miniature farmer badge until a real Refract avatar is available.
+      this.pixel(x - 4, y - 5, P.ink, 8, 9);
+      this.pixel(x - 3, y - 4, P.paper, 6, 7);
+      this.pixel(x - 5, y - 5, own ? P.sage : P.sky, 10, 3);
+      this.pixel(x - 3, y - 7, own ? P.sage : P.sky, 6, 2);
+      this.pixel(x - 2, y - 1, P.ink); this.pixel(x + 2, y - 1, P.ink);
+      this.pixel(x - 3, y + 3, own ? P.green : P.blue, 7, 4);
     }
-    c.restore();
-    if (own) {
-      c.fillStyle = color; c.beginPath(); c.arc(x + size * 0.78, y - size * 0.72, 4, 0, TAU); c.fill();
-      c.strokeStyle = '#101d25'; c.lineWidth = 2; c.stroke();
-    }
-    const name = own ? 'YOU' : String(player.name ?? 'Pilot').slice(0, 14);
-    const label = player.bot ? `${name} · BOT` : name;
-    c.font = '600 9px system-ui, sans-serif';
-    c.textAlign = 'center'; c.textBaseline = 'alphabetic';
-    const labelWidth = c.measureText(label).width + 12;
-    const labelX = clamp(x, labelWidth / 2 + 2, this.width - labelWidth / 2 - 2);
-    c.fillStyle = '#101b23e8';
-    c.beginPath(); c.roundRect(labelX - labelWidth / 2, y + size + 8, labelWidth, 17, 5); c.fill();
-    c.fillStyle = own ? '#b9efdb' : '#a5b7bf'; c.fillText(label, labelX, y + size + 20);
-    c.restore();
+    const raw = own ? 'YOU' : String(player.name ?? 'PILOT').slice(0, 9).toUpperCase();
+    const label = player.bot ? `${raw} BOT` : raw;
+    c.font = font(4); c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+    const textWidth = Math.ceil(c.measureText(label).width) + 5;
+    const labelX = clamp(x, textWidth / 2 + 3, this.width - textWidth / 2 - 3);
+    this.pixel(labelX - textWidth / 2, y + size + 3, P.ink, textWidth, 8);
+    c.fillStyle = own ? P.yellow : P.paper;
+    c.fillText(label, Math.round(labelX), Math.round(y + size + 9));
+    if (own) { this.pixel(x + size - 1, y - size - 4, P.ink, 5, 5); this.pixel(x + size, y - size - 3, P.yellow, 3, 3); }
   }
 
   getAvatar(url) {
@@ -427,21 +286,16 @@ export class OrbitArena {
     try {
       const parsed = new URL(url, document.baseURI);
       if (!['https:', 'http:'].includes(parsed.protocol)) return null;
-      const image = new Image();
-      image.referrerPolicy = 'no-referrer';
-      image.src = parsed.href;
+      const image = new Image(); image.referrerPolicy = 'no-referrer'; image.src = parsed.href;
       if (this.images.size >= 24) this.images.delete(this.images.keys().next().value);
-      this.images.set(url, image);
-      return image;
+      this.images.set(url, image); return image;
     } catch { return null; }
   }
 
   destroy() {
-    this.destroyed = true;
-    this.resizeObserver.disconnect();
+    this.destroyed = true; this.resizeObserver.disconnect();
     this.media?.removeEventListener?.('change', this.onMotionChange);
-    this.images.clear(); this.positions.clear();
-    this.instrumentCounts.clear(); this.upgradeFlashes.clear();
-    this.particles = []; this.floats = []; this.ripples = [];
+    this.images.clear(); this.positions.clear(); this.instrumentCounts.clear(); this.purchaseTimes.clear();
+    this.particles = []; this.floats = [];
   }
 }

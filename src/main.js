@@ -89,7 +89,7 @@ function onStateChange() {
     if (state.phase === 'intermission') {
       audio.play('roundend');
       showTab('skills');
-      toast(`Round ${state.round} complete. Your constellation is ready to grow.`);
+      toast(`Round ${state.round} done. Workshop's open!`);
     } else if (state.phase === 'round') {
       audio.play('start');
       showTab('orbit');
@@ -111,7 +111,7 @@ function execute(fromId, action) {
       arena.burst({amount:result.amount,critical:result.critical,color:myPlayer()?.color});
       audio.play(result.critical ? 'critical' : 'click');
     } else if (action.type === 'buySkill') audio.play('purchase');
-    else if (action.type === 'prestige') { audio.play('levelup'); toast(`A brighter beginning. +${result.amount} permanent prestige points.`); }
+    else if (action.type === 'prestige') { audio.play('levelup'); toast(`Fresh start. +${result.amount} permanent prestige points.`); }
   }
   onStateChange();
   // Click streams are batched to two snapshots per second. Structural changes
@@ -226,8 +226,8 @@ function render(force = false) {
   $('#timer').textContent = shopping ? '—' : String(Math.ceil(state.remaining)).padStart(2,'0');
   $('#round-label').textContent = !initialized ? 'CONNECTING TO THE ORBIT' : !synchronized ? 'SYNCING WITH THE CREW' : state.phase === 'lobby' ? 'READY TO REFRACT' : shopping ? `ROUND ${String(state.round).padStart(2,'0')} / BUILD PHASE` : `ROUND ${String(state.round).padStart(2,'0')} / HARVESTING`;
   $('#core').disabled = !usable || !playing;
-  $('#core-label').textContent = playing ? `+${fmt(stats.clickPower,1)} LRC PER CLICK` : shopping ? 'LET YOUR CONSTELLATION GROW' : 'THE REFRACT CORE';
-  $('#core-hint').textContent = playing ? 'Click the core or tap Space to harvest.' : shopping ? 'Spend your skill points. Then orbit again.' : 'Your next obsession starts here.';
+  $('#core-label').textContent = playing ? `+${fmt(stats.clickPower,1)} LRC PER CLICK` : shopping ? 'CLOSED FOR UPGRADES' : 'THE REFRACT CORE';
+  $('#core-hint').textContent = playing ? 'CLICK THE PRISM / PRESS SPACE' : shopping ? 'The machines are taking a break.' : 'Click the prism. Collect the light.';
   $('#surge-label').hidden = !stats.surge;
   $('#goal-label').textContent = coop ? '◎ SHARED ROUND GOAL' : '◎ YOUR ROUND GOAL';
   $('#team-lrc').textContent = fmt(progress);
@@ -249,8 +249,8 @@ function render(force = false) {
   $('#skill-phase-note').textContent = shopping ? 'The orbit is resting. Choose your upgrades, then ready up in The orbit.' : playing ? 'Your next build phase opens at the end of this round. Preview your path below.' : 'Finish your first round to earn skill points.';
   $('#save-status').textContent = !storageAvailable ? 'Storage unavailable · keep this tab open' : bridge?.mode === 'refract' ? 'Shared run · session saved' : 'Progress saved on this device';
   $('#skill-reward-note').textContent = `Each completed round grants 2 SP. Reach ${coop ? 'the shared' : 'your personal'} goal for +1 more.`;
-  $('#generator-eyebrow').textContent = coop ? 'INVEST FROM THE SHARED POOL' : 'PUT YOUR LRCs TO WORK';
-  $('#generator-description').textContent = coop ? 'Your machines. More light for everyone.' : 'Tap. Cultivate. Measure. Multiply.';
+  $('#generator-eyebrow').textContent = coop ? 'PAID FROM THE CREW POT' : 'MACHINES FOR SALE';
+  $('#generator-description').textContent = coop ? 'Every machine feeds the same pot.' : 'A little less clicking. A lot more light.';
   $('#automation-note').innerHTML = coop ? 'Your machines feed the shared pool.<br><b>Personal prestige keeps the pool intact.</b>' : 'Machines work throughout each round.<br><b>They rest while you grow your skill tree.</b>';
   for (const generator of GENERATORS) {
     const owned = player?.generators[generator.id] || 0;
@@ -310,7 +310,7 @@ function render(force = false) {
 }
 
 function info(title,content) {
-  $('#dialog-content').innerHTML = `<p class="eyebrow">REFRACT IDLERS / FIELD GUIDE</p><h2>${title}</h2>${content}`;
+  $('#dialog-content').innerHTML = `<p class="eyebrow">THE FACTORY HANDBOOK</p><h2>${title}</h2>${content}`;
   if (!$('#info-dialog').open) $('#info-dialog').showModal();
 }
 function multiplayerInfo() {

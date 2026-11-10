@@ -4,6 +4,12 @@ A multiplayer incremental game for Refract: click the middle of the orbit, harve
 
 Built on the activity approach from [Refract Tic-tac-toe](https://github.com/Celzor/refract-tack-toe), with assets, audio, orbital rendering, and multiplayer bridge code reused or adapted from [RogueRefract](https://github.com/Celzor/RogueRefract).
 
+## Look and sound
+
+The game uses a warm retro tabletop: chunky pixel borders, paper labels, a felt play surface, original pixel machines, and a little orbit of busy workers. New machines appear on the table as you buy them. Clicking and automatic production produce quick coin feedback; purchases play short arcade arpeggios. The synthesized audio combines quiet square and triangle waves with soft coin clinks, a gentle filter, and bounded voice counts.
+
+The visual direction takes inspiration from the tactile incremental-game feel of [Gamblers Table](https://store.steampowered.com/app/3618390/Gamblers_Table/), [Scritchy Scratchy](https://store.steampowered.com/app/3948120/Scritchy_Scratchy/), and [Rusty's Retirement](https://store.steampowered.com/app/2666510/Rustys_Retirement/). The tabletop artwork and pixel-machine sprites were created for Refract Idlers; no sprites, sound recordings, or game assets from those titles are included. Refract branding and companion-project provenance remain listed in [CREDITS.md](CREDITS.md).
+
 ## Run locally
 
 Requires **Node.js 24 or newer**. No package installation is needed.
