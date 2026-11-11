@@ -9,7 +9,7 @@ import { FarmView } from './farm-view.js';
 import { getFarmUnlocked } from './farm.js';
 import { GalaxyView } from './galaxy-view.js';
 import { FinaleScene } from './finale.js';
-import { getCampaignLocation, VICTORY_PRESTIGE_REWARD, SECRET_DURATION } from './campaign.js';
+import { getCampaignLocation, SYSTEMS, FINAL_LEVEL, VICTORY_PRESTIGE_REWARD, SECRET_DURATION } from './campaign.js';
 
 const $ = (selector) => document.querySelector(selector);
 const fmt = (value, digits = 0) => value >= 1e15 ? value.toExponential(2).replace('+','') : new Intl.NumberFormat('en', { maximumFractionDigits:digits, ...(value >= 1e4 ? {notation:'compact',maximumFractionDigits:1} : {}) }).format(value || 0);
@@ -300,6 +300,11 @@ function render(force = false) {
     if (playing) $('#core-hint').textContent = getFarmUnlocked(player) ? 'OUT OF FUEL · FEED BEAM IN THE FARM' : 'OUT OF FUEL · BUY AN ORB FARM TO GROW BEAM’S LUNCH';
   }
   $('#core').classList.toggle('grounded',Boolean(ship?.grounded));
+  // The arena banner: where the pilot is, and that the route only advances one core at a time.
+  const nextSystem = SYSTEMS[location.index + 1], nextPlanet = orb.level < FINAL_LEVEL ? getCampaignLocation(orb.level + 1).planetName : null;
+  $('#arena-system').textContent = orb.secret ? 'THE GREEN STAR' : `SYSTEM ${String(location.index + 1).padStart(2,'0')} · ${location.system.name.toUpperCase()}`;
+  $('#arena-planet').textContent = orb.secret ? 'Haze · optional challenge' : won ? 'Expedition complete' : `${location.planetName} · ${orb.final ? 'final core' : orb.systemBoss ? 'system boss' : 'planet'} ${location.planetIndex + 1} / 20`;
+  $('#arena-next').textContent = orb.secret || won ? '' : orb.final ? 'The last core. Break it to finish the expedition.' : ship?.grounded ? `Fuel the ship to reach ${location.planetName}` : orb.systemBoss ? `Defeat it to jump to ${nextSystem?.name ?? 'home'}` : `Break this core to reach ${nextPlanet}`;
   $('#shell-condition').textContent = ['SHELL INTACT','FIRST FRACTURE','SHELL SPLITTING','CORE EXPOSED'][orb.fractureStage || 0];
   $('#core-difficulty').textContent = orb.secret ? 'Secret planet · personal challenge' : orb.final ? `Crystal lattice: ${Math.ceil(orb.finalRemaining/60)} active min remaining` : `System ${location.index+1} / 10 \u00b7 ${location.system.name}${coop ? ` \u00b7 ${orb.crewSize} crew` : ''}`;
   $('#boss-check').hidden=!(orb.systemBoss||orb.secret);

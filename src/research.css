@@ -12,8 +12,10 @@ body[data-view="skills"] .workspace-heading{margin-top:2px;min-height:40px;margi
 .research-overview{padding:6px 0;margin:0 0 7px;font-size:16px;gap:10px;border-top:0;border-bottom:1px dashed #ad9670}
 .research-branches{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 8px;grid-template-columns:none}
 .research-branches>button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:0;min-height:30px;padding:4px 7px;border:1px solid #a18b68;background:#ddcda6;box-shadow:1px 1px #b5a17c;font:17px/1 Terminal,monospace;white-space:nowrap;color:#705c44}
-.research-branches>button i{width:5px;height:5px;display:block;background:var(--branch-color,#b69350);border:1px solid #75664f}
-.research-branches>button span{font:14px/1 Terminal,monospace;padding-left:4px;margin-left:0;border-left:1px solid #af9a76;color:#89714f}
+.research-branches>button i{width:5px;height:5px;display:block;flex-shrink:0;background:var(--branch-color,#b69350);border:1px solid #75664f}
+.research-branches>button span{flex-shrink:0;font:14px/1 Terminal,monospace;padding-left:4px;margin-left:0;border-left:1px solid #af9a76;color:#89714f}
+/* Narrow tabs cut the name with an ellipsis instead of spilling into the next tab. */
+.research-branches>button{overflow:hidden}.research-branches>button .branch-name{min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:inherit}
 .research-branches>button[aria-pressed="true"]{background:#c5d5b4;border-color:#5c806d;color:#3e6155;box-shadow:1px 1px #6f8a72}
 .research-branches>button[aria-pressed="true"] span{color:#557660}
 .research-tools{display:flex;align-items:center;gap:8px;margin:0 0 6px;padding:0}

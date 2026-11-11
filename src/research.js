@@ -212,7 +212,8 @@ class SkillMap {
 }
 
 export function initializeResearch(){
-  $('#research-branches').innerHTML=`<button data-research-branch="all" aria-pressed="true">All paths <span>${research.length}</span></button>`+disciplines.map((branch,index)=>`<button data-research-branch="${branch.id}" aria-pressed="false" style="--branch-color:${colors[index]}"><i></i>${safe(branch.name)}<span id="branch-count-${branch.id}">0</span></button>`).join('');
+  // Names sit in their own box so a narrow tab truncates them with an ellipsis; the title keeps the full name.
+  $('#research-branches').innerHTML=`<button data-research-branch="all" aria-pressed="true" title="All paths"><b class="branch-name">All paths</b><span>${research.length}</span></button>`+disciplines.map((branch,index)=>`<button data-research-branch="${branch.id}" aria-pressed="false" title="${safe(branch.name)}" style="--branch-color:${colors[index]}"><i></i><b class="branch-name">${safe(branch.name)}</b><span id="branch-count-${branch.id}">0</span></button>`).join('');
   mainMap=new SkillMap('#research-map','#research-inspector',research);
   legacyMap=new SkillMap('#legacy-map','#legacy-inspector',legacy,true);
   $('#research-branches').addEventListener('click',event=>{const button=event.target.closest('[data-research-branch]');if(!button)return;selectedBranch=button.dataset.researchBranch;query='';$('#research-search').value='';lastSignature='';renderResearch(lastPlayer,lastState,lastUsable);

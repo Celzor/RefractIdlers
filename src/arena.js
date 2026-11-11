@@ -255,37 +255,23 @@ export class OrbitArena {
     c.imageSmoothingEnabled = false;
     c.globalAlpha = 1;
     this.effectsContext?.clearRect(0,0,w,h);
-    c.fillStyle = '#613a3a'; c.fillRect(0, 0, w, h);
+    this.drawSpace(w, h, visualTime);
 
-    // Felt texture and a stitched border make this a game board, not outer space.
-    for (let i = 0; i < 115; i++) {
-      this.pixel(noise(i * 127.1 + 31) * w, noise(i * 311.7 + 9) * h, i % 4 ? '#684040' : '#573333');
-    }
-    for (let x = 8; x < w - 8; x += 7) { this.pixel(x, 5, '#966957', 3, 1); this.pixel(x, h - 6, '#966957', 3, 1); }
-    for (let y = 12; y < h - 8; y += 7) { this.pixel(5, y, '#966957', 1, 3); this.pixel(w - 6, y, '#966957', 1, 3); }
-    this.drawGardenCorner(12, h - 24, false);
-    this.drawGardenCorner(w - 39, 14, true);
-    this.pixel(15, 15, '#442c28', 8, 5); this.pixel(16, 14, P.wood, 6, 4);
-    this.pixel(17, 14, P.yellow, 1, 2);
-
-    // Discrete stitched orbital rings preserve the tilted Refract voice stage.
+    // Discrete dotted orbital rings preserve the tilted Refract voice stage.
     for (let lane = 0; lane < RADII.length; lane++) {
       const samples = Math.round(this.width * (1.5 + lane * 0.4));
       for (let i = 0; i < samples; i++) {
         if (i % 8 > 3) continue;
         const p = this.project(i / samples * TAU, lane);
-        this.pixel(p.x, p.y, lane === 1 ? '#bf9875' : '#92634f');
+        this.pixel(p.x, p.y, lane === 1 ? '#6b86b4' : '#43587f');
       }
       for (let i = 0; i < 8; i++) {
         const p = this.project(i * TAU / 8, lane);
-        this.pixel(p.x - 1, p.y - 1, '#d1ae7e', 2, 2);
+        this.pixel(p.x - 1, p.y - 1, '#a9c1e4', 2, 2);
       }
     }
 
-    // A little engraved stand frames the separate, keyboard-accessible core.
     const cx = Math.round(w / 2), cy = Math.round(h * 0.49);
-    this.pixel(cx - 24, cy + 23, '#442d2b', 48, 8);
-    this.pixel(cx - 20, cy + 29, '#4f312e', 40, 3);
     if (orb) this.drawOrbFrame(orb, nowMs);
     if (active && state.remaining <= 10) {
       const phase = this.reducedMotion ? 0 : Math.floor(visualTime * 2) % 2;
@@ -414,18 +400,21 @@ export class OrbitArena {
     }
   }
 
-  drawGardenCorner(x, y, flower) {
-    this.pixel(x + 1, y + 8, '#392923', 27, 8);
-    this.pixel(x, y + 7, '#80523b', 26, 6);
-    this.pixel(x + 3, y + 10, '#a46c46', 21, 2);
-    for (let i = 0; i < 4; i++) {
-      const px = x + 3 + i * 6;
-      this.pixel(px, y + 3 - i % 2, P.green, 2, 6);
-      this.pixel(px - 2, y + 4, P.sage, 2, 2);
-      this.pixel(px + 2, y + 2, P.leaf, 2, 2);
-      if (flower && i % 2 === 0) {
-        this.pixel(px - 1, y, P.yellow, 4, 3); this.pixel(px, y + 1, P.orange, 2, 1);
-      }
+  /** Deep space: a seeded pixel starfield with a faint dust band, drifting very slowly. */
+  drawSpace(w, h, time) {
+    this.pixel(0, 0, '#0a0f22', w, h);
+    for (let i = 0; i < 70; i++) {
+      // A diagonal band of dust pixels, like a far-off arm of the galaxy.
+      const t = noise(i * 53.7 + 2), x = t * (w + 80) - 40, y = h * 0.78 - t * h * 0.55 + (noise(i * 17.3 + 5) - 0.5) * 34;
+      this.pixel(x, y, i % 3 ? '#141c3a' : '#1a2448', 2, 2);
+    }
+    const drift = this.reducedMotion ? 0 : time * 0.9;
+    for (let i = 0; i < 160; i++) {
+      const depth = i % 3, x = ((noise(i * 127.1 + 31) * w + drift * (depth + 1) * 0.12) % w + w) % w, y = noise(i * 311.7 + 9) * h;
+      const twinkle = this.reducedMotion ? 1 : (Math.floor(time * 1.5 + i) % 7) ? 1 : 0;
+      if (depth === 0) this.pixel(x, y, '#2e3c66');
+      else if (depth === 1) this.pixel(x, y, twinkle ? '#6f84b5' : '#3a4a78');
+      else { this.pixel(x, y, twinkle ? '#d9e4ff' : '#8798c6'); if (i % 11 === 0 && twinkle) this.spark(x, y, '#5c6c9c', 2); }
     }
   }
 

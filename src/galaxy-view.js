@@ -1,18 +1,23 @@
 import { SYSTEMS, FINAL_LEVEL, FINAL_HP, FINAL_MIN_SECONDS, SECRET_HP, SECRET_DURATION, getCampaignLocation } from './campaign.js';
 import { getOrb, getStats, getShipStatus } from './game.js';
+import { planetSpriteURL, crownedSunURL } from './pixel-planets.js';
 
 const safe=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const text=(node,value)=>{if(node.textContent!==String(value))node.textContent=value;};
+// Notes are clamped with an ellipsis in CSS, so the hover title carries the full sentence.
+const note=(node,value)=>{text(node,value);if(node.title!==String(value))node.title=value;};
 const number=value=>value>=1e9?value.toExponential(1).replace('+',''):new Intl.NumberFormat('en',{maximumFractionDigits:0}).format(value||0);
 const time=seconds=>{const value=Math.max(0,Math.ceil(seconds)),hours=Math.floor(value/3600),minutes=Math.floor(value%3600/60);return hours?`${hours}h ${String(minutes).padStart(2,'0')}m`:`${minutes}m ${String(value%60).padStart(2,'0')}s`;};
 // The expedition winds from the outer rim into the bright galactic heart.
 const POSITIONS=[[13,66],[21,33],[42,17],[71,23],[86,49],[75,79],[48,83],[32,62],[41,39],[58,51]];
 const SHAPES=['terrestrial','clouded','banded','ringed','molten','frost','fractured','ringed','storm','crystal'];
 
+/** Pixel sprite markup for a system's world. Every twentieth core is the system's crowned star. */
 function planet(index,ordinal=0,final=false) {
   if(final)return '<span class="galaxy-final-logo"><img src="assets/refract-icon.png" alt="Refract final core"></span>';
-  const hue=(index*39+ordinal*13+145)%360,color=ordinal?`hsl(${hue} 43% 62%)`:SYSTEMS[index].color;
-  return `<span class="galaxy-planet ${SHAPES[(index+Math.floor(ordinal/4))%SHAPES.length]}" style="--planet-color:${safe(color)};--planet-turn:${ordinal*19}deg" aria-hidden="true"><i></i></span>`;
+  if(ordinal===19)return `<img class="galaxy-planet sun" src="${crownedSunURL({size:16,color:SYSTEMS[index].color})}" alt="" aria-hidden="true">`;
+  const hue=(index*39+ordinal*13+145)%360,color=ordinal?`hsl(${hue} 43% 62%)`:SYSTEMS[index].color,kind=SHAPES[(index+Math.floor(ordinal/4))%SHAPES.length];
+  return `<img class="galaxy-planet ${kind}" src="${planetSpriteURL({kind,color,size:16,seed:index*20+ordinal+1,turn:ordinal*.33})}" alt="" aria-hidden="true">`;
 }
 
 /** Original, seeded star-and-dust artwork; no network textures or per-frame canvas work. */
@@ -72,7 +77,7 @@ export class GalaxyView {
       </aside>
       <aside class="galaxy-secret-inspector" aria-label="Secret star" hidden>
         <h3>The Green Star</h3><p class="secret-system-size">1 planet</p>
-        <div class="secret-planet"><span class="galaxy-planet clouded" style="--planet-color:#6fc979" aria-hidden="true"></span><h4>Haze</h4><span data-secret-status>Optional boss</span></div>
+        <div class="secret-planet"><img class="galaxy-planet clouded" src="${planetSpriteURL({kind:'clouded',color:'#6fc979',size:16,seed:420})}" alt="" aria-hidden="true"><h4>Haze</h4><span data-secret-status>Optional boss</span></div>
         <dl class="secret-requirements"><div><dt>Health</dt><dd>${number(SECRET_HP)} HP</dd></div><div><dt>Time limit</dt><dd>${SECRET_DURATION} seconds</dd></div><div><dt>Required DPS</dt><dd>${number(SECRET_HP/SECRET_DURATION)}</dd></div><div><dt>Your auto DPS</dt><dd data-secret-dps>0</dd></div></dl>
         <p class="secret-reward">Reward: unlock weed in your farm.</p><p class="secret-reward-detail">Feed it to Beam for 4.20× earned LRCs for 4m 20s.</p>
         <div class="secret-actions"><button type="button" class="galaxy-return" data-secret-start>Challenge Haze ↗</button><button type="button" class="galaxy-locate" data-secret-leave hidden>Leave challenge</button><p data-secret-note></p></div>
@@ -120,7 +125,7 @@ export class GalaxyView {
     for(const path of this.root.querySelectorAll('[data-galaxy-route]'))path.classList.toggle('is-charted',won||Number(path.dataset.galaxyRoute)<location.index);
     text(this.root.querySelector('[data-galaxy-system-number]'),`SYSTEM ${String(this.selectedSystem+1).padStart(2,'0')} / 10`);
     text(this.root.querySelector('[data-galaxy-system-badge]'),systemCleared?'Cleared':isCurrent?'Current orbit':'Uncharted');
-    text(this.root.querySelector('[data-galaxy-system-name]'),selected.name);text(this.root.querySelector('[data-galaxy-core-range]'),`Cores ${selected.startLevel}–${selected.endLevel}`);text(this.root.querySelector('[data-galaxy-description]'),selected.description);
+    text(this.root.querySelector('[data-galaxy-system-name]'),selected.name);text(this.root.querySelector('[data-galaxy-core-range]'),`Cores ${selected.startLevel}–${selected.endLevel}`);note(this.root.querySelector('[data-galaxy-description]'),selected.description);
     const cleared=won?20:Math.max(0,Math.min(20,orb.level-selected.startLevel));text(this.root.querySelector('[data-galaxy-progress]'),`${cleared} / 20 cleared`);
     if(this.heroKey!==String(this.selectedSystem)){this.root.querySelector('[data-galaxy-hero]').innerHTML=planet(this.selectedSystem);this.heroKey=String(this.selectedSystem);}
     if(this.lastRoute!==String(this.selectedSystem)){
@@ -135,10 +140,10 @@ export class GalaxyView {
     text(this.root.querySelector('[data-galaxy-planet-status]'),planetCleared?'Cleared':planetCurrent?'In your sights':'Uncharted');text(this.root.querySelector('[data-galaxy-planet-name]'),selectedLocation.planetName);
     text(this.root.querySelector('[data-galaxy-hp]'),planetCurrent?`${number(orb.hp)} / ${number(orb.maxHp)} HP`:final?`${number(preview.maxHp)} HP · ${number(FINAL_HP)} base`:`${number(preview.maxHp)} HP · system ${this.selectedSystem+1}`);
     const track=this.root.querySelector('.galaxy-hp-track');track.hidden=!planetCurrent;track.querySelector('i').style.width=`${Math.min(100,Math.max(0,orb.hp/orb.maxHp*100))}%`;
-    text(this.root.querySelector('[data-galaxy-encounter-note]'),final?(planetCurrent?`Resonance: ${time(orb.finalRemaining??FINAL_MIN_SECONDS)} remaining. Active combat only; pauses between rounds.`:'Shatter its HP and complete 3h of active resonance. No offline or intermission progress.'):preview.systemBoss?`30s DPS check · ${number(preview.requiredDps)} effective DPS required. Health resets on timeout. Defeat it to enter the next system.`:'Destroy this core to continue.');
+    note(this.root.querySelector('[data-galaxy-encounter-note]'),final?(planetCurrent?`Resonance: ${time(orb.finalRemaining??FINAL_MIN_SECONDS)} remaining. Active combat only; pauses between rounds.`:'Shatter its HP and complete 3h of active resonance. No offline or intermission progress.'):preview.systemBoss?`30s DPS check · ${number(preview.requiredDps)} effective DPS required. Health resets on timeout. Defeat it to enter the next system.`:'Destroy this core to continue.');
     this.root.querySelector('.galaxy-final-note').hidden=this.selectedSystem!==SYSTEMS.length-1;
     this.root.querySelector('.galaxy-inspector').classList.toggle('is-crystal',this.selectedSystem===SYSTEMS.length-1);
-    text(this.root.querySelector('[data-galaxy-navigation-note]'),state.phase==='victory'?'A new journey keeps your build, research and prestige, and restarts the planetary route.':(()=>{const ship=player?getShipStatus(player,state):null;return ship?.grounded?`Grounded: Beam has fuelled ${Math.floor(ship.fuel)} of ${ship.target}. Feed him in the Farm to jump.`:'Clear cores to travel. Beam’s meals fuel each jump between systems.';})());
+    note(this.root.querySelector('[data-galaxy-navigation-note]'),state.phase==='victory'?'A new journey keeps your build, research and prestige, and restarts the planetary route.':(()=>{const ship=player?getShipStatus(player,state):null;return ship?.grounded?`Grounded: Beam has fuelled ${Math.floor(ship.fuel)} of ${ship.target}. Feed him in the Farm to jump.`:'Clear cores to travel. Beam’s meals fuel each jump between systems.';})());
     this.root.querySelector('[data-galaxy-orbit]').disabled=false;
     this.root.querySelector('.galaxy-inspector').hidden=this.secretSelected;
     this.root.querySelector('.galaxy-secret-inspector').hidden=!this.secretSelected;
