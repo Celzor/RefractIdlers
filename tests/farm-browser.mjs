@@ -89,7 +89,7 @@ async function assertFrame(width, height) {
     const selectors=['[data-tab="farm"]','#farm-view','#beam-companion','[data-buy-farm-plot]','[data-farm-upgrade]','[data-farm-plot]','[data-select-crop]','[data-feed-crop]'];
     const problems=[];
     for(const selector of selectors){const nodes=[...document.querySelectorAll(selector)];if(!nodes.length)problems.push('Missing '+selector);
-      for(const node of nodes){const r=node.getBoundingClientRect();if(r.width<=0||r.height<=0||r.left<0||r.top<0||r.right>innerWidth+1||r.bottom>innerHeight+1)problems.push('Outside viewport '+selector);
+      for(const node of nodes){if(node.closest('[hidden]'))continue;const r=node.getBoundingClientRect();if(r.width<=0||r.height<=0||r.left<0||r.top<0||r.right>innerWidth+1||r.bottom>innerHeight+1)problems.push('Outside viewport '+selector);
         const text=node.matches('[data-farm-plot]')?node.querySelector('.garden-bed-action'):node;
         if(node.matches('button')&&(text.scrollWidth>text.clientWidth+2||text.scrollHeight>text.clientHeight+2))problems.push('Clipped control '+selector+' '+text.textContent);
       }
@@ -130,7 +130,7 @@ async function cooperativeFarm() {
   await waitFor(`document.querySelectorAll('iframe').length===2 && ${frameDocument(101)}.querySelector('#round-action') && ${frameDocument(202)}.querySelector('#round-action')`);
   await evaluate(`import(${JSON.stringify(new URL('src/game.js',base).href)}).then(game=>{globalThis.__farmAcceptanceGame=game;return true;})`);
   await waitFor(`${session(101)}?.players.length===2 && ${session(202)}?.players.length===2`);
-  const fixture=await evaluate(`(()=>{const game=globalThis.__farmAcceptanceGame,state=game.createGame({mode:'coop'});game.addPlayer(state,{id:'101',name:'Alex'});game.addPlayer(state,{id:'202',name:'Sam'});game.applyAction(state,'101',{type:'start'});game.advance(state,60);const p=state.players[0];p.lrc=p.runLrc=p.lifetimeLrc=100000;state.sharedLrc=100000;if(!game.validateState(state))throw Error('Invalid Co-op farm fixture');return state;})()`);
+  const fixture=await evaluate(`(()=>{const game=globalThis.__farmAcceptanceGame,state=game.createGame({mode:'coop'});game.addPlayer(state,{id:'101',name:'Alex'});game.addPlayer(state,{id:'202',name:'Sam'});game.applyAction(state,'101',{type:'start'});game.advance(state,60);const p=state.players[0];p.lrc=p.runLrc=p.lifetimeLrc=10000000;state.sharedLrc=100000;if(!game.validateState(state))throw Error('Invalid Co-op farm fixture');return state;})()`);
   await loadHostFixture(fixture);
   await waitFor(`${session(101)}?.sharedLrc===100000 && ${session(202)}?.sharedLrc===100000`);
   await frameClick(202,'[data-tab="orbit"]');
@@ -149,14 +149,14 @@ async function cooperativeFarm() {
   await frameClick(202,'[data-feed-crop="carrot"]');
   await waitFor(`${session(101)}.players.find(p=>p.id==='202').farm.fedSeconds===30 && ${session(202)}.players.find(p=>p.id==='202').farm.fedSeconds===30`);
   const host=await evaluate(session(101)),follower=await evaluate(session(202));
-  assert.equal(host.sharedLrc,99610,'A follower spends the shared bank for its own farm and grow light');
+  assert.equal(host.sharedLrc,60900,'A follower pays 14,000 for its farm, 25,000 for a grow light and 100 for each carrot seed from the shared bank');
   assert.equal(host.players[0].farm.unlocked,false,'The host does not receive the follower\'s farm purchases');
   assert.deepEqual(host.players[1].farm,follower.players[1].farm,'Both clients agree on the follower farm and Beam meal');
   await evaluate(`document.querySelector('[aria-label="Leave as Alex"]').click()`);
   await waitFor(`${session(202)}.players.length===1`);
   const handover=await evaluate(session(202));
   assert.deepEqual(handover.players[0].farm,follower.players[1].farm,'Host handover preserves planted beds, equipment, harvest inventory and meals');
-  assert.equal(handover.sharedLrc,99610,'Host handover preserves the farm spending from the shared bank');
+  assert.equal(handover.sharedLrc,60900,'Host handover preserves the farm spending from the shared bank');
   console.log('PASS Co-op follower farm actions, shared spending, snapshots, and host handover');
 }
 
@@ -184,7 +184,7 @@ try {
   await navigate();
   await seed('');
   assert.equal(await evaluate(`document.querySelector('[data-tab="farm"]').hidden`),true,'The garden tab starts locked');
-  await seed(`game.applyAction(state,'you',{type:'start'});p.lrc=p.runLrc=p.lifetimeLrc=100000;`);
+  await seed(`game.applyAction(state,'you',{type:'start'});p.lrc=p.runLrc=p.lifetimeLrc=10000000;`);
   await click('[data-buy-generator="satellite"]');
   await waitFor(`!document.querySelector('[data-tab="farm"]').hidden && ${garden}.unlocked`);
   await click('[data-tab="farm"]');
@@ -195,33 +195,52 @@ try {
   await click('[data-buy-farm-plot]');
   await waitFor(`${garden}.plots.length===2`);
   assert.equal(await evaluate(`document.querySelector('[data-farm-plot="1"]').dataset.growthStage`),'empty','Bought land appears as an empty planting bed');
-  for(const id of ['growLights','hydroponics','fertiliser']){
+  await click('[data-select-crop="carrot"]');
+  await click('[data-farm-plot="0"]');
+  await waitFor(`${garden}.plots[0].crop==='carrot'`);
+  assert.equal(await evaluate(`document.querySelector('[data-water-plot="0"]').hidden`),false,'Before hydroponics, a planted bed offers a watering can');
+  assert.equal(await evaluate(`document.querySelector('[data-water-plot="0"]').disabled`),true,'A freshly planted bed is already soaked');
+  await click('[data-fertilise-plot="0"]');
+  await waitFor(`${garden}.plots[0].fertilised===true`);
+  assert.equal(await evaluate(`document.querySelector('[data-fertilise-plot="0"]').hidden`),true,'A fertilised bed hides its fertiliser sack');
+  assert.ok(await evaluate(`document.querySelectorAll('[data-farm-plot="0"] .garden-plant-slot svg').length`)===3,'A planted bed draws three growing plants');
+  assert.equal(await evaluate(`document.querySelector('[data-farm-plot="0"]').disabled`),true,'A soaked, fertilised, growing bed has no chore left to click');
+  console.log('PASS hand fertilising and watering tools on a planted bed');
+  for(const id of ['growLights','hydroponics','tractor','picker']){
     for(let level=1;level<=3;level++){
       await click(`[data-farm-upgrade="${id}"]`);
       await waitFor(`${garden}.upgrades[${JSON.stringify(id)}]===${level}`);
       assert.equal(await evaluate(`document.querySelectorAll('[data-farm-equipment="${id}"] [data-equipment-unit]').length`),level,`${id} visibly renders every purchased level`);
     }
   }
+  assert.equal(await evaluate(`document.querySelector('[data-water-plot="0"]').hidden`),true,'Hydroponics replaces the watering can');
+  assert.equal(await evaluate(`document.querySelector('[data-bed-slot="0"]').dataset.moisture`),'hydro','Hydroponic beds are drawn as water troughs');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.garden-pipe-top')).display`),'block','Hydroponics installs feed pipes');
   for(const crop of ['lettuce','tomato','pumpkin']){
     await click(`[data-unlock-crop="${crop}"]`);
     await waitFor(`${garden}.crops[${JSON.stringify(crop)}]===true`);
   }
   await click('[data-select-crop="carrot"]');
-  await click('[data-farm-plot="0"]');
-  await waitFor(`${garden}.plots[0].crop==='carrot'`);
+  assert.match(await evaluate(`document.querySelector('[data-farm-plot="1"]').getAttribute('aria-label')`),/100.*LRC/,'Planting announces its fresh seed price');
   await click('[data-select-crop="tomato"]');
   await click('[data-farm-plot="1"]');
   await waitFor(`${garden}.plots[1].crop==='tomato'`);
   console.log('PASS land, vegetables, and each equipment level are purchased and drawn in the garden');
 
-  await seed(`game.advance(state,Math.min(30,state.remaining));`,true);
+  // Park the picker bots for this step so the ripe bed is left for a manual harvest.
+  await seed(`delete p.farm.upgrades.picker;p.farm.pickerClock=0;p.farm.inventory={};p.fuel=0;p.farm.fedSeconds=0;
+    if(!p.farm.plots[0].crop)game.applyAction(state,'you',{type:'plantCrop',plot:0,crop:'carrot'});
+    Object.assign(p.farm.plots[0],{crop:'carrot',progress:1,fertilised:true});game.advance(state,Math.min(10,state.remaining));`,true);
   await click('[data-tab="farm"]');
   await waitFor(`document.querySelector('[data-farm-plot="0"]').dataset.growthStage==='ready'`);
   await click('[data-farm-plot="0"]');
-  await waitFor(`${garden}.inventory.carrot===4`);
+  await waitFor(`${garden}.inventory.carrot===2`);
   const statsBefore=await evaluate(`import('./src/game.js').then(game=>game.getStats(${saved}.players[0],${saved}))`);
+  const fuelBefore=await evaluate(`${saved}.players[0].fuel`);
   await click('[data-feed-crop="carrot"]');
-  await waitFor(`${garden}.inventory.carrot===3 && ${garden}.fedSeconds>0`);
+  await waitFor(`${garden}.inventory.carrot===1 && ${garden}.fedSeconds>0`);
+  assert.equal(await evaluate(`${saved}.players[0].fuel`),fuelBefore+30,'Each meal also fuels Beam’s ship');
+  assert.match(await evaluate(`document.querySelector('[data-fuel-text]').textContent`),/30 \/ 120/,'The ship panel shows the fuel tank filling');
   const statsAfter=await evaluate(`import('./src/game.js').then(game=>game.getStats(${saved}.players[0],${saved}))`);
   assert.ok(statsAfter.passiveRate>statsBefore.passiveRate,'A meal improves income');
   assert.ok(statsAfter.clickDamage>statsBefore.clickDamage,'A meal improves orb damage');
@@ -231,11 +250,11 @@ try {
   assert.equal(await evaluate(`document.activeElement===document.querySelector('[data-feed-crop="carrot"]')`),true,'Live garden updates retain keyboard focus');
   await navigate(true);
   await click('[data-tab="farm"]');
-  assert.equal(await evaluate(`${garden}.inventory.carrot`),3,'The harvest inventory survives reload');
+  assert.equal(await evaluate(`${garden}.inventory.carrot`),1,'The harvest inventory survives reload');
   assert.equal(await evaluate(`${garden}.upgrades.hydroponics`),3,'Farm equipment survives reload');
   console.log('PASS planting, ripening, harvest, feeding, bonus, and save reload');
 
-  await seed(`game.advance(state,state.remaining);p.lrc=p.runLrc=p.lifetimeLrc=100000;while(p.farm.plots.length<6)game.applyAction(state,'you',{type:'buyFarmPlot'});for(let i=0;i<6;i++){if(p.farm.plots[i].crop)game.applyAction(state,'you',{type:'harvestCrop',plot:i});game.applyAction(state,'you',{type:'plantCrop',plot:i,crop:['carrot','lettuce','tomato','pumpkin'][i%4]});p.farm.plots[i].progress=[1,.2,.6][i%3];}`,true);
+  await seed(`game.advance(state,state.remaining);p.lrc=p.runLrc=p.lifetimeLrc=10000000;while(p.farm.plots.length<6)game.applyAction(state,'you',{type:'buyFarmPlot'});for(let i=0;i<6;i++){if(p.farm.plots[i].crop)game.applyAction(state,'you',{type:'harvestCrop',plot:i});game.applyAction(state,'you',{type:'plantCrop',plot:i,crop:['carrot','lettuce','tomato','pumpkin'][i%4]});p.farm.plots[i].progress=[1,.2,.6][i%3];}`,true);
   await click('[data-tab="farm"]');
   for(const [width,height]of [[1366,768],[1920,1080]]){
     await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
@@ -266,7 +285,7 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('[data-equipment-unit]').length`),0,'The scene removes reset equipment');
   console.log('PASS farm research, prestige research, and visible prestige reset');
 
-  await seed(`game.applyAction(state,'you',{type:'start'});p.lrc=p.runLrc=p.lifetimeLrc=100000;`);
+  await seed(`game.applyAction(state,'you',{type:'start'});p.lrc=p.runLrc=p.lifetimeLrc=10000000;`);
   await click('[data-shop-catalog="click"]');
   let previous=await evaluate(`import('./src/game.js').then(game=>game.getStats(${saved}.players[0],${saved}))`);
   for(const id of ['wormhole','foamer','string']){

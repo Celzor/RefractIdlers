@@ -9,6 +9,7 @@ export const SKILL_BRANCHES = Object.freeze([
   { id: 'fortune', name: 'Prism fortune', description: 'Critical multipliers, extra hits and longer combos.', currency: 'skill' },
   { id: 'mastery', name: 'Long horizon', description: 'Long-term research income and cross-discipline growth.', currency: 'skill' },
   { id: 'farm', name: 'Beam’s garden', description: 'Faster vegetables, richer harvests and stronger meals for Beam.', currency: 'skill' },
+  { id: 'chronos', name: 'Spacetime', description: 'Stretch active rounds from one minute to three. The longest researched duration leads the crew.', currency: 'skill' },
   { id: 'ascension', name: 'Eternal light', description: 'Spend prestige points on permanent disciplines.', currency: 'prestige' },
 ]);
 
@@ -86,6 +87,14 @@ lines.farm = [
   ['photosynthetic-feast', 'Photosynthetic feast', 'Meals add another 3 percentage points of income and damage per rank.', { beamBoost: 0.03 }],
   ['orbital-ecosystem', 'Orbital ecosystem', '+20% crop growth speed and +10% meal duration per rank.', { cropSpeed: 0.2, mealDuration: 0.1 }],
 ];
+lines.chronos = [
+  ['clock-stretch', 'Clock stretch', '+2 seconds to each future round per rank.', { roundSeconds: 2 }],
+  ['orbital-intervals', 'Orbital intervals', '+2 seconds to each future round per rank.', { roundSeconds: 2 }],
+  ['time-prism', 'Time prism', '+3 seconds to each future round per rank.', { roundSeconds: 3 }],
+  ['chronal-reservoir', 'Chronal reservoir', '+4 seconds to each future round per rank.', { roundSeconds: 4 }],
+  ['spacetime-fold', 'Spacetime fold', '+4 seconds to each future round per rank.', { roundSeconds: 4 }],
+  ['infinite-afternoon', 'Infinite afternoon', '+5 seconds per rank. Complete this discipline for 180-second rounds.', { roundSeconds: 5 }],
+];
 const tiers = [1, 4, 15, 50, 180, 600];
 const maxRanks = [8, 8, 8, 6, 5, 4];
 const orbGates = [0, 10, 25, 50, 100, 175];
@@ -97,7 +106,7 @@ const research = branchIds.flatMap((branch, branchIndex) => lines[branch].map(([
   const requiredRanks = tier ? { [requires[0]]: tier < 3 ? tier + 1 : 2 } : {};
   if (tier >= 3) {
     // Keep shipped cross-branch prerequisites stable when adding disciplines.
-    const cross = lines[branch === 'farm' ? 'idle' : branchIds[(branchIndex + 1) % 8]][tier - 2][0];
+    const cross = lines[branch === 'farm' ? 'idle' : branch === 'chronos' ? 'mastery' : branchIds[(branchIndex + 1) % 8]][tier - 2][0];
     requires.push(cross); requiredRanks[cross] = tier >= 5 ? 1 : 2;
   }
   return { id, name, branch, description, effects, cost: tiers[tier], costGrowth: 1.38,

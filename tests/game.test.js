@@ -1,3 +1,4 @@
+import { FINAL_HP, FINAL_LEVEL, getSystemHpMultiplier, fuelTarget } from '../src/campaign.js';
 import { getFarmStats } from '../src/farm.js';
 import test from 'node:test';
 import { compactGameState } from '../src/game.js';
@@ -145,6 +146,88 @@ test('prestige uses earned LRC, preserves lifetime progress, and resets only tha
   assert.equal(state.phase, 'intermission');
   assert.equal(applyAction(state, a.id, { type: 'prestige' }).ok, false);
   assert.equal(validateState(state), true);
+});
+
+test('a pilot can wipe their own progress without touching the crew, the round or the shared session', () => {
+  const state = setup(2); start(state);
+  const [a, b] = state.players;
+  fund(a, 50000); fund(b, 700);
+  Object.assign(a, { skillPoints: 7, prestigePoints: 3, totalPrestige: 5, prestigeCount: 2, highestOrb: 40, orbsDestroyed: 39, completedRounds: 12, clicks: 900, autoClicks: 50, victories: 1, orb: { level: 40, hp: 5, bossStartedAt:0 } });
+  a.generators.mote = 4; a.skills['solar-cells'] = 1; a.farm.unlocked = true;
+  b.generators.mote = 1;
+  const colour = a.color;
+  assert.equal(validateState(state), true);
+  assert.equal(applyAction(state, 'stranger', { type: 'resetProgress' }).ok, false);
+  assert.equal(applyAction(state, a.id, { type: 'resetProgress' }).ok, true, 'Resets are allowed during a round');
+  const reset = state.players[0];
+  assert.equal(reset.id, a.id);
+  assert.equal(reset.name, a.name);
+  assert.equal(reset.color, colour, 'The pilot keeps their colour');
+  assert.equal(state.players[1], b, 'Roster order and the host seat survive');
+  for (const key of ['lrc', 'runLrc', 'lifetimeLrc', 'roundLrc', 'clicks', 'autoClicks', 'skillPoints', 'prestigePoints', 'totalPrestige', 'prestigeCount', 'orbsDestroyed', 'completedRounds', 'victories']) assert.equal(reset[key], 0, key);
+  assert.deepEqual(reset.generators, {});
+  assert.deepEqual(reset.skills, {});
+  assert.equal(reset.highestOrb, 1);
+  assert.equal(getOrb(reset, state).level, 1);
+  assert.equal(reset.farm.unlocked, false);
+  assert.equal(getStats(reset, state).multiplier, 1);
+  assert.equal(b.lrc, 700);
+  assert.equal(b.generators.mote, 1);
+  assert.equal(state.round, 1);
+  assert.equal(state.phase, 'round');
+  assert.equal(validateState(state), true);
+  advance(state, 60);
+  assert.equal(applyAction(state, reset.id, { type: 'ready' }).ok, true);
+  assert.equal(state.players[0].ready, true);
+  assert.equal(applyAction(state, reset.id, { type: 'resetProgress' }).ok, true, 'Resets are allowed between rounds');
+  assert.equal(state.players[0].ready, false, 'A reset pilot is no longer ready');
+  assert.equal(state.phase, 'intermission');
+  assert.equal(state.round, 1, 'The shared round number continues');
+  assert.equal(validateState(state), true);
+});
+
+test('co-op resets keep the shared bank and orb while the fresh pilot inherits the crew milestone', () => {
+  const state = createGame({ mode: 'coop' });
+  addPlayer(state, { id: 'pilot-0', name: 'Pilot 0' });
+  addPlayer(state, { id: 'pilot-1', name: 'Pilot 1' });
+  start(state);
+  state.sharedLrc = 4000;
+  state.sharedOrb = { level: 12, hp: 1 };
+  state.players[0].generators.prism = 2; state.players[0].skills['solar-cells'] = 1; state.players[0].highestOrb = 12;
+  state.players[1].generators.mote = 3;
+  assert.equal(validateState(state), true);
+  const sharedBefore = structuredClone({ lrc: state.sharedLrc, orb: state.sharedOrb, team: state.teamLrc });
+  assert.equal(applyAction(state, 'pilot-0', { type: 'resetProgress' }).ok, true);
+  assert.deepEqual({ lrc: state.sharedLrc, orb: state.sharedOrb, team: state.teamLrc }, sharedBefore, 'The shared pool and orb are untouched');
+  assert.deepEqual(state.players[0].generators, {});
+  assert.deepEqual(state.players[0].skills, {});
+  assert.equal(state.players[0].highestOrb, 12, 'A fresh co-op pilot starts at the crew orb');
+  assert.equal(state.players[1].generators.mote, 3);
+  assert.equal(getBalance(state.players[0], state), 4000);
+  assert.equal(validateState(state), true);
+});
+
+for (const mode of ['scoreboard', 'coop']) test(`${mode} reset removes personal round records from saves and synchronized snapshots`, () => {
+  const state = setup(2);
+  assert.equal(applyAction(state, 'pilot-0', { type: 'setMode', mode }).ok, true);
+  start(state);
+  assert.equal(applyAction(state, 'pilot-1', { type: 'click' }).ok, true);
+  advance(state, 60);
+  const before = structuredClone(state);
+  const previousResult = before.lastRound.players.find(player => player.id === 'pilot-1');
+  assert.ok(previousResult.lrc > 0);
+  assert.equal(previousResult.clicks, 1);
+  assert.equal(applyAction(state, 'pilot-1', { type: 'resetProgress' }).ok, true);
+  assert.equal(state.players[1].lifetimeLrc, 0);
+  assert.equal(state.players[1].skillPoints, 0);
+  assert.deepEqual(state.players[0], before.players[0], 'The other pilot keeps their progress');
+  assert.deepEqual(state.lastRound, { ...before.lastRound, players: [before.lastRound.players[0]] }, 'Only the erased pilot’s personal result is removed');
+  for (const key of ['teamLrc', 'sharedLrc', 'sharedOrb', 'goalReached', 'round', 'phase']) assert.deepEqual(state[key], before[key], `The session keeps ${key}`);
+  assert.equal(validateState(state), true);
+  assert.deepEqual(migrateState(JSON.parse(JSON.stringify(state))), state, 'Reload cannot restore the erased round record');
+  assert.deepEqual(migrateState(compactGameState(state)), state, 'Peers and a replacement host receive the erased record');
+  assert.equal(applyAction(state, 'pilot-1', { type: 'resetProgress' }).ok, true);
+  assert.deepEqual(state.lastRound.players, [before.lastRound.players[0]], 'Repeating a reset preserves the other pilot’s result');
 });
 
 test('final ten seconds double click yield without affecting idle income', () => {
@@ -538,13 +621,13 @@ test('orb damage is private in scoreboard and shared in co-op; destroyed orbs pa
   }
 });
 
-test('orb maximum HP is strictly increasing across every boss boundary before the numeric ceiling', () => {
+test('orb maximum HP is strictly increasing across every planet and system through the final core', () => {
   const state = setup(); const player = state.players[0]; let previous = 0;
-  for (let level = 1; level <= 2000; level++) {
+  for (let level = 1; level <= FINAL_LEVEL; level++) {
     player.orb = { level, hp: 1 }; player.highestOrb = level;
     const orb = getOrb(player, state);
     assert.ok(orb.maxHp > previous, `Orb ${level} must be stronger than ${level - 1}`);
-    assert.equal(orb.boss, level % 10 === 0);
+    assert.equal(orb.boss, level < FINAL_LEVEL && level % 20 === 0);
     assert.equal(orb.resistance, orb.boss ? 0.5 : 0);
     assert.ok(Number.isFinite(orb.maxHp)); previous = orb.maxHp;
   }
@@ -558,9 +641,12 @@ test('analytical multi-orb combat matches an iterative oracle for partial, boss 
     for (let i = 1; i < crewSize; i++) addPlayer(state, { id: `crew-${i}`, name: 'Crew' });
     start(state);
     const scale = state.mode === 'coop' ? 1 + 0.85 * (crewSize - 1) : 1;
-    const level = 1 + trial % 200;
-    const core = { level, hp: 2000 * scale * 1.18 ** (level - 1) * (0.2 + (trial % 7) / 10) };
+    const level = 1 + trial % (FINAL_LEVEL-1);
+    const core = { level, hp: 2000 * scale * getSystemHpMultiplier(level) * 1.18 ** (level - 1) * (0.2 + (trial % 7) / 10) };
+    if(level%20===0)core.bossStartedAt=state.now;
     if (state.mode === 'coop') state.sharedOrb = core; else player.orb = core;
+    // Jump-point bosses need a fuelled ship; this oracle checks combat arithmetic once the core is reachable.
+    if (state.mode === 'coop') state.sharedFuel = fuelTarget(level); else player.fuel = fuelTarget(level);
     player.highestOrb = level; player.totalPrestige = 10 ** (trial % 14); player.generators.star = trial % 1000;
     if (trial % 3 === 0) player.skills[idOf('bossbreaker')] = 4;
     if (trial % 4 === 0) player.skills[idOf('prism-bounty')] = 3;
@@ -568,13 +654,14 @@ test('analytical multi-orb combat matches an iterative oracle for partial, boss 
     if (trial % 7 === 0) player.skills[idOf('chip-fracture')] = 2;
     const stats = getStats(player, state);
     let budget = stats.clickDamage, nextLevel = level, nextHp = core.hp, reward = 0, kills = 0;
-    while (kills < 10000) {
-      const boss = nextLevel % 10 === 0, factor = boss ? stats.bossDamageMultiplier / 2 : 1;
+    while (nextLevel < FINAL_LEVEL) {
+      const boss = nextLevel % 20 === 0, factor = boss ? stats.bossDamageMultiplier / 2 : 1;
       const cost = nextHp / factor;
       if (budget < cost) { nextHp -= budget * factor; break; }
       budget -= cost;
       reward += ((boss ? 1500 : 300) * 1.14 ** (nextLevel - 1) * (boss ? stats.bossDropMultiplier : 1) + stats.dropFlat) * scale * stats.dropMultiplier;
-      kills++; nextLevel++; nextHp = 2000 * scale * 1.18 ** (nextLevel - 1);
+      kills++; nextLevel++; nextHp = nextLevel === FINAL_LEVEL ? FINAL_HP * scale : 2000 * scale * getSystemHpMultiplier(nextLevel) * 1.18 ** (nextLevel - 1);
+      if(nextLevel%20===0)break;
     }
     const result = applyAction(state, player.id, { type: 'click' });
     assert.equal(result.critical, false);
@@ -589,10 +676,10 @@ test('analytical multi-orb combat matches an iterative oracle for partial, boss 
 test('research has functional breadth and a proven multi-day completion floor', () => {
   const research = SKILLS.filter((skill) => skill.currency === 'skill');
   const prestige = SKILLS.filter((skill) => skill.currency === 'prestige');
-  assert.equal(research.length, 54); assert.equal(prestige.length, 16);
-  assert.equal(SKILL_BRANCHES.filter((branch) => branch.currency === 'skill').length, 9);
-  assert.equal(new Set(SKILLS.map((skill) => skill.id)).size, 70);
-  assert.equal(RESEARCH_TOTAL_RANKS, 351);
+  assert.equal(research.length, 60); assert.equal(prestige.length, 16);
+  assert.equal(SKILL_BRANCHES.filter((branch) => branch.currency === 'skill').length, 10);
+  assert.equal(new Set(SKILLS.map((skill) => skill.id)).size, 76);
+  assert.equal(RESEARCH_TOTAL_RANKS, 390);
   const independentlySummedCost = research.reduce((total, skill) => total + Array.from({ length: skill.maxRank }, (_, i) => Math.ceil(skill.cost * skill.costGrowth ** i)).reduce((a, b) => a + b, 0), 0);
   assert.equal(RESEARCH_TOTAL_COST, independentlySummedCost);
   assert.ok(RESEARCH_TOTAL_COST / MAX_SKILL_POINTS_PER_ROUND / 1440 > 4);
@@ -830,7 +917,7 @@ test('combat migration retains legacy damage fractions, rejects corrupt cores an
     assert.ok(migrated); assert.equal(migrated.combatVersion, 2);
     const scale = mode === 'coop' ? 2.7 : 1;
     assert.ok(Math.abs(migrated.sharedOrb.hp / (2000 * scale * 1.18 ** 9) - 0.4) < 1e-12);
-    for (const player of migrated.players) assert.ok(Math.abs(player.orb.hp / (2000 * 1.18 ** 19) - 0.75) < 1e-12);
+    for (const player of migrated.players) assert.ok(Math.abs(player.orb.hp / (2000 * 1.18 ** 19) - 1) < 1e-12,'Legacy system bosses start a fresh timed attempt');
     assert.equal(validateState(legacy), false, 'Legacy network snapshots cannot bypass combat migration');
     assert.equal(validateState(migrated), true); assert.deepEqual(legacy, original);
     assert.deepEqual(migrateState(migrated), migrated);
@@ -848,9 +935,9 @@ test('combat migration retains legacy damage fractions, rejects corrupt cores an
   player.highestOrb = 1000000; player.orb = { level: 1000000, hp: 1e149 };
   capped.sharedOrb = { level: 1000000, hp: 1e149 }; delete capped.combatVersion;
   const migrated = migrateState(capped);
-  assert.equal(migrated.players[0].orb.hp, 1e149);
+  assert.deepEqual(migrated.players[0].orb, {level:FINAL_LEVEL,hp:FINAL_HP,finalElapsed:0});
   addPlayer(migrated, { id: 'join', name: 'Join' });
-  assert.equal(migrated.sharedOrb.hp, 1e149, 'At the finite HP ceiling, roster changes still preserve damage');
+  assert.equal(migrated.sharedOrb.hp, FINAL_HP*1.85, 'The final lattice retains its full health fraction as the crew grows');
   assert.equal(validateState(migrated), true);
 });
 
@@ -1003,4 +1090,62 @@ test('Arsenal prestige, restore and handover retain lifetime shots but reset onl
     assert.equal(validateState(corrupt), false); assert.equal(migrateState(corrupt), null);
   }
   assert.equal(validateState(state), true);
+});
+
+test('system boss automation keeps the same result across catch-up slices, including retries and gate crossings', () => {
+  for(const mode of ['scoreboard','coop'])for(const owned of [1,40,400]){
+    const long=setup(mode==='coop'?2:1);applyAction(long,'pilot-0',{type:'setMode',mode});start(long);
+    const orb=mode==='coop'?long.sharedOrb:long.players[0].orb;orb.level=20;orb.hp=getOrb(long.players[0],long).maxHp;
+    for(const p of long.players){p.highestOrb=20;p.generators={mote:owned,wormhole:20};}
+    const split=structuredClone(long);advance(long,45);for(let i=0;i<450;i++)advance(split,.1);
+    const a=getOrb(long.players[0],long),b=getOrb(split.players[0],split);
+    assert.equal(a.level,b.level,`${mode} ${owned} clickers reach the same planet`);
+    assert.ok(Math.abs(a.hp-b.hp)/a.maxHp<1e-10);
+    assert.ok(Math.abs(a.bossRemaining-b.bossRemaining)<1e-8);
+    assert.deepEqual(long.players.map(p=>p.autoClicks),split.players.map(p=>p.autoClicks));
+    assert.equal(validateState(long),true);assert.equal(validateState(split),true);
+  }
+});
+
+test('cooked boosts earned LRCs once without changing damage or multiplying a secret victory reward', () => {
+  for(const mode of ['scoreboard','coop']){
+    const state=setup();applyAction(state,'pilot-0',{type:'setMode',mode});start(state);const p=state.players[0];
+    const ordinary=getStats(p,state);p.farm.unlocked=true;p.farm.crops.weed=true;p.farm.cookedSeconds=20;
+    const boosted=getStats(p,state);assert.equal(boosted.clickDamage,ordinary.clickDamage);assert.equal(boosted.autoDamage,ordinary.autoDamage);
+    assert.equal(boosted.clickIncome,ordinary.clickIncome*4.2);assert.equal(boosted.passiveRate,ordinary.passiveRate*4.2);
+    (mode==='coop'?state.sharedOrb:p.orb).hp=1;
+    const hit=applyAction(state,p.id,{type:'click'});
+    assert.ok(Math.abs(hit.amount-(300+.25)*4.2)<1e-10,'The orb drop and click mint each receive one multiplier');
+    assert.ok(Math.abs(getBalance(p,state)-hit.amount)<1e-10);assert.equal(validateState(state),true);
+  }
+  const state=setup();start(state);const p=state.players[0],before=structuredClone(p.orb);
+  assert.equal(applyAction(state,p.id,{type:'startSecretChallenge'}).ok,true);p.secretOrb.hp=1;
+  const mint=getStats(p,state).clickIncome,result=applyAction(state,p.id,{type:'click'});
+  assert.equal(result.amount,mint,'The killing click earns its normal mint with no secret boss drop');
+  assert.equal(p.lifetimeLrc,mint);assert.deepEqual(p.orb,before);assert.equal(p.orbsDestroyed,0);assert.equal(p.victories,0);assert.equal(p.farm.crops.weed,true);
+  assert.equal(validateState(state),true);
+});
+
+test('cooked expiry splits automatic minting exactly and leaves the next manual click at its normal value', () => {
+  const long=setup();start(long);const p=long.players[0];p.generators.mouse=1;p.farm.unlocked=true;p.farm.crops.weed=true;p.farm.cookedSeconds=10;
+  const split=structuredClone(long);advance(long,20);advance(split,10);advance(split,10);
+  assert.equal(p.lifetimeLrc,78,'Ten seconds at 1.5 LRC/s times 4.2, then ten seconds at the normal rate');
+  assert.equal(p.lifetimeLrc,split.players[0].lifetimeLrc);assert.deepEqual(p.orb,split.players[0].orb);assert.equal(p.autoClicks,40);
+  assert.equal(p.farm.cookedSeconds,0);const hit=applyAction(long,p.id,{type:'click'});assert.equal(hit.amount,.25);
+  assert.equal(validateState(long),true);
+});
+
+test('decimal-time combo expiry advances production and resets the next click instead of stalling', () => {
+  const state=setup();start(state);const p=state.players[0];
+  state.now=3.3;state.remaining=56.7;p.comboAt=1.3;p.combo=8;p.generators.mote=2;
+  p.skills[SKILLS.find(skill=>skill.effects.comboPower).id]=1;
+  assert.equal(state.now-p.comboAt<2,true,'This decimal boundary rounds below two seconds when subtracted');
+  assert.equal(getStats(p,state).combo,0,'The absolute deadline has already expired');
+  const damage=getStats(p,state).autoDamage,hp=p.orb.hp;
+  advance(state,1);
+  assert.equal(state.now,4.3);assert.equal(state.remaining,55.7);assert.equal(p.combo,0);
+  assert.equal(p.autoClicks,1);assert.equal(p.orb.hp,hp-damage);assert.ok(p.lifetimeLrc>0);
+  p.combo=8;p.comboAt=state.now-2;
+  assert.equal(applyAction(state,p.id,{type:'click'}).ok,true);assert.equal(p.combo,1,'A click at the expiry deadline begins a new combo');
+  assert.equal(validateState(state),true);
 });

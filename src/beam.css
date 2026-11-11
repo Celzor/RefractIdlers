@@ -18,7 +18,7 @@
 .beam-companion[data-collapsed=true] .beam-sprite{width:64px;height:64px;opacity:.65}
 .beam-companion[data-collapsed=true] .beam-poke::after{display:none}
 .beam-companion[data-collapsed=true] .beam-toggle{top:23px}
-.beam-night,.beam-sun,.beam-chair,.beam-boat,.beam-wind,.beam-crown,.beam-eyes-cheer,.beam-eyes-worried,.beam-eyes-windy,.beam-eyes-blink{display:none}
+.beam-night,.beam-sun,.beam-chair,.beam-boat,.beam-wind,.beam-crown,.beam-eyes-cheer,.beam-eyes-worried,.beam-eyes-windy,.beam-eyes-blink,.beam-eyes-baked,.beam-toke-hand,.beam-smoke-wisp,.beam-exhale{display:none}
 .beam-float{animation:beam-hover 3.2s steps(3,end) infinite;transform-origin:32px 37px}
 .beam-shard{animation:beam-shard-drift 4.8s steps(4,end) infinite;transform-origin:57px 19px}
 .beam-eyes{animation:beam-eyes-open 6.8s steps(1,end) infinite}
@@ -47,6 +47,21 @@
 .beam-companion[data-mood=rest][data-time=day] .beam-feet{display:none}
 .beam-companion[data-mood=rest][data-time=night] .beam-feet{transform:translateY(-3px)}
 .beam-companion[data-mood=prestige] .beam-crown{display:block}
+.beam-companion[data-cooked=true] .beam-sprite{filter:drop-shadow(0 0 7px #94d76b80)}
+.beam-companion[data-cooked=true] .beam-nameplate span{color:#b6dc83}
+.beam-companion[data-cooked=true] :is(.beam-eyes,.beam-eyes-blink,.beam-eyes-cheer,.beam-eyes-worried,.beam-eyes-windy,.beam-hand-right){display:none}
+.beam-companion[data-cooked=true] .beam-eyes-baked{display:block}
+.beam-companion[data-cooked=true] .beam-float{animation:beam-cooked-sway 5.2s steps(5,end) infinite;transform-origin:32px 46px}
+.beam-companion[data-cooked=true] .beam-character{transform:none}
+.beam-companion[data-cooked=true] :is(.beam-chair,.beam-boat,.beam-night,.beam-sun,.beam-wind){display:none}
+.beam-companion[data-cooked=true] .beam-hand-left{animation:none;transform:translate(3px,9px)}
+.beam-companion[data-cooked=true] .beam-toke-hand{display:block;transform:translate(7px,7px);transform-origin:47px 44px}
+.beam-companion[data-cooked=true] .beam-ember{filter:drop-shadow(0 0 1px #f2a16c);animation:beam-ember-glow 4.4s steps(3,end) infinite}
+.beam-companion[data-cooked=true] .beam-smoke-wisp{display:block;opacity:0;transform-origin:49px 37px;animation:beam-smoke-rise 5.2s linear infinite}
+.beam-companion[data-cooked=true] .beam-smoke-wisp-late{animation-delay:-2.6s}
+.beam-companion[data-cooked=true][data-toking=true] .beam-toke-hand{animation:beam-toke 6.2s ease-in-out 1}
+.beam-companion[data-cooked=true][data-toking=true] .beam-ember{animation:beam-toke-ember 6.2s linear 1}
+.beam-companion[data-cooked=true][data-toking=true] .beam-exhale{display:block;opacity:0;animation:beam-exhale 6.2s ease-out 1;transform-origin:35px 36px}
 .beam-companion.beam-poked .beam-character{animation:beam-poke .9s steps(4,end) 1;transform-origin:32px 47px}
 .beam-companion[data-paused=true] *,.beam-companion[data-collapsed=true] *{animation-play-state:paused!important}
 @keyframes beam-hover{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
@@ -58,5 +73,12 @@
 @keyframes beam-gust{0%{transform:translateX(3px);opacity:.2}50%{opacity:.65}100%{transform:translateX(-3px);opacity:.2}}
 @keyframes beam-brace{0%,100%{transform:translate(0,0)}50%{transform:translate(-1px,1px)}}
 @keyframes beam-poke{0%,100%{transform:translateY(0)}35%{transform:translateY(-5px) rotate(5deg)}65%{transform:translateY(1px) rotate(-3deg)}}
+@keyframes beam-cooked-sway{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(1px) rotate(2deg)}}
+@keyframes beam-toke{0%,100%{transform:translate(7px,7px)}18%,47%{transform:translate(0,0)}62%,78%{transform:translate(4px,5px)}}
+@keyframes beam-ember-glow{0%,65%,100%{opacity:.55}80%{opacity:1}}
+@keyframes beam-toke-ember{0%,15%,65%,100%{opacity:.45}25%,47%{opacity:1;filter:drop-shadow(0 0 2px #ffbd72)}}
+@keyframes beam-smoke-rise{0%{opacity:0;transform:translate(7px,6px) scale(.65)}18%{opacity:.35}70%{opacity:.16}100%{opacity:0;transform:translate(3px,-10px) scale(1.15)}}
+@keyframes beam-exhale{0%,45%,100%{opacity:0;transform:translate(0,0) scale(.65)}55%{opacity:.65}85%{opacity:0;transform:translate(8px,-10px) scale(1.3)}}
 @media(prefers-reduced-motion:reduce){.beam-companion *{animation:none!important}.beam-eyes-blink{display:none!important}}
+@media(prefers-reduced-motion:reduce){.beam-companion[data-cooked=true] .beam-smoke-wisp{opacity:.2;transform:translate(5px,2px)}.beam-companion[data-cooked=true] .beam-smoke-wisp-late{display:none}}
 @media(max-width:720px){.beam-companion{height:78px;width:300px}.beam-poke{height:78px;width:78px;flex-basis:78px}.beam-sprite{width:78px;height:78px}.beam-line{font-size:16px}.beam-nameplate{margin-bottom:4px;gap:6px}.beam-nameplate span{font-size:10px}.beam-toggle{top:10px}}

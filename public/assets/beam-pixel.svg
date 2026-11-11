@@ -40,6 +40,39 @@
     <g id="beam-eyes-blink">
       <path fill="#efd89f" d="M24 32h7v2h-7zm12 0h7v2h-7zM31 37h2v1h3v-1h2v2h-7z"/>
     </g>
+    <g id="beam-eyes-baked">
+      <path fill="#0e2038" d="M23 28h10v8H23zm12 0h10v8H35zM30 37h9v4h-9z"/>
+      <path fill="#df888b" d="M25 31h6v4h-6zm12 0h6v4h-6z"/>
+      <path fill="#f5b5ab" d="M25 32h6v1h-6zm12 0h6v1h-6z"/>
+      <path fill="#26313e" d="M28 32h2v3h-2zm12 0h2v3h-2z"/>
+      <path fill="#3a6978" d="M24 28h7v2h2v2h-9zm12 0h7v2h2v2h-9z"/>
+      <path fill="#b9687b" d="M25 35h6v1h-6zm12 0h6v1h-6z"/>
+      <path fill="#edc783" d="M31 38h2v1h4v-1h2v2h-8z"/>
+    </g>
+    <g id="beam-hand-toke">
+      <path fill="#15243b" d="M43 38h7v3h4v7h-7v-3h-4z"/>
+      <path fill="#489bc8" d="M45 40h4v3h3v3h-4v-3h-3z"/>
+      <path fill="#91eee2" d="M45 40h3v3h-3z"/>
+    </g>
+    <g id="beam-joint">
+      <path fill="#15243b" d="M35 36h16v6H35z"/>
+      <path fill="#f0e1b7" d="M35 37h13v3H35z"/>
+      <path fill="#fff5da" d="M36 37h10v1H36z"/>
+      <path fill="#b9a887" d="M38 39h8v1h-8z"/>
+      <path fill="#9c8b78" d="M48 37h2v3h-2z"/>
+    </g>
+    <g id="beam-ember">
+      <path fill="#e57550" d="M48 37h3v3h-3z"/>
+      <path fill="#ffd085" d="M49 37h2v1h-2z"/>
+    </g>
+    <g id="beam-smoke">
+      <path fill="#bcd3bd" d="M48 35h3v-4h-3v-4h-3v-5h3v-3h-2v-3h-3v5h-1v6h3v5h3z"/>
+      <path fill="#e1e8d0" d="M49 30h2v-4h-3v-5h-2v6h3z"/>
+    </g>
+    <g id="beam-exhale">
+      <path fill="#b9d1bc" d="M36 37h6v-3h6v-3h6v-4h-4v-3h-5v3h-5v3h-5v3h-3v3h4z"/>
+      <path fill="#e1e8d0" d="M41 32h7v-3h4v-2h-6v3h-5z"/>
+    </g>
     <g id="beam-hand-left">
       <path fill="#15243b" d="M7 30h5v3h2v7h-6v-2H5v-5h2z"/>
       <path fill="#67dedc" d="M8 32h3v3h1v3H8v-2H7v-2h1z"/>

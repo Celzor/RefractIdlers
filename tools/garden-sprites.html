@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><title>Garden sprite sheet</title>
+<style>body{margin:0;padding:12px;background:#5d4a37;font:12px monospace;color:#f0e1b7}.row{display:flex;gap:4px;align-items:flex-end;margin-bottom:10px}.row b{width:70px}.cell svg{width:54px;height:66px;image-rendering:pixelated;background:#6b4d33}.wide{flex-wrap:wrap}.wide svg{width:84px;height:84px;background:#9db9a4}</style>
+<div id="out"></div>
+<script type="module">
+import * as S from '../src/farm-sprites.js';
+const out=document.querySelector('#out');let html='';
+for(const crop of ['carrot','lettuce','tomato','pumpkin','weed']){html+=`<div class="row"><b>${crop}</b>`;for(let i=0;i<=12;i++)html+=`<span class="cell">${S.plantSprite(crop,i/12)}</span>`;html+=`<span class="cell">${S.produceIcon(crop)}</span></div>`;}
+html+='<div class="row wide">'+[S.lampSprite(),S.tankSprite(0),S.tankSprite(1),S.tankSprite(2),S.tractorSprite(0),S.tractorSprite(1),S.pickerSprite(0),S.pickerSprite(1),S.wateringCanSprite(),S.fertiliserSprite(),S.rocketSprite(),S.cloudSprite(),S.sunSprite(),S.sparkleSprite(),S.droplet()].map(s=>`<span>${s}</span>`).join('')+'</div>';
+out.innerHTML=html;document.body.dataset.ready='1';
+</script>

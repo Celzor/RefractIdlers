@@ -18,9 +18,9 @@ The host chooses one mode in the initial lobby. It stays fixed for that session.
 
 Up to eight pilots are active. Additional participants spectate. Departed pilots leave the live ranking and stop producing; their already-earned co-op LRCs remain in the bank, and the shared orb's damaged percentage remains. The engine supports bots for tests, but there is no bot toggle in the interface.
 
-## The 60-second loop
+## The shared round clock
 
-The host starts the first round. During each 60-second round, pilots can attack, buy machines, and earn continuous income. The final 10 seconds double manual and automatic hit damage. Continuous farm production is unchanged; research can separately enhance surge minting.
+The host starts the first round at 60 seconds. Spacetime research extends future rounds to a maximum of 180 seconds. `getRoundDuration(state)` uses `60 + max(roundSeconds research among active human pilots)`, capped at 180; bots never set the duration. The shared duration is fixed at round start, including in Scoreboard, so research purchases and roster changes cannot alter an ongoing countdown. During rounds, pilots attack, buy machines and seeds, tend crops, and earn continuous income. The final 10 seconds double manual and automatic hit damage. Continuous farm production is unchanged; research can separately enhance surge minting.
 
 Completing a round grants 2 SP, plus 1 for meeting the applicable milestone, plus any research bonus. Total awards are capped at **10 SP per pilot per completed round**. The exact award is recorded before upgrades or prestige can change the build. There is no income in the lobby or intermission and no closed-tab income calculation.
 
@@ -36,16 +36,16 @@ Scoreboard uses that personal amount. Co-op multiplies it by the number of pilot
 
 ## Destructible orbs
 
-An unmodified manual click deals **2 damage** and separately mints **0.25 LRC**. The first personal core has **2,000 HP** and pays **300 LRC** when destroyed. A new, stronger core appears immediately. Excess damage carries into subsequent cores.
+An unmodified manual click deals **2 damage** and separately mints **0.25 LRC**. The first personal core has **2,000 HP** and pays **300 LRC** when destroyed. A new, stronger core appears immediately. Excess damage carries into subsequent ordinary cores, stopping at the final crystal.
 
 The first visible shell fracture appears at **10% damage**, requiring **100 ordinary unmodified hits** against the first personal core. Later crack stages appear at **35% and 65% damage**. The shell is the visual outer surface of the same health pool; reaching a crack stage does not destroy the core or pay a separate reward. Critical hits, surge, research and automation accelerate the work. Baseline production and manual minting continue to fund the first machines while the durable shell is chipped away.
 
 ```text
-unscaled maximum HP at level n = 2,000 × 1.18^(n − 1)
+unscaled ordinary HP at level n = 2,000 × 1.18^(n − 1) × 3^floor((n − 1) / 20)
 unscaled destruction reward = 300 × 1.14^(n − 1)
 ```
 
-Every tenth orb is a boss. Bosses have **50% damage resistance** and **five times the base reward**. Maximum HP follows the same increasing curve, so orb 11 still has more HP than orb 10. Bossbreaker and related research improve damage against the resistance; boss-reward research improves the boss drop. HP and rewards eventually saturate at the documented finite economy ceiling.
+The final ordinary core in each system (20, 40, …, 180) is a 30-second boss gate. Bosses have **50% damage resistance** and **five times the base reward**. Maximum HP rises across boss and system boundaries. Bossbreaker and related research improve damage against the resistance; boss-reward research improves the boss drop. Core 200 uses the final-crystal rules below, with no ordinary boss resistance or LRC drop.
 
 Scoreboard always uses the personal curve, regardless of how many other pilots are present. Co-op multiplies maximum HP and destruction rewards by:
 
@@ -65,14 +65,37 @@ Consecutive manual hits build a combo, initially capped at ten. The combo expire
 
 Orb drops belong to the pilot whose attack shatters the orb. In co-op those drops enter the pool and that pilot's contribution record. All active co-op pilots share the highest orb reached for research gates. `getOrb(player,state).reward` previews the **personalized manual destruction reward**, including that pilot's research and prestige. Automatic-only drop modifiers can change an automatic kill's payout.
 
-Large attacks use capped geometric sums and a binary search for the number of full orbs destroyed. Work does not grow linearly with the number of kills. The test suite compares this analytical calculation against an independent iterative oracle across partial orbs, bosses, modifiers, and high-value attacks.
+Large attacks use capped geometric sums across at most ten system bands and a binary search for the number of full ordinary cores destroyed. System bosses and the final core cannot be skipped by residual damage. The test suite compares this calculation against an independent iterative oracle across partial cores, bosses, system boundaries and high-value attacks.
+
+## Ten systems and the final crystal
+
+`src/campaign.js` defines ten systems, each containing twenty named planetary cores: Solace, Verdant Reach, Cinderwake, Azure Drift, Gilded Spiral, Violet Expanse, Hollow Crown, Chronos Veil, Infinite Prism, and **Crystal**. Crystal is Beam's home system; its unusually hard cores and the parallel-universe story are additions for Idlers, not established Refract companion lore. `getCampaignLocation(level)` resolves the system and planet used by the Galaxy map and core view.
+
+The last core, **Refract — Beam's home**, uses the Refract logo and has **10^120 base HP**, multiplied by the usual co-op crew scale. Ordinary numeric damage would be too small to change that health reliably, so each accepted hit converts to crystal resonance:
+
+```text
+resonance fraction per hit = min(0.01, log10(1 + raw damage) / 100000)
+remaining health floor = maximum HP × max(0, 1 − finalElapsed / 10800)
+```
+
+Automatic batches apply the per-hit fraction to their actual pulse count. The final core starts with full health and zero `finalElapsed` even after an enormous attack. Its active-round clock advances only while that core is present, once per shared core in Co-op. No build, click cadence or crew size can defeat it in less than **10,800 active seconds after arrival**. Intermissions and closed tabs add no time. Damage cannot cross the remaining-health floor; when it opens fully, remaining health still has to be removed. The UI exposes the resonance conversion and time remaining. Co-op roster changes preserve health percentage and elapsed lattice time.
+
+A final kill sets global `phase: 'victory'`, remaining time to zero, and a persistent `{playerId, at}` victory event. Every current pilot receives 100 available and lifetime prestige points and one `victories` increment, with safe-integer caps. The engine stops production, growing, timers and subsequent attacks immediately. Every gameplay action is rejected except the host's `newJourney`; reloads and repeated inputs cannot award the same victory twice. The victory event survives host departure and a returning winner does not receive another payout.
+
+### Ship fuel and jump points
+
+Beam's meals fuel the ship. `isJumpPoint(level)` marks cores 20, 40, …, 200; `fuelTarget(level)` returns the current system's `FUEL_TARGETS` entry (120, 200, 350, 600, 1,000, 1,700, 2,900, 4,900, 8,400, 14,000). Fuel lives in `player.fuel` (Scoreboard) or `state.sharedFuel` (Co-op); `getFuel` and `getShipStatus(player,state)` read the right tank. While a jump-point core's tank is short of its target, `damageOrb` returns `{kills:0,amount:0,grounded:true}` before any boss clock starts, and `encounterStep` skips the core so automatic fleets cannot split time into microscopic steps waiting for a first hit. Breaking a jump-point core empties the tank. Validation bounds each tank by the current core's target and keeps the unused tank at zero. Prestige empties a personal tank, a Co-op crew tank survives personal prestige, and `newJourney` empties every tank. Missing fields migrate to empty tanks.
+
+`feedBeam` receives `context.fuelRoom` and returns `fuel = min(fuelRoom, meal seconds)` (weed counts as 260); `applyAction` adds it to the tank. When Beam's meal or Cooked timer is already full, a meal is still accepted while the tank has room, turning the food entirely into fuel. With both full, feeding is rejected and spends nothing.
+
+`newJourney` resets shared and personal cores to level 1, clears fractional attack clocks and combos, and opens an unready intermission. It retains research, balances, machines, gardens, lifetime records and victory rewards. Ordinary personal prestige still resets the choosing pilot's core and final timer; Co-op prestige preserves the shared final crystal.
 
 ## Machines and bulk purchases
 
 | Machine | Initial price | Effect per unit |
 | --- | ---: | --- |
 | Auto clicker | 25 | One automated orb strike every two seconds |
-| Refract orb farm | 140 | 6 base continuous LRC/second |
+| Refract orb farm | 14,000 | 6 base continuous LRC/second and access to Beam's Garden |
 | Light array | 800 | 32 base continuous LRC/second |
 | Refractometer | 4,500 | +10% personal damage and all LRC production |
 | Pocket star | 12,000 | 300 base continuous LRC/second |
@@ -102,36 +125,43 @@ Automatic strikes are actual pulses. The original clicker and Clockwork core sha
 
 ## Beam's Garden
 
-The first `satellite` purchase permanently unlocks the Farm tab. [`src/farm.js`](../src/farm.js) owns the catalogues and farm rules; [`src/farm-view.js`](../src/farm-view.js) renders the greenhouse. Each player's named `farm` state contains `unlocked`, `plots`, `crops`, `inventory`, `upgrades`, `fedSeconds` and lifetime `meals`. A fresh farm has one empty bed and carrot seeds. Each plot is `{crop,progress}`, with `crop:null` for an empty bed and progress from 0 to 1.
+The first `satellite` purchase, starting at 14,000 LRCs, permanently unlocks the Farm tab. [`src/farm.js`](../src/farm.js) owns the catalogues and farm rules; [`src/farm-view.js`](../src/farm-view.js) renders the greenhouse from the pixel sprites in [`src/farm-sprites.js`](../src/farm-sprites.js). Each player's named `farm` state contains `unlocked`, `plots`, `crops`, `inventory`, `upgrades`, `fedSeconds`, `cookedSeconds`, lifetime `meals`, and the automation clocks `tractorClock` and `pickerClock`. A fresh farm has one empty bed and the carrot variety unlocked. Each plot is `{crop,progress,water,fertilised}`: `crop:null` is an empty bed with zero progress and water and `fertilised:false`; `progress` and `water` run from 0 to 1.
 
-| Crop | Seed unlock LRCs | Base growth seconds | Base meal seconds |
-| --- | ---: | ---: | ---: |
-| Carrot | 0 | 30 | 30 |
-| Lettuce | 180 | 45 | 45 |
-| Tomato | 650 | 60 | 70 |
-| Pumpkin | 2,200 | 90 | 110 |
+| Crop | Variety unlock LRCs | Seeds per planting LRCs | Base growth seconds | Base meal seconds |
+| --- | ---: | ---: | ---: | ---: |
+| Carrot | 0 | 100 | 30 | 30 |
+| Lettuce | 18,000 | 250 | 45 | 45 |
+| Tomato | 65,000 | 600 | 60 | 70 |
+| Pumpkin | 220,000 | 1,500 | 90 | 110 |
 
-Planting unlocked seeds is free. A ready bed must be harvested manually; harvesting puts vegetables into inventory and clears the bed. Feeding consumes one vegetable and extends Beam's meal timer, capped at **300 active seconds**. While fed, the owner's personal income and hit damage gain a base **25%** multiplier bonus. The bonus applies to passive income, minting, orb rewards, and manual and automatic damage; it does not increase attack cadence. The companion's portrait and poke action remain cosmetic.
+Every planting purchases fresh seeds, including for an already unlocked variety. Seed prices are 100 LRCs for carrots, 250 for lettuce, 600 for tomatoes, and 1,500 for pumpkins before research discounts. A ready bed must be harvested manually; harvesting puts vegetables into inventory and clears the bed. Feeding consumes one vegetable and extends Beam's meal timer, capped at **300 active seconds**. While fed, the owner's personal income and hit damage gain a base **25%** multiplier bonus. The bonus applies to passive income, minting, ordinary orb rewards, and manual and automatic damage; it does not increase attack cadence. The companion's portrait and poke action remain cosmetic.
 
-The garden expands to six beds. The next bed costs `ceil(120 × 2.2^(owned beds − 1) × (1 − discount))`. Grow lights, hydroponics and fertiliser each have three levels, starting at 250, 600 and 400 LRCs respectively; their next level costs `ceil(base cost × 2.5^owned level × (1 − discount))`. Seed costs use the same discount. `getFarmStats(player)` exposes these combined effects:
+The garden expands to six beds. The next bed costs `ceil(12000 × 2.2^(owned beds − 1) × (1 − discount))`. Grow lights, hydroponics, tractors and picker bots each have three levels, starting at 25,000, 60,000, 40,000 and 90,000 LRCs respectively; their next level costs `ceil(base cost × 2.5^owned level × (1 − discount))`. Variety unlocks and every seed purchase use the same discount. `getFarmStats(player)` exposes these combined effects:
 
 ```text
-growthRate = 1 + 0.25 × grow lights + 0.35 × hydroponics + cropSpeed research
-yield = 1 + fertiliser + floor(cropYield research)
+growthRate = 1 + 0.25 × grow lights + 0.25 × hydroponics + cropSpeed research
+yield = 1 + floor(cropYield research)            (+1 for a fertilised bed)
+autoWater = hydroponics ≥ 1
+tractorPeriod = 8 / tractors seconds             (0 when none)
+pickerPeriod = 6 / picker bots seconds           (0 when none)
 feedMultiplier = 1 + mealDuration research
 feedBonus = 0.25 + beamBoost research
 discount = min(0.75, farmDiscount research)
 ```
 
-`advanceFarm(player,seconds)` increases each planted bed's progress by `seconds × growthRate / crop.growTime`, up to 1, and decreases the meal timer. The game calls it only during active rounds, splitting at meal expiry before recalculating production. Growth and meals pause during intermissions; there is no offline progress. The scene draws every purchased bed, each crop's growth stage, one lamp per grow-light level, additional tanks and pipes for hydroponics, and one sack per fertiliser level.
+Planting sets `water:1, fertilised:false`. A bed grows at `growthRate × (fertilised ? 1.5 : 1) / crop.growTime` per active second while it has water; one watering (`waterCrop`) lasts `WATER_SECONDS = 20` and a dry bed stops growing. `fertiliseCrop` marks a growing bed once. Hydroponics holds every planted bed at full water.
 
-`applyAction` routes `unlockCrop`, `buyFarmPlot`, `buyFarmUpgrade`, `plantCrop`, `harvestCrop` and `feedBeam` to `applyFarmAction(player,action,balance,spend)`. All require an unlocked farm and either a round or intermission. The host checks seed ownership, plot indices, maturity, inventory, equipment capacity and affordability before committing. `farmCropCost`, `farmPlotCost` and `farmUpgradeCost` supply the same prices to the view and engine. Co-op purchases use the shared bank, but the farm, produce and meal bonus remain personal; boosted earnings feed the pool. Inventories cap at 999,999 per vegetable, and a full pantry rejects harvesting without clearing the bed.
+`advanceFarm(player,seconds,wallet)` splits elapsed time at every tractor and picker cycle boundary, so results are independent of how the host slices time. Each tractor cycle fertilises the first planted, unfertilised, unripe bed. Each picker cycle harvests the first ripe bed whose pantry has room, then buys the same seed through `wallet` and replants it; without enough LRCs the bed stays empty. Water drains only while a crop grows. Meal and Cooked timers decrease alongside. The game calls it only during active rounds, splitting at meal expiry before recalculating production; there is no offline progress.
+
+The scene draws every purchased bed with three plants rendered from exact progress (48 frames per crop), soil moisture, fertiliser granules and thirst warnings; one grow lamp per level; one reservoir, nutrient or UV tank per hydroponics level, with feed pipes, drip emitters and water troughs; one tractor per level in the floor lane; one picker bot per level on the monorail; and Beam's ship with its fuel gauge. Snapshot comparison animates the bot or tractor that worked a bed and Beam heaving light into the tank when fuel rises.
+
+`applyAction` routes `unlockCrop`, `buyFarmPlot`, `buyFarmUpgrade`, `plantCrop`, `waterCrop`, `fertiliseCrop`, `harvestCrop` and `feedBeam` to `applyFarmAction(player,action,balance,spend,context)`. All require an unlocked farm and either a round or intermission. The host checks variety ownership, plot indices, maturity, inventory, equipment capacity and affordability before committing. `farmCropCost`, `farmSeedCost`, `farmPlotCost` and `farmUpgradeCost` supply identical prices to the view and engine. A failed or occupied-bed planting spends nothing. Co-op purchases, including each planting, use the shared bank, but the farm, produce and meal bonus remain personal; boosted earnings feed the pool. Inventories cap at 999,999 per vegetable, and a full pantry rejects harvesting without clearing the bed.
 
 `resetFarm(player)` preserves garden access, unlocked seeds and lifetime meals. Prestige resets the garden to one empty bed and clears equipment, harvested produce and the meal timer. Research remains on the player and continues to improve the next garden.
 
 ## Persistent research
 
-There are **54 regular research nodes in nine branches**, plus **16 permanent prestige disciplines**. All research ranks survive prestige. The full regular tree has **351 ranks**.
+There are **60 regular research nodes in ten branches**, plus **16 permanent prestige disciplines**. All research ranks survive prestige. The full regular tree has **390 ranks**.
 
 | Branch | Main systems |
 | --- | --- |
@@ -144,6 +174,7 @@ There are **54 regular research nodes in nine branches**, plus **16 permanent pr
 | Prism fortune | Critical multipliers, extra hits, critical minting and combo capacity |
 | Long horizon | Research insight and long-term cross-discipline bonuses |
 | Beam's garden | Vegetable growth, meal duration and strength, harvest yield, garden purchase discounts |
+| Spacetime | Extend future rounds from 60 to 180 seconds |
 
 Each branch has six tiers:
 
@@ -160,9 +191,11 @@ The next regular rank costs `ceil(base cost × 1.38^current rank)`. Exact prereq
 
 Beam's garden follows Seed science → Long lunch → Garden planning → Abundant harvest → Photosynthetic feast → Orbital ecosystem. Its later cross-branch requirements connect to Living light. All six nodes also require an unlocked garden; adding the branch preserves the previously shipped branches' prerequisite links.
 
+Spacetime follows Clock stretch → Orbital intervals → Time prism → Chronal reservoir → Spacetime fold → Infinite afternoon. Per-rank extensions are 2, 2, 3, 4, 4 and 5 seconds across the six tiers, totaling 120 extra seconds at full ranks. Later nodes connect to Long horizon. Bonuses survive prestige and affect the next shared round.
+
 Event horizon grants +1 SP once any rank is owned. Deep research, Chrono archive, Universal theory, Keeper's insight, and Infinite library add fractional **research insight**. Every whole accumulated insight gives +1 SP per completed round. Maximum regular insight is 4.2 and permanent insight is 2; with the base award, milestone, and Event horizon, the hard maximum is 10 SP.
 
-The entire regular tree costs **67,293 SP**. Even granting the maximum 10 SP from the first round, ignoring every milestone gate and every intermission, completion requires at least **6,730 rounds: 112.17 active hours, or 4.67 days of harvesting**. Actual completion takes longer because early rounds grant fewer points and intermissions require decisions. This is a mathematical lower bound, not an unattended completion estimate. The balance audit in `scripts/balance.mjs` measures representative legal purchase/research policies separately; its current policies buy machines and research but do not actively garden or feed Beam.
+The entire regular tree costs **74,770 SP**. Even granting the maximum 10 SP from the first round, ignoring every milestone gate and intermission, completion requires at least **7,477 rounds**. At the shortest 60-second duration that is **124.62 active hours, or 5.19 days**. Spacetime research extends rounds, early rounds grant fewer points, and intermissions require decisions, so actual completion is slower. This is a mathematical lower bound, not an unattended completion estimate. The balance audit in `scripts/balance.mjs` follows legal machine and research policies without gardening or meals, uses actual variable round durations, and stops on campaign victory.
 
 ## Prestige and permanent disciplines
 
@@ -186,6 +219,8 @@ The logarithmic award prevents the prestige/reinvestment feedback loop from reac
 Each lifetime earned PP adds 10% to the prestige multiplier. Spendable PP can buy permanent disciplines without reducing that lifetime multiplier. Prestige resets only the choosing pilot's personal wallet/run earnings, machines, personal orb, fractional auto-strike progress, and combo. It **preserves all research, unspent SP, lifetime earnings, manual/automatic click counts, highest orb, destruction count, completed rounds, and prestige history**. In co-op it also preserves the shared bank and shared orb exactly. Other pilots retain their builds.
 
 Garden access, unlocked seeds and lifetime meal counts also survive. The choosing pilot's garden returns to one empty bed with no equipment, inventory or active meal bonus.
+
+`resetProgress` is the opposite of prestige: a complete personal wipe. The acting pilot is replaced by a newly created player that keeps only its identity, avatar, colour and roster position (so a resetting host stays host). Every balance, record, rank, machine, garden field, prestige total and victory count returns to zero, the personal core returns to level 1, and the pilot is no longer ready. It is accepted in the lobby, during a round and in intermission, and rejected during a frozen victory like every other action. In co-op the fresh pilot inherits the shared orb level as its highest-orb milestone, and the shared bank, shared orb and crew round total are untouched. The standalone client does not send this action: it discards the device save, creates a new game and returns to the first lobby. Both paths require an explicit acknowledgement in the interface and cannot be undone.
 
 The sixteen prestige disciplines form four chains:
 
@@ -227,20 +262,30 @@ Refract supplies authenticated participants and a relay. The first participant c
 
 Standalone saves are device-local. Shared snapshots use browser session storage. There is no account-backed save, cross-device progression, global ranking, or offline catch-up. Closing every participating session can end that shared run. Research is permanent within retained progression, not independent of browser storage.
 
-The engine migrates older saves by adding missing orb/counter fields and preserves already-earned legacy ranks even if new research prerequisites are higher. Future purchases enforce the new gates. New saves and snapshots require `combatVersion: 2` while retaining overall state `version: 1`. Legacy saves with no combat version or combat version 1 convert the old 12-HP curve to the 2,000-HP curve **by remaining-health fraction**; shared cores also receive the current human-crew scale. A legacy core at 25% health stays at 25% health. Current-version saves preserve partial HP exactly, and unsupported future combat versions or invalid old HP are rejected. Migration clones the input and never grants money, kills, levels, research or prestige.
+The engine migrates older saves by adding missing orb/counter fields and preserves already-earned legacy ranks even if new research prerequisites are higher. Future purchases enforce the new gates. New saves require `combatVersion: 2` and `campaignVersion: 1` while retaining overall `version: 1`. Legacy 12-HP and pre-campaign 2,000-HP curves convert ordinary cores **by remaining-health fraction**, including system and co-op scale; a core at 25% health remains at 25%. Old cores already at or beyond level 200 migrate to a full-health final crystal with a fresh lattice timer, preserving their recorded highest-orb milestone and granting no victory. Current-version saves preserve exact partial HP and elapsed final time. Unsupported versions, impossible health and malformed clocks are rejected. Migration clones its input and does not grant rewards.
 
 The original nine skill IDs remain stable; compact IDs for newer nodes keep large multiplayer snapshots within the relay envelope. Readable catalog keys and names remain available for UI and audits.
 
 The simulation and local/session-storage saves keep named fields. `compactGameState(state)` creates the relay representation without mutating the live state and strips avatar URLs, which come from the roster. Compact fields are:
 
-- `player.skills`: comma-separated `id:rank` entries, or an empty string for no ranks.
-- `player.farm`: `packFarm` returns `[unlockedFlag, seedMask, plots, inventory, upgrades, fedSeconds, meals]`. `unlockedFlag` is 0 or 1. The seed bitmask and four inventory slots follow `CROPS` order: carrot, lettuce, tomato, pumpkin. Plot pairs are `[cropNumber, progress]`, using 0 for empty or the one-based crop index. The three upgrade slots follow `FARM_UPGRADES`: grow lights, hydroponics, fertiliser. A null inventory or upgrade slot represents an absent named property.
+- `player.skills` and `player.generators`: rank arrays in `SKILLS` and `GENERATORS` catalog order, with trailing zeros trimmed. Each entry is validated against its catalog maximum. The older comma-separated `id:rank` strings still decode.
+- `sharedOrb` and `player.orb`: `[level, hp]`, or `[level, hp, finalElapsed]` for the final crystal. Numeric precision is retained.
+- `state.sharedFuel` and `player.fuel`: plain numbers, bounded by the current core's fuel target.
+- `player.farm`: `packFarm` returns `[unlockedFlag, seedMask, plots, inventory, upgrades, fedSeconds, meals, tractorClock, pickerClock, cookedSeconds]`. `unlockedFlag` is 0 or 1. The seed bitmask and inventory slots follow `CROPS` order. An empty bed packs as `[0]`; a planted bed as `[cropNumber, progress, water, fertilisedFlag]` with the one-based crop index. The four upgrade slots follow `FARM_UPGRADES`: grow lights, hydroponics, tractor, picker. A null inventory or upgrade slot represents an absent named property. Older seven-field farms (two-field `[crop, progress]` beds, three upgrade slots ending in fertiliser) and nine-field farms still decode: their beds start watered and unfertilised, and each fertiliser level becomes a tractor level.
 - `lastRound.players`: rows `[playerIndexOrId, lrc, clicks, skillPoints]`. Active pilots use their index in the snapshot's player array; a departed pilot keeps their string ID so the completed-round summary survives roster changes.
 
-`migrateState` clones and decodes either the named or compact representation, including `unpackFarm` and strict skill decoding, then applies full `validateState` checks. Malformed array shapes, duplicate or unknown skill IDs, out-of-range values and invalid summary indices are rejected. The activity bridge uses this same validated decoder for received snapshots, and the UI uses its named result. Old named saves gain an empty garden, unlocked if they already own a `satellite`; no existing crop state is overwritten.
+`migrateState` clones and decodes either the named or compact representation, including `unpackFarm`, orb tuples and strict skill/machine counts, then applies full `validateState` checks. Malformed arrays, duplicate or unknown catalog IDs, out-of-range values and invalid summary indices are rejected. Final HP cannot sit below the elapsed lattice floor; zero health requires a consistent frozen victory. The activity bridge uses this same validated decoder for received snapshots, and the UI uses its named result. Old named saves gain an empty garden, unlocked if they already own a `satellite`; existing crop state is retained.
 
 - Monetary values and damage are finite and capped at `10^150`; integer counters use the safe-integer ceiling.
-- Machines cap at 1,000 of each kind. Orb level has a finite implementation limit of one million; saturated HP/rewards remain finite.
+- Machines cap at 1,000 of each kind. Live core progression ends at 200; retained legacy highest-core records may be larger.
 - Compact snapshots must remain below 15,000 UTF-8 bytes, leaving room for the 16 KiB relay envelope. `validateState` measures the compact representation even when validating named state. Tests cover eight fully ranked, fully equipped gardens with long IDs, Unicode names and completed-round summaries.
 - Validation covers malformed numbers, catalog ranks, duplicate IDs, phase fields, orb HP, farm ownership and inventory, compact encodings, and payload size. Both saved and received state must pass full validation after decoding.
-- Automated checks include 250 independent combat-oracle cases across personal and scaled co-op cores, the 100-hit first-fracture threshold, roster changes and legacy health-fraction migration, atomic bulk purchases, mode isolation, pooled state retention, research gates/effects, reward caps, multi-day cost bounds, persistence, and host handover.
+- Automated checks cover the combat oracle across system boundaries, the 100-hit first fracture, roster changes and migration, paid seed atomicity, mode isolation, research gates, variable round lengths, the three-hour minimum against eight extreme builds, one-time victory rewards, frozen actions, restart and endgame snapshot round trips.
+
+## Timed bosses and the secret star
+
+System bosses start their 30-active-second attempt on the first hit. A timeout restores full HP and clears the attempt; defeating the boss unlocks the next system. Required DPS is maximum HP divided by 30, after armour. Automatic DPS shown by `getOrb` uses the same armour and boss-research factors as damage. Snapshots retain `bossStartedAt`, and campaign-version-1 saves migrate into the new timed-boss rules.
+
+The optional Green Star contains Haze, a personal 1e9-HP, 30-active-second challenge. `startSecretChallenge` diverts the acting pilot’s attacks into `secretOrb`; `leaveSecretChallenge` or timeout returns to the unchanged campaign. Victory unlocks `farm.crops.weed` and farm access, without normal core rewards, milestones or galaxy-victory credit. Co-op teammates keep attacking their shared core.
+
+Weed seeds cost 4,200 LRC and grow in 120 active seconds before farm bonuses. Feeding weed sets `farm.cookedSeconds` to 260, with a fixed 4.20× multiplier on newly earned passive income, click mint, automatic mint and ordinary core rewards. Damage and prior balances/scores do not change. Ordinary meals remain independent. Timers pause outside active rounds and persist through validated saves and relay snapshots. Prestige retains secret seeds and resets the active cooked timer; full progress reset removes both.

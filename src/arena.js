@@ -18,11 +18,15 @@ const SHOT_DURATION = {mote:.38,mouse:.62,laser:.48,probe:.58,gate:.72};
 const SHOT_IMPACT_DURATION = .24;
 const FLEET_LIMIT = 256, OVERFLOW_LIMIT = 512, SHOT_LIMIT = 96;
 
+function fleetPlayers(state,selfId){
+  const players=state?.players||[],self=players.find(player=>player.id===selfId)||players[0];
+  return players.filter(player=>self?.secretOrb?player.id===self.id:state.mode==='coop'?!player.secretOrb:player.id===self?.id);
+}
+
 /** Only active session members contribute; competitive fleets are personal. */
 export function collectFleetCounts(state, selfId) {
   const counts = Object.fromEntries(GENERATOR_IDS.map(id=>[id,0]));
-  for (const player of state?.players || []) {
-    if (state.mode !== 'coop' && player.id !== selfId) continue;
+  for (const player of fleetPlayers(state,selfId)) {
     for (const id of GENERATOR_IDS) counts[id] += clamp(Math.floor(Number(player.generators?.[id]) || 0),0,1000);
   }
   return counts;
@@ -54,7 +58,7 @@ export function fleetPosition(id,index,width,height) {
   let dy=Math.sin(angle)*Math.max(38,height/2-17)*radius;
   const inner=Math.hypot(dx/41,dy/36);
   if(inner<1){dx/=Math.max(.01,inner);dy/=Math.max(.01,inner);}
-  return {x:clamp(width/2+dx,12,Math.max(12,width-12)),y:clamp(height*.49+dy,12,Math.max(12,height-12))};
+  return {x:clamp(width/2+dx,14,Math.max(14,width-14)),y:clamp(height*.49+dy,14,Math.max(14,height-14))};
 }
 
 /** Beam/projectile geometry always terminates at the exact DOM core center. */
@@ -64,7 +68,7 @@ export function shotGeometry(source,width,height,progress,{barrel=0}={}) {
   const muzzle=Math.min(Math.max(0,barrel),distance);
   const start={x:source.x+(distance?dx/distance*muzzle:0),y:source.y+(distance?dy/distance*muzzle:0)};
   const p=clamp(Number(progress)||0,0,1);
-  return {source:start,target,point:{x:start.x+(target.x-start.x)*p,y:start.y+(target.y-start.y)*p},progress:p,angle:Math.atan2(dy,dx)};
+  return {source:start,target,point:p===1?{...target}:{x:start.x+(target.x-start.x)*p,y:start.y+(target.y-start.y)*p},progress:p,angle:Math.atan2(dy,dx)};
 }
 
 export class OrbitArena {
@@ -89,6 +93,7 @@ export class OrbitArena {
     this.fireTimes = new Map();
     this.shots = [];
     this.completedShots = [];
+    this.shatters = [];
     this.purchaseBursts = [];
     this.lastSoundAt = -Infinity;
     this.onFire = null;
@@ -131,6 +136,7 @@ export class OrbitArena {
     this.canvas.height = this.height;
     if(this.effects){this.effects.width=this.width;this.effects.height=this.height;}
     this.fleetKey = '';
+    this.completedShots = [];
     if (this.ctx) this.ctx.imageSmoothingEnabled = false;
   }
 
@@ -185,17 +191,18 @@ export class OrbitArena {
   }
 
   shatter(kills, nowMs, announce = true) {
+    if(this.destroyed||!Number.isFinite(kills)||kills<=0)return;
     this.lastShatterAt = nowMs;
     const x = this.width / 2, y = this.height * 0.49;
+    const seed=nowMs*.017+Math.min(kills,1000);
+    const palette=[this.orbPalette.primary,this.orbPalette.accent,P.sky,P.purple,P.cream];
+    this.shatters.push({at:nowMs,palette,shards:Array.from({length:28},(_,index)=>({
+      angle:index*TAU/28+noise(seed+index*13)*.15,
+      speed:48+noise(seed+index*71)*90,size:3+noise(seed+index*19)*5,
+      spin:(noise(seed+index*29)-.5)*9,color:palette[index%palette.length],
+    }))});
+    this.shatters=this.shatters.slice(-3);
     if (!this.reducedMotion) {
-      const palette = [this.orbPalette.primary, this.orbPalette.accent, this.orbPalette.shade, P.cream];
-      for (let i = 0; i < 16; i++) {
-        const angle = i * TAU / 16 + Math.random() * 0.2;
-        const speed = 24 + Math.random() * 28;
-        this.particles.push({ x: x + Math.cos(angle) * 21, y: y + Math.sin(angle) * 21,
-          vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 18,
-          life: 1.25, color: palette[i % palette.length], size: i % 3 === 0 ? 4 : 2, shard: true });
-      }
       for (let i = 0; i < 5; i++) this.particles.push({ x: x + (i - 2) * 7, y: y - 5,
         vx: (i - 2) * 11, vy: -39 - Math.random() * 17, life: 1.45, color: P.yellow, coin: true });
       this.particles = this.particles.slice(-80);
@@ -213,7 +220,7 @@ export class OrbitArena {
     try {
       const orb = Game.getOrb(player, state);
       if (!orb || !Number.isFinite(orb.hp) || !Number.isFinite(orb.maxHp) || orb.maxHp <= 0) return null;
-      return { ...orb, identity: state.mode === 'coop' ? 'coop' : player.id };
+      return { ...orb, identity: orb.secret ? `secret:${player.id}` : state.mode === 'coop' ? 'coop' : player.id };
     } catch { return null; }
   }
 
@@ -243,7 +250,7 @@ export class OrbitArena {
     // Production pauses at intermission, but a projectile already on its way
     // still lands. Keep its presentation clock running until the impact fades.
     if (!this.reducedMotion && !globalThis.document?.hidden && (active || this.shots.length)) this.instrumentTime += dt;
-    const visualTime = this.reducedMotion ? 3 : nowMs / 1000;
+    const visualTime = this.reducedMotion ? 3 : this.instrumentTime;
     const w = this.width, h = this.height;
     c.imageSmoothingEnabled = false;
     c.globalAlpha = 1;
@@ -325,6 +332,45 @@ export class OrbitArena {
       c.fillText(float.text, Math.round(float.x), Math.round(float.y));
     }
     this.floats = this.floats.filter((float) => float.life > 0);
+    this.drawShatters(nowMs);
+  }
+
+  /** Glass facets and rays belong above the native core, beside projectile hits. */
+  drawShatters(nowMs) {
+    const c=this.effectsContext||this.ctx,cx=this.width/2,cy=this.height*.49;
+    this.shatters=this.shatters.filter(burst=>nowMs-burst.at<1250);
+    c.save();
+    for(const burst of this.shatters){
+      const age=Math.max(0,(nowMs-burst.at)/1000),fade=Math.max(0,1-age/1.25);
+      if(this.reducedMotion){
+        const glow=c.createRadialGradient(cx,cy,5,cx,cy,48);
+        glow.addColorStop(0,'#fff5d9');glow.addColorStop(.55,burst.palette[0]);glow.addColorStop(1,'transparent');
+        c.globalAlpha=.2*fade;c.fillStyle=glow;c.fillRect(cx-48,cy-48,96,96);continue;
+      }
+      const wave=26+age*105;
+      c.globalAlpha=.5*fade*fade;c.strokeStyle=burst.palette[1];c.lineWidth=1.4;
+      c.beginPath();c.ellipse(cx,cy,wave,wave*.78,0,0,TAU);c.stroke();
+      if(age<.72){
+        const reach=42+Math.sin(Math.min(1,age/.72)*Math.PI*.7)*145;
+        for(let i=0;i<12;i++){
+          const angle=i*TAU/12+.12,spread=.018+(i%3)*.007;
+          c.globalAlpha=.3*(1-age/.72);c.fillStyle=burst.palette[i%burst.palette.length];
+          c.beginPath();c.moveTo(cx+Math.cos(angle-spread)*18,cy+Math.sin(angle-spread)*18);
+          c.lineTo(cx+Math.cos(angle)*reach,cy+Math.sin(angle)*reach*.78);
+          c.lineTo(cx+Math.cos(angle+spread)*18,cy+Math.sin(angle+spread)*18);c.closePath();c.fill();
+        }
+      }
+      for(const shard of burst.shards){
+        const travel=22+shard.speed*age,px=cx+Math.cos(shard.angle)*travel,py=cy+Math.sin(shard.angle)*travel*.8+age*age*15;
+        c.save();c.translate(px,py);c.rotate(shard.angle+shard.spin*age);c.globalAlpha=fade;
+        c.fillStyle=shard.color;c.beginPath();c.moveTo(-shard.size,-shard.size*.45);c.lineTo(shard.size*.9,0);c.lineTo(-shard.size*.35,shard.size*.65);c.closePath();c.fill();
+        c.fillStyle=P.cream;c.globalAlpha=fade*.8;c.beginPath();c.moveTo(-shard.size,-shard.size*.45);c.lineTo(shard.size*.9,0);c.lineTo(-shard.size*.2,0);c.closePath();c.fill();
+        c.restore();
+      }
+      c.globalAlpha=.55*Math.max(0,1-age/.3);c.fillStyle=P.cream;
+      c.fillRect(cx-13,cy-.5,26,1);c.fillRect(cx-.5,cy-13,1,26);
+    }
+    c.restore();
   }
 
   drawOrbFrame(orb, nowMs) {
@@ -409,6 +455,7 @@ export class OrbitArena {
       }
     }
     const running=active&&!this.reducedMotion;
+    this.running=running;
     // Beyond 768 individual silhouettes, a growing particulate field conveys
     // additional mass. The true holdings never cause an unbounded render loop.
     if(this.fleet.aggregated>0){
@@ -443,7 +490,7 @@ export class OrbitArena {
   }
 
   observeFire(state,selfId,nowMs,running){
-    const people=(state.players||[]).filter(p=>state.mode==='coop'||p.id===selfId);
+    const people=fleetPlayers(state,selfId);
     const deltas=Object.fromEntries(ATTACK_IDS.map(id=>[id,0])),present=new Set();
     for(const player of people){
       let profiles=[];
@@ -458,7 +505,10 @@ export class OrbitArena {
     }
     for(const key of this.attackCounters.keys())if(!present.has(key))this.attackCounters.delete(key);
     if(!running)return;
-    for(const id of ATTACK_IDS){
+    const soundCandidates=[];
+    // The visual cap must also leave opportunities for quieter weapon types.
+    const firingOrder=[...ATTACK_IDS].sort((a,b)=>(this.fireTimes.get(a)??-Infinity)-(this.fireTimes.get(b)??-Infinity));
+    for(const id of firingOrder){
       const units=this.fleetByType.get(id)||[];
       if(!units.length||!deltas[id])continue;
       const count=Math.min(12,deltas[id],SHOT_LIMIT-this.shots.length);
@@ -466,10 +516,17 @@ export class OrbitArena {
         const cursor=this.fireCursor.get(id)||0,unit=units[cursor%units.length];
         this.fireCursor.set(id,cursor+1);
         this.shots.push({id,index:unit.index,size:unit.size,started:this.instrumentTime,duration:SHOT_DURATION[id],reached:false});
-        if(nowMs-this.lastSoundAt>=110&&nowMs-(this.fireTimes.get(id)??-Infinity)>=330){
-          this.lastSoundAt=nowMs;this.fireTimes.set(id,nowMs);
-          this.onFire?.({id,pan:clamp(unit.x/this.width*2-1,-1,1)});
-        }
+        if(i===0)soundCandidates.push({id,pan:clamp(unit.x/this.width*2-1,-1,1)});
+      }
+    }
+    if(nowMs-this.lastSoundAt>=110){
+      // Mix the least recently heard type among shots that actually started.
+      // Catalogue order must not let fast clickers silence the larger weapons.
+      const eligible=soundCandidates.filter(candidate=>nowMs-(this.fireTimes.get(candidate.id)??-Infinity)>=330);
+      eligible.sort((a,b)=>(this.fireTimes.get(a.id)??-Infinity)-(this.fireTimes.get(b.id)??-Infinity));
+      if(eligible.length){
+        const chosen=eligible[0];this.lastSoundAt=nowMs;this.fireTimes.set(chosen.id,nowMs);
+        this.onFire?.(chosen);
       }
     }
   }
@@ -489,6 +546,7 @@ export class OrbitArena {
         // Charge is drawn at the barrel, then a continuous beam reaches center.
         const beamProgress=clamp(progress*2,0,1);
         const tip=shotGeometry(position,this.width,this.height,beamProgress,{barrel:shot.size*.46}).point;
+        shot.geometry={...geometry,point:tip,progress:beamProgress};
         line(geometry.source,tip,P.red,5,.65);line(geometry.source,tip,P.yellow,2,.85);line(geometry.source,tip,P.cream,1);
         pixel(geometry.source.x-2,geometry.source.y-2,P.cream,4,4);
       }else if(shot.id==='gate'){
@@ -539,8 +597,10 @@ export class OrbitArena {
   getFleetDiagnostics(){
     return {owned:{...this.fleet.owned},totalOwned:this.fleet.totalOwned,detailed:this.fleet.detailed,tiny:this.fleet.tiny,
       rendered:this.fleet.rendered,aggregated:this.fleet.aggregated,activeShots:this.shots.length,
-      shots:this.shots.filter(s=>s.geometry).map(s=>({id:s.id,...s.geometry,reached:s.reached})),completedShots:this.completedShots.map(s=>({...s})),
-      center:{x:this.width/2,y:this.height*.49},reducedMotion:this.reducedMotion};
+      activeShatters:this.shatters.length,shatterShards:this.reducedMotion?0:this.shatters.reduce((sum,burst)=>sum+burst.shards.length,0),shatterRays:this.reducedMotion?0:this.shatters.length*12,
+      shots:this.shots.filter(s=>s.geometry).map(s=>({id:s.id,...s.geometry,source:{...s.geometry.source},target:{...s.geometry.target},point:{...s.geometry.point},reached:s.reached})),
+      completedShots:this.completedShots.map(s=>({...s,source:{...s.source},target:{...s.target},point:{...s.point}})),
+      center:{x:this.width/2,y:this.height*.49},reducedMotion:this.reducedMotion,running:Boolean(this.running)};
   }
 
   drawPlayer(player, position, selfId) {
@@ -594,6 +654,7 @@ export class OrbitArena {
     this.images.clear(); this.positions.clear(); this.instrumentCounts.clear(); this.purchaseTimes.clear();
     this.effects?.remove();this.attackCounters.clear();this.fleetByType.clear();this.fireCursor.clear();this.fireTimes.clear();
     this.shots=[];this.purchaseBursts=[];this.completedShots=[];this.onFire=null;
+    this.shatters=[];
     this.particles = []; this.floats = [];
   }
 }

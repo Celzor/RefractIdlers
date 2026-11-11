@@ -209,6 +209,16 @@ const ORB_THEMES = Object.freeze([
   { light: '#ffe3a0', primary: '#efbf58', shade: '#cf8546', accent: '#a35b50' },
   { light: '#e9baa0', primary: '#d3917c', shade: '#a35b50', accent: '#efbf58' },
   { light: '#d0bfcc', primary: '#a491b1', shade: '#715a79', accent: '#81adb8' },
+
+  { light: '#d4e9aa', primary: '#88b87c', shade: '#3c6551', accent: '#c5e88b' },
+  { light: '#ffd3aa', primary: '#d98a64', shade: '#8d484c', accent: '#ffbf6a' },
+  { light: '#c4f2ef', primary: '#7dbbd4', shade: '#405b91', accent: '#a8e4ff' },
+  { light: '#fff4c5', primary: '#d4b358', shade: '#8f683b', accent: '#f1cf76' },
+  { light: '#ebd8fa', primary: '#ac8bc7', shade: '#654d8c', accent: '#d5abfa' },
+  { light: '#e1e6e9', primary: '#9aa7ba', shade: '#4c5b73', accent: '#d7c9af' },
+  { light: '#ccf6df', primary: '#7cc4b9', shade: '#3c736e', accent: '#a4e8e1' },
+  { light: '#ffe0ed', primary: '#d598be', shade: '#6d609c', accent: '#b8d8fa' },
+  { light: '#f3fff8', primary: '#a3dcca', shade: '#548a93', accent: '#c4e9ff' },
 ]);
 
 /** Maps bounded game values to finite artwork variants, never to SVG markup. */
@@ -219,7 +229,8 @@ export function orbAppearance(orb) {
   const health = Math.min(1, hp / maxHp);
   const damageTier = health > 0.9 + 1e-10 ? 0 : health > 0.65 + 1e-10 ? 1 : health > 0.35 + 1e-10 ? 2 : 3;
   const boss = orb?.boss === true || orb?.isBoss === true;
-  const theme = (level - 1) % ORB_THEMES.length;
+  const system = Math.min(9,Math.floor((level-1)/20));
+  const theme = orb?.secret ? 5 : system === 0 ? (level-1)%4 : system+3;
   return { ...ORB_THEMES[theme], damageTier, boss, key: `${theme}:${damageTier}:${boss ? 1 : 0}` };
 }
 

@@ -13,6 +13,7 @@
     "test:browser": "node tests/browser.mjs",
     "test:farm-browser": "node tests/farm-browser.mjs",
     "test:arena-browser": "node tests/arena-browser.mjs",
+    "test:finale-browser": "node tests/finale-browser.mjs",
     "balance": "node scripts/balance.mjs"
   },
   "engines": { "node": ">=24" },

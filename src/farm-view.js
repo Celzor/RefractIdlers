@@ -1,59 +1,87 @@
-import { CROPS, FARM_UPGRADES, MAX_PLOTS, getFarmStats, farmPlotCost, farmCropCost, farmUpgradeCost, getFarmUnlocked } from './farm.js';
-import { getBalance } from './game.js';
+import { CROPS, FARM_UPGRADES, MAX_PLOTS, WATER_SECONDS, COOKED_SECONDS, COOKED_SCORE_MULTIPLIER, getFarmStats, plotSecondsLeft, farmPlotCost, farmCropCost, farmSeedCost, farmUpgradeCost, getFarmUnlocked } from './farm.js';
+import { getBalance, getShipStatus } from './game.js';
+import { SYSTEMS } from './campaign.js';
+import { plantSprite, plantFrame, produceIcon, lampSprite, tankSprite, tractorSprite, pickerSprite, wateringCanSprite, fertiliserSprite, rocketSprite, cloudSprite, sunSprite, sparkleSprite, droplet, equipmentIcon } from './farm-sprites.js';
 
 const safe = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const number = value => new Intl.NumberFormat('en', { notation:value >= 10000 ? 'compact' : 'standard', maximumFractionDigits:1 }).format(value || 0);
 const cropById = new Map(CROPS.map(crop => [crop.id,crop]));
 const setText = (node,value) => { if(node.textContent !== String(value))node.textContent=value; };
+const setData = (node,key,value) => { value=String(value); if(node.dataset[key] !== value)node.dataset[key]=value; };
+const BEAM_SPRITE = new URL('../assets/beam-pixel.svg', import.meta.url).href;
+const beamLayer = name => `<use href="${BEAM_SPRITE}#${name}"/>`;
+/** Each bed shows three plants; slightly staggered so a bed reads as a living patch, not clones. */
+const PLANT_PACE = [.95,1,.9];
 
-/** Small original pixel vegetables, shared by the seed packets, beds and pantry. */
-function vegetable(id,stage='ready') {
-  const leaves='<path fill="#75a653" d="M14 15V7h4v8h-2V5h-5v4h3zm2-3h5V7h4v5h-5v4h-4z"/><path fill="#476c3e" d="M8 10h6v4h3v4h-5v-4H8z"/>';
-  const shapes={
-    carrot:`<path fill="#c37b3f" d="M10 17h12v8h-4v6h-4v-4h-4z"/><path fill="#efad50" d="M11 17h8v7h-4v4h-2v-5h-2z"/><path fill="#a45d35" d="M17 20h5v2h-5zm-5 4h4v2h-4z"/>${leaves}`,
-    lettuce:'<path fill="#45643b" d="M7 12h5V8h9v4h5v5h3v9h-5v4H9v-3H4v-9h3z"/><path fill="#8db763" d="M9 13h4V9h7v5h5v5h3v6h-5v4H11v-4H6v-7h3z"/><path fill="#b2cf7e" d="M11 16h5v-4h3v6h5v4h-6v5h-4v-6h-4z"/><path fill="#678e4b" d="M15 17h3v8h-3zm-6 5h5v3H9z"/>',
-    tomato:`<path fill="#923e37" d="M9 15h14v3h5v11h-5v3H10v-3H5V19h4z"/><path fill="#df6b4f" d="M10 16h12v3h4v8h-5v3H11v-3H7v-8h3z"/><path fill="#f3a073" d="M10 20h4v3h-4z"/>${leaves}`,
-    pumpkin:'<path fill="#735334" d="M16 8h5v9h-5z"/><path fill="#b96935" d="M8 16h17v4h4v9h-4v4H8v-4H4v-9h4z"/><path fill="#eea54c" d="M9 17h6v14H9zm10 0h5v14h-5z"/><path fill="#cf7c36" d="M15 16h4v17h-4z"/><path fill="#6a924a" d="M19 9h8v4h-8z"/>',
-  };
-  const sprout='<path fill="#4c743e" d="M15 29V15h3v14z"/><path fill="#99bd68" d="M8 13h7v3h3v5h-6v-3H8zm10 3h4v-5h6v6h-4v3h-6z"/>';
-  return `<svg viewBox="0 0 34 36" aria-hidden="true" shape-rendering="crispEdges">${stage==='sprout'?sprout:`<g${stage==='growing'?' transform="translate(5 7) scale(.7)"':''}>${shapes[id]||shapes.carrot}</g>`}</svg>`;
+/** Pixel greenhouse backdrop: glass, sky, a wooden knee wall and a flagstone floor. Stretches to the scene. */
+function backdrop() {
+  const r = (x,y,w,h,fill,extra='') => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"${extra}/>`;
+  let art = r(0,0,160,40,'#a9cdc4')+r(0,0,160,9,'#bfd9cd')+r(0,26,160,14,'#c9dbb6');
+  // Distant hills and trees seen through the glass.
+  art += '<path fill="#9cbb8f" d="M0 34h12v-3h10v-2h14v3h12v-4h18v2h10v3h16v-3h14v-2h20v4h10v2h24v10H0z"/>';
+  art += '<path fill="#86a77a" d="M0 37h20v-2h18v1h22v-2h16v2h30v-1h24v1h30v5H0z"/>';
+  for (const x of [8,46,93,131]) art += r(x,29,4,3,'#6f9a68')+r(x+1,28,2,1,'#6f9a68')+r(x+1,32,2,3,'#7a5a3a');
+  // Glass panes and the greenhouse frame.
+  for (let x = 0; x <= 160; x += 20) art += r(x-1,0,2,40,'#5e7a58')+r(x,0,1,40,'#87a37c');
+  art += r(0,0,160,2,'#4d6648')+r(0,13,160,1,'#5e7a58')+r(0,26,160,1,'#5e7a58');
+  for (let x = 3; x < 160; x += 20) art += r(x,3,1,7,'#e6f0e2',' opacity=".55"')+r(x+2,15,1,5,'#e6f0e2',' opacity=".35"');
+  // A wooden knee wall with a shelf of terracotta pots.
+  art += r(0,40,160,6,'#8a6440')+r(0,40,160,1,'#b38a58')+r(0,45,160,1,'#5f4430');
+  for (let x = 0; x < 160; x += 9) art += r(x,41,1,4,'#6e4f35');
+  // Flagstone floor.
+  art += r(0,46,160,54,'#7d6a4f');
+  for (let y = 46, row = 0; y < 100; y += 6, row++) {
+    art += r(0,y,160,1,'#64543f');
+    for (let x = row%2 ? 0 : 7; x < 160; x += 14) art += r(x,y,1,6,'#64543f')+r(x+2,y+2,3,1,'#8b7759');
+  }
+  return `<svg class="garden-backdrop" viewBox="0 0 160 100" preserveAspectRatio="none" aria-hidden="true" shape-rendering="crispEdges">${art}</svg>`;
 }
-
-function light(index) {
-  return `<div class="garden-lamp" data-equipment-unit="${index}" aria-label="Grow light ${index+1}"><svg viewBox="0 0 80 44" aria-hidden="true" shape-rendering="crispEdges"><path d="M15 0h3v11h-3zm47 0h3v11h-3z" fill="#45544b"/><path d="M10 10h60v5h5v9H5v-9h5z" fill="#45544b"/><path d="M11 15h58v6H11z" fill="#8d9c79"/><path d="M15 22h50v5H15z" fill="#ffe9a0"/><path d="M15 28h50l15 16H0z" fill="#efce7c" opacity=".25"/></svg></div>`;
-}
-function tank(index) {
-  return `<svg data-equipment-unit="${index}" viewBox="0 0 40 44" role="img" aria-label="Hydroponic tank ${index+1}" shape-rendering="crispEdges"><path d="M8 5h22v5H8zM5 10h28v28H5z" fill="#405c5a"/><path d="M8 12h22v23H8z" fill="#759d97"/><path d="M9 23h20v11H9z" fill="#85c6c3"/><path d="M12 16h7v5h-7z" fill="#d5e4ba"/><path d="M33 29h7v5h-7zM10 38h4v5h-4zm14 0h4v5h-4z" fill="#394d48"/><path d="M12 1h14v5H12z" fill="#b9c6a4"/></svg>`;
-}
-function sack(index) {
-  return `<svg data-equipment-unit="${index}" viewBox="0 0 34 40" role="img" aria-label="Fertiliser sack ${index+1}" shape-rendering="crispEdges"><path d="M10 3h15v6h-3v4h5v5h3v18H4V18h3v-5h5V9h-2z" fill="#92704c"/><path d="M13 11h7v5h5v5h2v12H7V20h4v-4h2z" fill="#d5c185"/><path d="M12 8h10v4H12z" fill="#5c754a"/><path d="M16 28V19h3v9zm0-6h-5v-5h5zm3 2h5v-5h-5z" fill="#6b8d4d"/></svg>`;
+/** Beam, in his usual pixels, heaving bright light into the fuel intake. */
+function beamRefuel() {
+  const rays = ['#ff8a8a','#ffd36e','#9ef08e','#7fd8ff','#c49bff'].map((color,index) => `<rect class="garden-ray" x="${8+index*3}" y="0" width="3" height="40" fill="${color}"/>`).join('');
+  return `<div class="garden-beam-refuel" aria-hidden="true"><svg class="garden-beam-sprite" viewBox="0 0 64 64" shape-rendering="crispEdges">${['beam-body','beam-head','beam-eyes-worried','beam-hand-left','beam-hand-right','beam-feet'].map(beamLayer).join('')}</svg><svg class="garden-rays" viewBox="0 0 31 40" preserveAspectRatio="none" shape-rendering="crispEdges">${rays}</svg></div>`;
 }
 
 export class FarmView {
-  constructor(root,{send,onResearch}) {
-    this.root=root;this.send=send;this.onResearch=onResearch;this.selectedCrop='carrot';this.player=null;this.state=null;
+  constructor(root,{send,onResearch,onEvent}) {
+    this.root=root;this.send=send;this.onResearch=onResearch;this.onEvent=onEvent;this.selectedCrop='carrot';this.player=null;this.state=null;
+    this.previous=null;this.localActions=new Map();this.pickerTargets=[];this.tractorTargets=[];
+    const slot = index => `<div class="garden-slot" data-bed-slot="${index}">
+      <button type="button" class="garden-bed" data-farm-plot="${index}"><span class="garden-bed-label"></span><span class="garden-soil" aria-hidden="true"><i></i><i></i><i></i></span><span class="garden-crop-art" aria-hidden="true"></span><span class="garden-bed-action"></span><span class="garden-meters" aria-hidden="true"><span class="garden-growth"><i></i></span><span class="garden-water"><i></i></span></span></button>
+      <div class="garden-tools"><button type="button" class="garden-tool garden-tool-water" data-water-plot="${index}" hidden>${wateringCanSprite()}</button><button type="button" class="garden-tool garden-tool-fertilise" data-fertilise-plot="${index}" hidden>${fertiliserSprite()}</button></div>
+      <span class="garden-drip" aria-hidden="true">${droplet()}${droplet()}${droplet()}</span><span class="garden-fx" aria-hidden="true"></span></div>`;
     root.innerHTML=`<div class="garden-layout">
       <section class="garden-main panel" aria-label="Beam's vegetable garden">
-        <header class="garden-header"><div><p class="eyebrow">THE LIGHT FACTORY / GREENHOUSE</p><h2>Beam’s Garden</h2></div><span class="garden-season" data-farm-status>Ready to plant</span></header>
-        <div class="garden-scene" aria-label="Your purchased garden beds and equipment">
-          <div class="garden-window" aria-hidden="true"><span class="garden-sun"></span><span class="garden-cloud"></span></div>
-          <div class="garden-scene-sign">GROWN WITH GOOD VIBES</div>
+        <header class="garden-header"><div><h2>Beam’s Garden</h2></div><span class="garden-season" data-farm-status>Ready to plant</span></header>
+        <div class="garden-scene" data-active="false" aria-label="Your purchased garden beds and equipment">
+          ${backdrop()}
+          <span class="garden-sun" aria-hidden="true">${sunSprite()}</span><span class="garden-cloud" aria-hidden="true">${cloudSprite()}</span><span class="garden-cloud garden-cloud-two" aria-hidden="true">${cloudSprite()}</span>
           <div class="garden-light-rack" data-farm-equipment="growLights"></div>
-          <div class="garden-pipes" aria-hidden="true"></div>
-          <div class="garden-beds">${Array.from({length:MAX_PLOTS},(_,index)=>`<button type="button" class="garden-bed" data-farm-plot="${index}"><span class="garden-bed-label"></span><span class="garden-crop-art"></span><span class="garden-bed-action"></span><span class="garden-growth" aria-hidden="true"><i></i></span></button>`).join('')}</div>
-          <div class="garden-equipment-floor"><div class="garden-tanks" data-farm-equipment="hydroponics"></div><span class="garden-floor-name">BEAM’S LITTLE PATCH</span><div class="garden-sacks" data-farm-equipment="fertiliser"></div></div>
+          <div class="garden-hydro" data-farm-equipment="hydroponics"></div>
+          <div class="garden-pipes" aria-hidden="true"><span class="garden-pipe garden-pipe-feed"></span><span class="garden-pipe garden-pipe-top"><i></i></span><span class="garden-pipe garden-pipe-bottom"><i></i></span></div>
+          <div class="garden-beds">${Array.from({length:MAX_PLOTS},(_,index)=>slot(index)).join('')}<div class="garden-rail" data-farm-equipment="picker" aria-label="Picker bots"></div></div>
+          <div class="garden-lane" data-farm-equipment="tractor" aria-label="Tractors"></div>
+          <aside class="garden-ship" data-ship aria-label="Beam’s ship fuel">
+            <span class="garden-ship-label">SHIP FUEL</span>
+            ${beamRefuel()}
+            <div class="garden-ship-body"><span class="garden-rocket">${rocketSprite()}</span><span class="garden-fuel-gauge" aria-hidden="true"><i data-fuel-fill></i></span></div>
+            <strong data-fuel-text>0 / 120</strong><small data-fuel-note>Feed Beam to fuel the ship.</small>
+          </aside>
         </div>
         <div class="garden-readout"><span data-farm-stats></span><button type="button" class="garden-link" data-farm-research>Farm research ↗</button></div>
-        <section class="garden-pantry" aria-label="Harvest basket and feeding Beam"><div class="garden-pantry-heading"><h3>Harvest basket</h3><span data-farm-meal>Grow a snack for Beam.</span></div><div class="garden-foods">${CROPS.map(crop=>`<div class="garden-food" data-food="${crop.id}"><span class="garden-food-icon">${vegetable(crop.id)}</span><div><span class="garden-food-name">${safe(crop.name)}</span><strong data-stock="${crop.id}">0</strong></div><button type="button" data-feed-crop="${crop.id}">Feed</button></div>`).join('')}</div><p class="garden-feed-note">Feed Beam to boost your income &amp; damage. Meals stack up to 5 minutes.</p></section>
+        <section class="garden-pantry" aria-label="Harvest basket and feeding Beam"><div class="garden-pantry-heading"><h3>Harvest basket</h3><span data-farm-meal>No active meal</span></div><div class="garden-foods">${CROPS.map(crop=>`<div class="garden-food" data-food="${crop.id}"><span class="garden-food-icon">${produceIcon(crop.id)}</span><div><span class="garden-food-name">${safe(crop.name)}</span><strong data-stock="${crop.id}">0</strong></div><button type="button" data-feed-crop="${crop.id}">Feed</button></div>`).join('')}</div><p class="garden-feed-note">Meals boost your income &amp; damage and fuel the ship. A full Beam sends food straight to the tank.</p></section>
       </section>
-      <section class="garden-workshop panel" aria-label="Garden seeds and upgrades"><div id="farm-shop-companion" class="shop-companion"></div><header><p class="eyebrow">A LITTLE CARE. A LOT OF LIGHT.</p><h2>Garden shed</h2><p>Choose a seed, then an empty bed.</p></header>
-        <div class="garden-seeds" role="group" aria-label="Choose or unlock vegetable seeds">${CROPS.map(crop=>`<button type="button" class="garden-seed" data-select-crop="${crop.id}" aria-pressed="false"><span class="garden-seed-icon">${vegetable(crop.id)}</span><span class="garden-seed-name">${safe(crop.name)}</span><small data-seed-detail="${crop.id}"></small></button>`).join('')}</div>
+      <section class="garden-workshop panel" aria-label="Garden seeds and upgrades"><div id="farm-shop-companion" class="shop-companion"></div><header><h2>Garden shed</h2><p>Plant, water, fertilise, harvest.</p></header>
+        <div class="garden-seeds" role="group" aria-label="Choose or unlock vegetable seeds">${CROPS.map(crop=>`<button type="button" class="garden-seed" data-select-crop="${crop.id}" aria-pressed="false"><span class="garden-seed-icon">${produceIcon(crop.id)}</span><span class="garden-seed-name">${safe(crop.name)}</span><small data-seed-detail="${crop.id}"></small></button>`).join('')}</div>
         <div class="garden-expansion"><span><b>Planting beds</b><small data-plot-count></small></span><button type="button" data-buy-farm-plot></button></div>
-        <div class="garden-upgrades">${FARM_UPGRADES.map(upgrade=>`<article class="garden-upgrade"><div><h3>${safe(upgrade.name)} <span data-upgrade-level="${upgrade.id}"></span></h3><p>${safe(upgrade.description)}</p></div><button type="button" data-farm-upgrade="${upgrade.id}"></button></article>`).join('')}</div>
+        <div class="garden-upgrades">${FARM_UPGRADES.map(upgrade=>`<article class="garden-upgrade" data-upgrade="${upgrade.id}"><span class="garden-upgrade-icon" aria-hidden="true">${equipmentIcon(upgrade.id)}</span><div><h3>${safe(upgrade.name)} <span data-upgrade-level="${upgrade.id}"></span></h3><p>${safe(upgrade.description)}</p></div><button type="button" data-farm-upgrade="${upgrade.id}"></button></article>`).join('')}</div>
         <div class="garden-round"><span data-garden-round-note>Plants grow during rounds.</span><button type="button" class="primary-button" data-garden-ready hidden>Ready for next round</button></div>
       </section>
     </div>`;
-    this.plots=[...root.querySelectorAll('[data-farm-plot]')];this.artSignatures=new Map();this.equipmentSignature='';
+    this.scene=root.querySelector('.garden-scene');
+    this.slots=[...root.querySelectorAll('[data-bed-slot]')];this.plots=[...root.querySelectorAll('[data-farm-plot]')];
+    this.artSignatures=new Map();this.equipmentSignature='';
+    for(const crop of CROPS.filter(crop=>crop.secret))for(const selector of [`[data-select-crop="${crop.id}"]`,`[data-food="${crop.id}"]`])root.querySelector(selector).hidden=true;
     root.addEventListener('click',event=>{
       const button=event.target.closest('button');if(!button||button.disabled||!this.player)return;
       if(button.hasAttribute('data-farm-research')){this.onResearch?.();return;}
@@ -61,54 +89,134 @@ export class FarmView {
       if(button.hasAttribute('data-buy-farm-plot')){this.send({type:'buyFarmPlot'});return;}
       if(button.dataset.farmUpgrade){this.send({type:'buyFarmUpgrade',id:button.dataset.farmUpgrade});return;}
       if(button.dataset.feedCrop){this.send({type:'feedBeam',crop:button.dataset.feedCrop});return;}
+      if(button.dataset.waterPlot){this.tend(Number(button.dataset.waterPlot),'waterCrop');return;}
+      if(button.dataset.fertilisePlot){this.tend(Number(button.dataset.fertilisePlot),'fertiliseCrop');return;}
       if(button.dataset.selectCrop){const id=button.dataset.selectCrop;if(!this.player.farm.crops[id])this.send({type:'unlockCrop',id});else{this.selectedCrop=id;this.render(this.player,this.state,this.usable);}return;}
       if(button.hasAttribute('data-farm-plot')){
-        const plot=Number(button.dataset.farmPlot),bed=this.player.farm.plots[plot];
+        const plot=Number(button.dataset.farmPlot),bed=this.player.farm.plots[plot],stats=getFarmStats(this.player);
         if(!bed)this.send({type:'buyFarmPlot'});
         else if(!bed.crop)this.send({type:'plantCrop',plot,crop:this.selectedCrop});
-        else if(bed.progress>=1)this.send({type:'harvestCrop',plot});
+        else if(bed.progress>=1){this.localActions.set(`harvest:${plot}`,performance.now());this.burst(plot,'harvest',bed.crop);this.send({type:'harvestCrop',plot});}
+        else if(!stats.autoWater&&bed.water<1-1e-9)this.tend(plot,'waterCrop');
+        else if(!bed.fertilised)this.tend(plot,'fertiliseCrop');
       }
     });
+  }
+
+  /** Chores give instant feedback; the host still decides whether they happened. */
+  tend(plot,type) {
+    this.localActions.set(`${type}:${plot}`,performance.now());
+    this.burst(plot,type==='waterCrop'?'water':'fertilise');
+    this.send({type,plot});
+  }
+
+  /** Short-lived pixel particles over one bed. Removed by timer so reduced motion never leaves them behind. */
+  burst(plot,kind,crop) {
+    const fx=this.slots[plot]?.querySelector('.garden-fx');if(!fx)return;
+    const node=document.createElement('span');node.className=`garden-burst garden-burst-${kind}`;
+    node.innerHTML=kind==='water'?droplet().repeat(5):kind==='harvest'||kind==='pick'?`${produceIcon(crop)}<b>+</b>`:sparkleSprite().repeat(kind==='fertilise'?4:3);
+    fx.append(node);setTimeout(()=>node.remove(),1300);
+  }
+
+  /** Spot automation and refuelling by comparing snapshots, then animate the machine that did it. */
+  detectEvents(farm,ship) {
+    const now=performance.now(),recent=key=>now-(this.localActions.get(key)||-1e9)<4000,previous=this.previous;
+    if(previous&&previous.playerId===this.player.id){
+      farm.plots.forEach((plot,index)=>{
+        const before=previous.plots[index];if(!before)return;
+        const picked=before.crop&&before.progress>=1&&(plot.crop===null||plot.progress<before.progress);
+        if(picked&&!recent(`harvest:${index}`)){this.pickerTargets.push(index);this.burst(index,'pick',before.crop);this.onEvent?.('autoHarvest');}
+        if(plot.crop&&plot.fertilised&&!(before.crop===plot.crop&&before.fertilised)&&!recent(`fertiliseCrop:${index}`)&&plot.progress>0){this.tractorTargets.push(index);this.burst(index,'fertilise');}
+      });
+      if(ship.fuel>previous.fuel+1e-9){
+        const refuel=this.root.querySelector('.garden-beam-refuel');refuel.classList.remove('is-refuelling');void refuel.offsetWidth;refuel.classList.add('is-refuelling');
+        clearTimeout(this.refuelTimer);this.refuelTimer=setTimeout(()=>refuel.classList.remove('is-refuelling'),2600);
+      }
+    }
+    this.previous={playerId:this.player.id,fuel:ship.fuel,plots:farm.plots.map(plot=>({crop:plot.crop,progress:plot.progress,fertilised:plot.fertilised}))};
+    // Machines head for the bed they just worked on.
+    const columnOf=index=>index%3;
+    for(const [selector,targets] of [['[data-farm-equipment="picker"] [data-equipment-unit]',this.pickerTargets],['[data-farm-equipment="tractor"] [data-equipment-unit]',this.tractorTargets]]){
+      const units=[...this.root.querySelectorAll(selector)];if(!units.length){targets.length=0;continue;}
+      while(targets.length){const target=targets.shift(),unit=units[target%units.length];unit.style.setProperty('--column',String(columnOf(target)));unit.classList.remove('is-working');void unit.offsetWidth;unit.classList.add('is-working');}
+    }
+  }
+
+  renderEquipment(farm) {
+    const signature=FARM_UPGRADES.map(upgrade=>farm.upgrades[upgrade.id]||0).join(':');
+    if(signature===this.equipmentSignature)return;
+    const units=(id,draw)=>{const level=farm.upgrades[id]||0,node=this.root.querySelector(`[data-farm-equipment="${id}"]`);node.innerHTML=Array.from({length:level},(_,index)=>draw(index)).join('');node.dataset.level=String(level);};
+    units('growLights',index=>`<div class="garden-lamp" data-equipment-unit="${index}" style="--column:${index}" role="img" aria-label="Grow light ${index+1}">${lampSprite()}<span class="garden-lamp-glow"></span></div>`);
+    units('hydroponics',index=>`<div class="garden-tank" data-equipment-unit="${index}" role="img" aria-label="${['Water reservoir','Nutrient doser','UV oxygen tank'][index]}">${tankSprite(index)}<span class="garden-bubbles"><i></i><i></i><i></i></span></div>`);
+    units('tractor',index=>`<div class="garden-tractor" data-equipment-unit="${index}" style="--column:${index}" role="img" aria-label="Tractor ${index+1}"><span class="garden-tractor-frame">${tractorSprite(0)}</span><span class="garden-tractor-frame">${tractorSprite(1)}</span><span class="garden-exhaust"><i></i><i></i></span></div>`);
+    units('picker',index=>`<div class="garden-picker" data-equipment-unit="${index}" style="--column:${index}" role="img" aria-label="Picker bot ${index+1}"><span class="garden-picker-frame">${pickerSprite(0)}</span><span class="garden-picker-frame">${pickerSprite(1)}</span></div>`);
+    this.scene.dataset.hydroponics=String(farm.upgrades.hydroponics||0);
+    this.scene.dataset.lights=String(farm.upgrades.growLights||0);
+    this.equipmentSignature=signature;
   }
 
   render(player,state,usable) {
     this.player=player;this.state=state;this.usable=usable;
     if(!player?.farm||!getFarmUnlocked(player))return;
-    const farm=player.farm,stats=getFarmStats(player),balance=getBalance(player,state),canAct=usable&&['round','intermission'].includes(state.phase);
+    const farm=player.farm,stats=getFarmStats(player),balance=getBalance(player,state),canAct=usable&&['round','intermission'].includes(state.phase),ship=getShipStatus(player,state);
     if(!farm.crops[this.selectedCrop])this.selectedCrop='carrot';
     const active=state.phase==='round',ready=farm.plots.filter(plot=>plot.crop&&plot.progress>=1).length;
-    setText(this.root.querySelector('[data-farm-status]'),ready?`${ready} ready to harvest`:active?'Growing in the light':'Between rounds · growth paused');
-    setText(this.root.querySelector('[data-farm-stats]'),`${number(stats.growthRate)}× growth · ${stats.yield} veg / harvest`);
-    setText(this.root.querySelector('[data-farm-meal]'),farm.fedSeconds>0?`Well fed · +${Math.round(stats.feedBonus*100)}% power · ${Math.ceil(farm.fedSeconds)}s`:`Beam’s snack bonus: +${Math.round(stats.feedBonus*100)}% power`);
-    this.root.querySelector('.garden-pantry').classList.toggle('is-fed',farm.fedSeconds>0);
-    const plotPrice=farmPlotCost(player),atPlotCap=farm.plots.length>=MAX_PLOTS;
+    const thirsty=farm.plots.filter(plot=>plot.crop&&plot.progress<1&&!stats.autoWater&&plot.water<=0).length;
+    setData(this.scene,'active',active);
+    this.renderEquipment(farm);
+    setText(this.root.querySelector('[data-farm-status]'),thirsty?`${thirsty} thirsty ${thirsty===1?'bed':'beds'} · water them!`:ready?`${ready} ready to harvest`:active?'Growing':'Between rounds · growth paused');
+    setText(this.root.querySelector('[data-farm-stats]'),`${number(stats.growthRate)}× growth · ${stats.autoWater?'hydroponic water':'hand watered'} · ${farm.upgrades.tractor?'tractor fertiliser':'hand fertiliser'}`);
+    const cookedTime=Math.ceil(farm.cookedSeconds || 0),cookedLabel=`Cooked · ×${COOKED_SCORE_MULTIPLIER.toFixed(2)} score · ${Math.floor(cookedTime/60)}m ${String(cookedTime%60).padStart(2,'0')}s`;
+    setText(this.root.querySelector('[data-farm-meal]'),cookedTime>0?cookedLabel:farm.fedSeconds>0?`Well fed · +${Math.round(stats.feedBonus*100)}% power · ${Math.ceil(farm.fedSeconds)}s`:`Beam’s snack bonus: +${Math.round(stats.feedBonus*100)}% power`);
+    const pantry=this.root.querySelector('.garden-pantry');
+    pantry.classList.toggle('is-fed',farm.fedSeconds>0);pantry.classList.toggle('is-cooked',cookedTime>0);pantry.classList.toggle('has-secret',Boolean(farm.crops.weed));
+    const plotPrice=farmPlotCost(player),seedPrice=farmSeedCost(player,this.selectedCrop),atPlotCap=farm.plots.length>=MAX_PLOTS;
     for(const button of this.plots){
-      const index=Number(button.dataset.farmPlot),plot=farm.plots[index],crop=cropById.get(plot?.crop),locked=!plot;
+      const index=Number(button.dataset.farmPlot),slot=this.slots[index],plot=farm.plots[index],crop=cropById.get(plot?.crop),locked=!plot;
+      const growing=Boolean(crop&&plot.progress<1),dry=growing&&!stats.autoWater&&plot.water<=0;
       const stage=locked?'locked':!crop?'empty':plot.progress>=1?'ready':plot.progress>=.5?'growing':'sprout';
-      button.dataset.growthStage=stage;button.dataset.crop=crop?.id||'';
-      const caption=locked?(index===farm.plots.length?`Open · ${number(plotPrice)} LRC`:'Expand your garden'):!crop?`Plant ${cropById.get(this.selectedCrop).name}`:stage==='ready'?'Harvest':`${Math.ceil((1-plot.progress)*crop.growTime/stats.growthRate)}s${active?'':' · paused'}`;
-      setText(button.querySelector('.garden-bed-label'),crop?crop.name:`BED ${String(index+1).padStart(2,'0')}`);
+      setData(button,'growthStage',stage);setData(button,'crop',crop?.id||'');
+      setData(slot,'moisture',!crop?'none':stats.autoWater?'hydro':dry?'dry':plot.water<.35?'damp':'wet');
+      slot.classList.toggle('is-fertilised',Boolean(plot?.fertilised));slot.classList.toggle('is-thirsty',dry);slot.classList.toggle('is-open',!locked);
+      const canWater=growing&&!stats.autoWater&&plot.water<1-1e-9,canFertilise=growing&&!plot.fertilised;
+      const seconds=growing?Math.ceil(plotSecondsLeft(plot,stats)):0;
+      const caption=locked?(index===farm.plots.length?`Open · ${number(plotPrice)} LRC`:'Expand your garden'):!crop?`Plant · ${number(seedPrice)} LRC`:stage==='ready'?'Harvest':dry?'Thirsty!':`${seconds}s${active?'':' · paused'}`;
+      setText(button.querySelector('.garden-bed-label'),crop?crop.name:locked?`BED ${String(index+1).padStart(2,'0')}`:`${cropById.get(this.selectedCrop).name} / ${String(index+1).padStart(2,'0')}`);
       setText(button.querySelector('.garden-bed-action'),caption);
-      button.disabled=!canAct||(locked?(index!==farm.plots.length||balance<plotPrice):Boolean(crop&&stage!=='ready'));
-      button.setAttribute('aria-label',`Bed ${index+1}. ${crop?crop.name+'. ':''}${caption}`);
-      const artKey=`${crop?.id||''}:${stage}`;
+      button.disabled=!canAct||(locked?(index!==farm.plots.length||balance<plotPrice):crop?stage!=='ready'&&!canWater&&!canFertilise:balance<seedPrice);
+      const chores=growing?` ${stats.autoWater?'Hydroponics waters it.':`Water ${Math.round(plot.water*100)}%.`} ${plot.fertilised?'Fertilised.':'Not fertilised.'}`:'';
+      button.setAttribute('aria-label',`Bed ${index+1}. ${crop?crop.name+'. ':!locked?cropById.get(this.selectedCrop).name+'. ':''}${caption}.${chores}`);
+      button.title=!locked&&!crop?`Plant ${cropById.get(this.selectedCrop).name} seeds for ${number(seedPrice)} LRC${balance<seedPrice?' · collect more LRCs':''}`:growing?(canWater?'Click to water this bed':canFertilise?'Click to fertilise this bed':''):'';
+      const water=slot.querySelector('[data-water-plot]'),fertilise=slot.querySelector('[data-fertilise-plot]');
+      water.hidden=!growing||stats.autoWater;fertilise.hidden=!growing||plot.fertilised;
+      water.disabled=!canAct||!canWater;fertilise.disabled=!canAct||!canFertilise;
+      water.setAttribute('aria-label',`Water bed ${index+1}${canWater?`, ${Math.round(plot.water*100)}% moist`:', already soaked'}`);water.title=`Water: keeps this bed growing for ${WATER_SECONDS} active seconds`;
+      fertilise.setAttribute('aria-label',`Fertilise bed ${index+1}`);fertilise.title='Fertilise: +50% growth speed and +1 vegetable for this planting';
+      const frames=crop?PLANT_PACE.map(pace=>plantFrame(plot.progress>=1?1:plot.progress*pace)):[];
+      const artKey=locked?'locked':!crop?'empty':`${crop.id}:${frames.join(',')}`;
       if(this.artSignatures.get(index)!==artKey){
-        button.querySelector('.garden-crop-art').innerHTML=locked?'<span class="garden-bed-lock">+</span>':crop?[0,1,2].map(()=>vegetable(crop.id,stage)).join(''):'<span class="garden-soil-furrows" aria-hidden="true"></span>';
+        button.querySelector('.garden-crop-art').innerHTML=locked?'<span class="garden-bed-lock">+</span>':crop?frames.map(frame=>`<span class="garden-plant-slot">${plantSprite(crop.id,frame/48)}</span>`).join(''):'';
         this.artSignatures.set(index,artKey);
       }
       button.querySelector('.garden-growth i').style.width=`${Math.round((plot?.progress||0)*100)}%`;
+      button.querySelector('.garden-water i').style.width=`${Math.round((stats.autoWater&&crop?1:plot?.water||0)*100)}%`;
     }
     for(const crop of CROPS){
-      const owned=Boolean(farm.crops[crop.id]),cost=farmCropCost(player,crop.id),button=this.root.querySelector(`[data-select-crop="${crop.id}"]`),selected=owned&&this.selectedCrop===crop.id;
+      const owned=Boolean(farm.crops[crop.id]),cost=farmCropCost(player,crop.id),seedCost=farmSeedCost(player,crop.id),button=this.root.querySelector(`[data-select-crop="${crop.id}"]`),selected=owned&&this.selectedCrop===crop.id;
+      button.hidden=Boolean(crop.secret&&!owned);this.root.querySelector(`[data-food="${crop.id}"]`).hidden=button.hidden;
       button.classList.toggle('is-selected',selected);button.classList.toggle('is-locked',!owned);button.setAttribute('aria-pressed',String(selected));
       if(owned)button.removeAttribute('data-unlock-crop');else button.dataset.unlockCrop=crop.id;
-      button.disabled=!canAct||(!owned&&balance<cost);
-      setText(button.querySelector('small'),owned?`${Math.ceil(crop.growTime/stats.growthRate)}s grow · ${Math.round(crop.feedSeconds*stats.feedMultiplier)}s snack`:`Unlock · ${number(cost)} LRC`);
-      button.setAttribute('aria-label',owned?`Select ${crop.name} seeds${selected?', selected':''}`:`Unlock ${crop.name} seeds for ${number(cost)} LRC`);
+      button.disabled=!canAct||(!owned&&(crop.secret||balance<cost));
+      setText(button.querySelector('small'),owned?`${Math.ceil(crop.growTime/stats.growthRate)}s · ${number(seedCost)} LRC`:`Unlock · ${number(cost)} LRC`);
+      button.setAttribute('aria-label',owned?`Select ${crop.name} seeds, ${number(seedCost)} LRC per planting${selected?', selected':''}`:`Unlock ${crop.name} variety once for ${number(cost)} LRC; seeds then cost ${number(seedCost)} LRC per planting`);
+      const mealSeconds=crop.secret?COOKED_SECONDS:Math.round(crop.feedSeconds*stats.feedMultiplier);
+      button.title=crop.secret?`${number(seedCost)} LRC per planting. Feed Beam for ×${COOKED_SCORE_MULTIPLIER.toFixed(2)} score over 4m 20s of active play.`:`${owned?'Variety unlocked.':`Unlock variety once: ${number(cost)} LRC.`} Seeds: ${number(seedCost)} LRC each planting. Each vegetable feeds Beam for ${mealSeconds} active seconds and adds ${mealSeconds} ship fuel.`;
       const stock=farm.inventory[crop.id]||0;setText(this.root.querySelector(`[data-stock="${crop.id}"]`),stock);
-      const feed=this.root.querySelector(`[data-feed-crop="${crop.id}"]`);feed.disabled=!canAct||stock<1||farm.fedSeconds>=300;
-      feed.setAttribute('aria-label',`Feed Beam one ${crop.name} for ${Math.round(crop.feedSeconds*stats.feedMultiplier)} seconds of bonus`);
-      feed.title=`${Math.round(crop.feedSeconds*stats.feedMultiplier)} seconds of +${Math.round(stats.feedBonus*100)}% income and damage`;
+      const beamFull=crop.secret?farm.cookedSeconds>=COOKED_SECONDS:farm.fedSeconds>=300;
+      const feed=this.root.querySelector(`[data-feed-crop="${crop.id}"]`);feed.disabled=!canAct||stock<1||(beamFull&&ship.full);
+      setText(feed,beamFull&&!ship.full?'Fuel':'Feed');
+      feed.setAttribute('aria-label',beamFull&&!ship.full?`Beam is full: turn one ${crop.name} into ship fuel`:`Feed Beam one ${crop.name} for ${mealSeconds} seconds of ${crop.secret?'score ':''}bonus and ship fuel`);
+      feed.title=crop.secret?`Cooked: ×${COOKED_SCORE_MULTIPLIER.toFixed(2)} earned score for 4m 20s. Feeding again refreshes the timer.`:`${mealSeconds} seconds of +${Math.round(stats.feedBonus*100)}% income and damage, plus ship fuel`;
     }
     setText(this.root.querySelector('[data-plot-count]'),`${farm.plots.length} / ${MAX_PLOTS} open`);
     const plotButton=this.root.querySelector('[data-buy-farm-plot]');setText(plotButton,atPlotCap?'All open':`+ Bed · ${number(plotPrice)}`);plotButton.disabled=!canAct||atPlotCap||balance<plotPrice;plotButton.title=atPlotCap?'Every planting bed is open':`${number(plotPrice)} LRC`;
@@ -118,16 +226,14 @@ export class FarmView {
       setText(button,maxed?'MAX':`${number(cost)} LRC`);button.disabled=!canAct||maxed||balance<cost;
       button.setAttribute('aria-label',maxed?`${upgrade.name} fully upgraded`:`Upgrade ${upgrade.name} to level ${level+1} for ${number(cost)} LRC`);
     }
-    const equipmentSignature=FARM_UPGRADES.map(upgrade=>farm.upgrades[upgrade.id]||0).join(':');
-    if(equipmentSignature!==this.equipmentSignature){
-      for(const [id,draw] of [['growLights',light],['hydroponics',tank],['fertiliser',sack]]){
-        const level=farm.upgrades[id]||0,node=this.root.querySelector(`[data-farm-equipment="${id}"]`);
-        node.innerHTML=Array.from({length:level},(_,index)=>draw(index)).join('');node.dataset.level=String(level);
-      }
-      this.root.querySelector('.garden-scene').dataset.hydroponics=String(farm.upgrades.hydroponics||0);
-      this.root.querySelector('.garden-scene').dataset.lights=String(farm.upgrades.growLights||0);
-      this.equipmentSignature=equipmentSignature;
-    }
+    // The ship: Beam's meals are its fuel; every twentieth planet is a jump to the next system.
+    const nextSystem=SYSTEMS[ship.systemIndex+1];
+    this.root.querySelector('[data-fuel-fill]').style.height=`${Math.round(ship.fuel/ship.target*100)}%`;
+    setText(this.root.querySelector('[data-fuel-text]'),`${number(Math.floor(ship.fuel))} / ${number(ship.target)}`);
+    setText(this.root.querySelector('[data-fuel-note]'),ship.grounded?'Grounded! Feed Beam to jump.':ship.full?(nextSystem?`Ready to jump to ${nextSystem.name}`:'Ready to land on Refract'):nextSystem?`Next jump: ${nextSystem.name}`:'Next stop: home');
+    const shipPanel=this.root.querySelector('[data-ship]');shipPanel.classList.toggle('is-grounded',ship.grounded);shipPanel.classList.toggle('is-full',ship.full);
+    shipPanel.setAttribute('aria-label',`Beam’s ship fuel: ${Math.floor(ship.fuel)} of ${ship.target}. ${ship.grounded?'The ship is grounded until the tank is full.':ship.full?'The tank is full.':'Feed Beam to fill the tank.'}`);
+    this.detectEvents(farm,ship);
     const readyButton=this.root.querySelector('[data-garden-ready]');readyButton.hidden=state.phase!=='intermission';readyButton.disabled=!usable;setText(readyButton,player.ready?'Cancel ready':'Ready for next round');
     setText(this.root.querySelector('[data-garden-round-note]'),active?`Round ${state.round} · ${Math.ceil(state.remaining)}s of growing time`:player.ready?'Ready! Waiting for your crew.':'Growth & meal timers pause between rounds.');
   }

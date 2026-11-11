@@ -19,7 +19,7 @@ This research used the author-provided `refract/oasis-core` checkout on 10 Novem
 
 The concept sheet uses the earlier name **Flick** and the line “A little light. A lot of personality.” The current source calls the character **Beam** and retains an old `flickEnabled` preference for compatibility (`docs/beam/README.md:7`). The old name is development history, not evidence of a second character.
 
-The source provides a well-defined personality and visual identity. The materials reviewed do not establish a creation myth, an LRC origin story, a crystal civilization or a relationship between Beam and destructible game orbs. Vegetable gardening and feeding Beam are new Idlers mechanics; the reviewed source does not establish a vegetable diet or food-powered abilities. Idlers does not present these additions as official Refract lore.
+The source provides a well-defined personality and visual identity. The materials reviewed do not establish a creation myth, an LRC origin story, a crystal civilization or a relationship between Beam and destructible game orbs. Vegetable gardening, food-powered bonuses, the Crystal home system and the final campaign are new Idlers additions. Idlers does not present them as established official Refract lore.
 
 ## Expressions and their game interpretation
 
@@ -51,6 +51,16 @@ The companion reads local game snapshots and reacts to selected milestones: arri
 Beam can be greeted with a harmless poke, limited to once every three seconds, or minimized with a persistent local preference. Reduced-motion settings disable sprite movement, and hidden tabs pause it. He stays inside his reserved UI space and creates no popups. Poking him changes no health, income, score, prestige or network state. He is the player's companion, never the destructible orb.
 
 The first Refract orb farm opens **Beam's Garden**. Players grow carrots, lettuce, tomatoes and pumpkins, harvest them, then use the Farm's **Feed** controls. Feeding consumes produce through the host-authoritative game engine and grants a base **+25% personal income and hit damage** bonus. Meals stack to 300 active seconds; crop growth and meal timers pause between rounds. Farming research improves the garden and its meals. These systems and Beam's snack dialogue are specific to Idlers. His portrait, animations, greetings and reactions remain cosmetic; hiding the companion does not remove an earned meal bonus.
+
+The garden is a later investment: its first machine costs 14,000 LRCs, and every planting buys fresh seeds. Unlocking a vegetable variety does not make subsequent planting free. These costs are game rules, not character lore.
+
+## Crystal and the homecoming
+
+The ten-system Idlers campaign ends in **Crystal**, Beam's home solar system. Crystal is the system's name, not another name for Beam. Its planetary cores are described as the hardest substance across every parallel universe. The final core uses the Refract logo; it represents the destination's crystal, not Beam's body.
+
+The journey's motive is new Idlers lore: Beam wants to get home, break the Refract orb, crush it up, snort it and have the most wicked high in every universe. His ship runs on him. Garden meals fuel it, and when he is full enough he heaves bright light straight into the fuel tank. Each system's exit is a jump point the ship cannot reach until the tank is full. Beam introduces this in Solace, the first system, and narrates refuelling, empty tanks, each jump and the arrival home. None of this comes from Refract source material.
+
+The final crystal has an astronomical health pool and a lattice that opens over at least three active hours. Attacks convert to resonance rather than implying that ordinary tiny damage can directly subtract from that scale. Its defeat triggers a shared victory cinematic and a permanent reward, then gameplay stays frozen until the host chooses another journey. This homecoming, its dialogue and the parallel-universe premise belong to the game's adaptation.
 
 ## Implementation contract
 

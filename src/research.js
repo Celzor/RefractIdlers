@@ -7,7 +7,7 @@ const catalog = new Map(SKILLS.map(skill => [skill.id,skill]));
 const disciplines = SKILL_BRANCHES.filter(branch => branch.currency !== 'prestige');
 const research = SKILLS.filter(skill => skill.currency !== 'prestige');
 const legacy = SKILLS.filter(skill => skill.currency === 'prestige');
-const colors = ['#dfbf65','#94bc79','#7cbdb7','#c7909b','#8daccb','#e0ad69','#b4a0cd','#b8bc8b','#83bf88'];
+const colors = ['#dfbf65','#94bc79','#7cbdb7','#c7909b','#8daccb','#e0ad69','#b4a0cd','#b8bc8b','#83bf88','#80cbd5'];
 const count = value => value >= 1e15 ? value.toExponential(1).replace('+','') : new Intl.NumberFormat('en',{notation:value >= 1e6 ? 'compact' : 'standard',maximumFractionDigits:0}).format(value || 0);
 const branchColor = skill => colors[disciplines.findIndex(branch => branch.id === skill.branch)] || '#c3a3cb';
 let lastPlayer, lastState, lastUsable, lastSignature = '';
@@ -20,6 +20,7 @@ function glyph(skill) {
   const branch = skill.currency === 'prestige' ? ['click','idle','mastery','farm'][Math.floor(legacy.indexOf(skill)/4)] : skill.branch;
   const ink = 'currentColor', pale = '#eee2ba';
   const motifs = {
+    chronos: `<path d="M3 1h10v3h-2v2H9v4h2v2h2v3H3v-3h2v-2h2V6H5V4H3z" fill="${ink}"/><path d="M5 3h6L8 6zm3 7 3 3H5z" fill="${pale}"/>`,
     farm: `<path d="M7 5H3V3H1V0h4v2h2v3h2V3h2V0h4v3h-2v2h-3v3h3v3h-2v3H7v2H5v-5H3V8h4z" fill="${ink}"/><path d="M5 9h6v2H9v2H7v-2H5z" fill="#e7a45f"/>`,
     click: `<path d="M9 1H6v5H3v3h5v6h3V9h3V6H9z" fill="${ink}"/><path d="M9 3H7v4H5v1h4v5h1V8h2V7H9z" fill="${pale}"/>`,
     idle: `<path d="M7 7H3V5H1V2h4v2h2v3h2V5h2V2h4v3h-2v2h-3v6h3v2H4v-2h3z" fill="${ink}"/><path d="M2 3h2v1H2zm10 0h2v1h-2zM8 8h1v5H8z" fill="${pale}"/>`,
@@ -37,14 +38,14 @@ function glyph(skill) {
 }
 
 function layout(skills,isLegacy) {
-  const width = isLegacy ? 1280 : 1880, height = isLegacy ? 1120 : 1640;
+  const width = isLegacy ? 1280 : 2020, height = isLegacy ? 1120 : 1760;
   const center = {x:width/2,y:height/2};
   const points = new Map();
   const shifts = [0,6,-8,10,-6,5];
   for (const skill of skills) {
     const branch = isLegacy ? Math.floor(skills.indexOf(skill)/4) : disciplines.findIndex(item => item.id === skill.branch);
     const tier = skill.tier-1;
-    const radius = isLegacy ? [130,265,410,555][tier] : [220,350,480,610,740,870][tier];
+    const radius = isLegacy ? [130,265,410,555][tier] : [260,395,530,665,800,935][tier];
     const base = isLegacy ? -135+branch*360/(legacy.length/4) : -90+branch*360/disciplines.length;
     const degrees = base + shifts[tier] * (branch%2 ? -1 : 1);
     const angle = degrees*Math.PI/180;
