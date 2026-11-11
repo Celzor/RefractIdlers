@@ -169,7 +169,6 @@ async function capture(name) {
 async function showResearch(key) {
   const skill=await evaluate(`import('./src/game.js').then(game=>{const skill=game.SKILLS.find(skill=>skill.key===${JSON.stringify(key)}||skill.id===${JSON.stringify(key)});return {id:skill.id,branch:skill.branch,currency:skill.currency};})`);
   await click(`[data-tab="${skill.currency==='prestige'?'prestige':'skills'}"]`);
-  if(skill.currency!=='prestige')await click(`[data-research-branch="${skill.branch}"]`);
   await selectResearch(skill.id);
   return skill.id;
 }
@@ -256,6 +255,21 @@ async function eightPlayerSidebars(){
       await pointerClick('#scoreboard-toggle',doc);
       await waitFor(`${doc}.querySelector('#scoreboard-dialog').open`,'Scorebook opens as a dialog');
       assert.equal(await evaluate(`${doc}.querySelectorAll('#scoreboard-list .scoreboard-row').length`),8,'All eight scoreboard entries are rendered');
+      // The Achievements tab sits beside the scoreboard: locked badges are greyed ??? placeholders until earned.
+      await click('[data-dialog-tab="achievements"]',doc);
+      await waitFor(`!${doc}.querySelector('#achievements-panel').hidden && ${doc}.querySelector('#scoreboard-panel').hidden`,'The Achievements tab replaces the scoreboard inside the dialog');
+      const badges=await evaluate(`(()=>{const nodes=[...${doc}.querySelectorAll('#achievements-list .achievement')];return {total:nodes.length,locked:nodes.filter(node=>node.classList.contains('is-locked')&&node.querySelector('strong').textContent==='???'&&node.querySelector('small').textContent==='???').length,unlocked:nodes.filter(node=>node.classList.contains('is-unlocked')&&node.querySelector('strong').textContent!=='???').length,count:${doc}.querySelector('#achievements-count').textContent.trim()};})()`);
+      assert.ok(badges.total>=30,'The achievements catalogue is rendered');
+      assert.equal(badges.locked+badges.unlocked,badges.total,'Every badge is either unlocked or a greyed ??? placeholder');
+      assert.ok(badges.locked>0,'A young pilot still has locked badges');
+      assert.equal(badges.count,`${badges.unlocked} / ${badges.total}`,'The tab shows the unlocked count');
+      // The badge grid scrolls inside the panel like the shop does, so only the first row must be on screen.
+      await desktopFrame('Achievements tab',['.dialog-tabs','#achievements-progress','#achievements-list .achievement:first-child'],doc);
+      await containedContent('#achievements-list .achievement',{documentExpression:doc});
+      assert.equal(await evaluate(`(()=>{const dialog=${doc}.querySelector('#scoreboard-dialog');return dialog.scrollHeight<=dialog.clientHeight+1;})()`),true,'The achievements dialog needs no internal scrollbar');
+      await capture(`desktop-${width}-achievements`);
+      await click('[data-dialog-tab="scoreboard"]',doc);
+      await waitFor(`${doc}.querySelector('#achievements-panel').hidden && !${doc}.querySelector('#scoreboard-panel').hidden`,'The Scoreboard tab returns');
       await desktopFrame('Eight-player scoreboard dialog',['#scoreboard-dialog','#scoreboard-close','#scoreboard-list .scoreboard-row'],doc);
       assert.equal(await evaluate(`(()=>{const dialog=${doc}.querySelector('#scoreboard-dialog');return dialog.scrollHeight<=dialog.clientHeight+1;})()`),true,'The eight-player scorebook needs no internal scrollbar');
       const behindDialogClicks=(await evaluate(session(101))).players.find(player=>player.id==='101').clicks;
@@ -292,6 +306,16 @@ async function eightPlayerSidebars(){
     }
   }
 }
+/** Visible shop cards must stack without overlapping, and every unlock line must sit inside its own card. */
+async function shopCardsFit(label){
+  const problems=await evaluate(`(()=>{const cards=[...document.querySelectorAll('#generators .generator:not([hidden])')],issues=[];
+    for(let i=0;i<cards.length;i++){const card=cards[i],rect=card.getBoundingClientRect(),unlock=card.querySelector('.generator-unlock');
+      for(const part of [unlock,card.querySelector('.generator-description'),card.querySelector('.generator-name')]){if(!part||part.hidden)continue;const r=part.getBoundingClientRect();if(r.bottom>rect.bottom+.5||r.top<rect.top-.5)issues.push(card.id+': '+part.className+' leaves its card');}
+      if(i){const above=cards[i-1].getBoundingClientRect();if(rect.top<above.bottom-.5)issues.push(card.id+' overlaps '+cards[i-1].id);}}
+    return issues;})()`);
+  assert.deepEqual(problems,[],`${label}: shop cards overlap or clip: ${problems.join('; ')}`);
+  log(`${label}: shop cards stack without clipping their unlock lines`);
+}
 async function fleetChecks(){
   await send('Emulation.setDeviceMetricsOverride',{width:1366,height:768,deviceScaleFactor:1,mobile:false});
   await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
@@ -309,6 +333,12 @@ async function fleetChecks(){
     assert.ok(await evaluate(`document.querySelector('#unlock-${id}').textContent.trim().length>0`),`${id} explains its unlock requirements`);
   }
   await capture('desktop-arsenal-locked');
+  await shopCardsFit('Locked Arsenal catalogue');
+  await click('[data-shop-catalog="click"]');await shopCardsFit('Locked Click tech catalogue');
+  await click('[data-shop-catalog="workshop"]');
+  await evaluate(`document.querySelector('#generators').scrollTop=1e6`);await pause(150);
+  await capture('desktop-workshop-locked');
+  await shopCardsFit('Locked deep Workshop tiers');
   await seed(arsenalFixture);
   await click('[data-shop-catalog="arsenal"]');
   for(const id of ['mouse','laser','probe','gate'])await click(`[data-buy-generator="${id}"]`);
@@ -495,6 +525,25 @@ async function hazardChecks() {
   assert.match(await evaluate(`document.querySelector('#comet-label').textContent`),/COMET .* 3× DAMAGE .* 5× MINT/);
   await capture('hazards-comet-1366');
   log('A passing comet is announced over the orbit');
+  // The Observatory: a licensed pilot sees the comet forecast, catches a shooting star for a tailwind and taps the quasar.
+  await seed(`game.applyAction(state,'you',{type:'start'});const p=state.players[0];p.skills.ki4=1;p.generators={mote:4,prism:2};state.comet={at:40};state.sky={stars:[2,30],quasar:5};game.advance(state,2);`);
+  await waitFor(`document.querySelector('[data-sky-star="0"]')`,'A shooting star appears over the orbit for a licensed pilot');
+  assert.match(await evaluate(`document.querySelector('#comet-label').hidden?'hidden':document.querySelector('#comet-label').textContent`),/COMET IN \d+s/,'The comet forecast shows before the comet');
+  await click('[data-sky-star="0"]');
+  await waitFor(`${readSolo}?.players?.[0]?.starsCaught===1`,'Catching the star is saved');
+  await waitFor(`!document.querySelector('#tailwind-label').hidden`,'The tailwind label appears');
+  assert.match(await evaluate(`document.querySelector('#tailwind-label').textContent`),/TAILWIND .* \+25% MACHINE SPEED/);
+  assert.equal(await evaluate(`Boolean(document.querySelector('[data-sky-star="0"]'))`),false,'A caught star vanishes');
+  await waitFor(`document.querySelector('[data-sky-quasar]')`,'The quasar flares');
+  await desktopFrame('Observatory sky',['[data-sky-quasar]','#tailwind-label','#core']);
+  await capture('hazards-observatory-1366');
+  await click('[data-sky-quasar]');
+  await waitFor(`${readSolo}?.players?.[0]?.quasarsTapped===1 && !document.querySelector('#lens-label').hidden`,'Tapping the quasar is saved and the lens label appears');
+  await pointerClick('#scoreboard-toggle');await click('[data-dialog-tab="achievements"]');
+  await waitFor(`document.querySelector('[data-achievement="star-catcher"]')?.dataset.unlocked==='true' && document.querySelector('[data-achievement="quasar-tapped"]')?.dataset.unlocked==='true'`,'Sky catches unlock their badges');
+  assert.equal(await evaluate(`document.querySelector('[data-achievement="sky-watcher"] strong').textContent`),'???','An unearned badge still reads ???');
+  await click('#scoreboard-close');
+  log('The Observatory forecasts comets, and caught stars and tapped quasars grant their buffs and badges');
   const transit=(fuel)=>`game.applyAction(state,'you',{type:'start'});const p=state.players[0];p.orb.level=20;p.orb.hp=game.getOrb(p,state).maxHp;p.highestOrb=20;p.orbsDestroyed=20;p.fuel=${fuel};p.transit={pilot:'you'};p.generators={mote:3};`;
   await seed(transit(50));
   await waitFor(`!document.querySelector('#flight-root').hidden`,'A transit shows the launch panel');
@@ -769,6 +818,18 @@ try {
     await desktopFrame(`Desktop ${width}x${height} research`,['#research-map','#research-inspector','#research-search','#research-available','#research-inspector [data-buy-skill]','#research-ready']);
     await containedContent('#research-inspector');
     await inspectEveryNode('#research-map','#research-inspector');
+    assert.equal(await evaluate(`[...document.querySelectorAll('#research-map [data-skill-node]')].filter(node=>node.hidden).length`),6,'Infinite mode stays hidden until the whole tree is mastered');
+    await seed(`game.applyAction(state,'you',{type:'start'});game.advance(state,60);const p=state.players[0];state.round=800;p.completedRounds=800;p.highestOrb=180;p.orbsDestroyed=179;p.prestigeCount=3;p.totalPrestige=100;p.prestigePoints=100;for(const s of game.SKILLS)if(s.currency==='skill')p.skills[s.id]=s.maxRank;p.lrc=p.runLrc=p.lifetimeLrc=1e9;`);
+    await click('[data-tab="skills"]');
+    await waitFor(`[...document.querySelectorAll('#research-map [data-skill-node]')].filter(node=>node.hidden).length===0`,'A mastered tree reveals the Overflow sinks');
+    await selectResearch('ov1');
+    assert.match(await evaluate(`document.querySelector('#research-inspector [data-buy-skill]').textContent`),/LRC/,'Overflow ranks are priced in LRC');
+    assert.equal(await evaluate(`document.querySelector('#research-inspector [data-buy-skill]').disabled`),false,'A funded pilot can buy an Overflow rank between rounds');
+    await click('#research-inspector [data-buy-skill]');
+    await waitFor(`${readSolo}?.players?.[0]?.skills?.ov1===1 && ${readSolo}?.players?.[0]?.lrc===1e9-2e6`,'The rank is paid in LRC, not SP');
+    await inspectEveryNode('#research-map','#research-inspector');
+    await capture(`desktop-${width}-infinite-mode`);
+    log(`Desktop ${width}x${height}: infinite mode appears only after the tree is complete and spends LRC`);
     await showResearch('quantum-barrage');
     await capture(`desktop-${width}-frame-research`);
     const deepestLegacy=engine.SKILLS.filter(skill=>skill.currency==='prestige').at(-1).key;
@@ -979,7 +1040,7 @@ try {
   const echoStrike=await showResearch('echo-strike');
   assert.equal(await evaluate(`document.querySelector('[data-buy-skill="${echoStrike}"]').disabled`),true,'Cross-branch research is locked without the other discipline');
   assert.match(await evaluate(`document.querySelector('#research-inspector').textContent`),/Orbital array/,'The missing cross-branch prerequisite is named');
-  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),87,'All eighty-seven normal nodes remain in the graph');
+  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),124,'All one hundred and twenty-four normal nodes remain in the graph');
   assert.ok(await evaluate(`document.querySelectorAll('#research-map [data-edge-from][data-edge-to]').length > 40`),'The atlas draws prerequisite connections');
   assert.ok(await evaluate(`document.querySelectorAll('#research-map [data-edge-from].is-path').length > 0`),'Selected ancestry is highlighted on the graph');
   await click(`#research-inspector [data-focus-skill="orbital-array"]`);
@@ -995,7 +1056,7 @@ try {
   await exerciseGraph('#research-map');
   await evaluate(`document.querySelector('#research-map').scrollIntoView({block:'start'})`);
   await capture('desktop-deep-research');
-  await click('[data-research-branch="all"]');
+  await click('#research-map [data-graph-action="fit"]');
   await capture('desktop-research-overview');
   await click('#research-map [data-graph-action="expand"]');
   await waitFor(`document.querySelector('#skill-tree').classList.contains('graph-expanded')`);
@@ -1009,22 +1070,18 @@ try {
   assert.equal(await evaluate(`document.querySelector('#skill-tree').classList.contains('graph-expanded')`),false,'Changing views closes the expanded map');
   await click('[data-tab="skills"]');
   await evaluate(`(()=>{const input=document.querySelector('#research-search');input.value='orb';input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
-  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),87,'Search preserves the complete graph context');
+  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),124,'Search preserves the complete graph context');
   const searchCounts=await evaluate(`({dim:document.querySelectorAll('#research-map [data-skill-node].is-dim').length,bright:document.querySelectorAll('#research-map [data-skill-node]:not(.is-dim)').length})`);
   assert.ok(searchCounts.dim>0&&searchCounts.bright>0,'Search highlights matches while dimming other nodes');
   await evaluate(`(()=>{const input=document.querySelector('#research-search');input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
   await click('#research-available');
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('#research-map [data-skill-node]:not(.is-dim)')).every(node=>node.dataset.state==='ready')`),true,'Available filter highlights purchasable nodes');
-  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),87,'Available filter retains graph context');
+  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),124,'Available filter retains graph context');
   await click('#research-available');
-  await click('[data-research-branch="all"]');
-  const beforeBranch=await evaluate(graphTransform('#research-map'));
-  await click('[data-research-branch="orbs"]');
-  assert.equal(await evaluate(`document.querySelector('[data-research-branch="orbs"]').getAttribute('aria-pressed')`),'true','Branch selection is announced');
-  assert.notEqual(await evaluate(graphTransform('#research-map')),beforeBranch,'Branch selection focuses its nodes on the map');
-  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),87,'Branch focus keeps the connected atlas intact');
+  assert.equal(await evaluate(`document.querySelector('#research-branches')`),null,'The discipline filter strip is gone: the whole atlas is always shown');
+  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),124,'The complete atlas stays in the graph');
   await click('[data-tab="prestige"]');
-  assert.equal(await evaluate(`document.querySelectorAll('#legacy-map [data-skill-node]').length`),24,'Permanent graph exposes twenty-four research nodes');
+  assert.equal(await evaluate(`document.querySelectorAll('#legacy-map [data-skill-node]').length`),25,'Permanent graph exposes twenty-five research nodes');
   await showResearch('eternal-spark');
   await exerciseGraph('#legacy-map');
   await evaluate(`document.querySelector('#legacy-map').scrollIntoView({block:'start'})`);
@@ -1079,7 +1136,6 @@ try {
     await click('[data-tab="skills"]');
     await selectResearch('tap-tuning');
     if(width===360){
-      await click('[data-research-branch="click"]');
       await evaluate(`document.querySelector('#research-map').scrollIntoView({block:'center'})`);
       await touchTap('[data-skill-node="tap-tuning"]',false);
       await waitFor(`document.querySelector('#research-inspector').dataset.selectedSkill==='tap-tuning'`,'A touch selects the node and updates its inspector');

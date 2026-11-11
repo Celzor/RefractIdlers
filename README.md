@@ -2,7 +2,7 @@
 
 A multiplayer incremental game for Refract: break planetary cores across ten solar systems, collect LRCs, build machines, grow vegetables for Beam, and research lasting upgrades between rounds. The host chooses Scoreboard or Co-op. The route ends at the Refract crystal in **Crystal**, Beam's home system.
 
-The interface is built for desktop play, with a fixed game frame verified at **1366×768** and **1920×1080**. The core and workshop fill the frame, with Beam at the top of the active shop. Between rounds, the play field is greyed out with a centered start/ready button; the workshop stays available. Controls sit beside the view tabs; Scoreboard opens the standings dialog and Co-op uses the Crew button for shared production and the roster. Research uses its own pan-and-zoom map.
+The interface is built for desktop play, with a fixed game frame verified at **1366×768** and **1920×1080**. The core and workshop fill the frame, with Beam at the top of the active shop. Between rounds, the play field is greyed out with a centered start/ready button; the workshop stays available. Controls sit beside the view tabs; Scoreboard opens the standings dialog and Co-op uses the Crew button for shared production and the roster; both dialogs carry an **Achievements** tab for your lifetime badges. Research uses its own pan-and-zoom map.
 
 Built on the activity approach from [Refract Tic-tac-toe](https://github.com/Celzor/refract-tack-toe), with assets, audio, orbital rendering, and multiplayer bridge code reused or adapted from [RogueRefract](https://github.com/Celzor/RogueRefract).
 
@@ -104,6 +104,10 @@ The Scoreboard target is `round(500 × (1 + 0.12 × (round − 1))²)` per pilot
 
 Scoreboard is the default. Only the host can change the mode, and only before the first round. Starting a new session is required to choose another mode. Rankings include active pilots only; departed pilots disappear, and late joiners enter with their own current-session earnings. Spending or prestiging does not erase an active pilot's lifetime earnings on the leaderboard.
 
+### Achievements
+
+The standings dialog has a second tab, **Achievements**, beside the Scoreboard (or Crew) tab. It lists every badge in a fixed order with an unlocked count; locked badges are greyed out and read **???** until you earn them. Badges cover manual hits, shattered orbs, system milestones, completed rounds, lifetime LRC, prestige, research ranks, Beam's garden, the secret star, automation, light-ray losses and the Observatory's shooting stars and quasars. Every badge reads a lifetime record the engine keeps across prestige, so nothing ever locks again; only a full progress reset clears them. A toast announces each new badge as it unlocks.
+
 In Co-op, one pilot can buy a generator using LRCs earned by the others. The generator is owned by its purchaser, while its future output enters the shared bank. Shared funds are never removed by a personal prestige.
 
 ### Generators
@@ -194,7 +198,7 @@ Defeating Haze opens the farm if needed and unlocks **weed**, with a popup notif
 
 ### Research
 
-The research atlas has **87 connected normal nodes across fifteen branches**: fourteen tuning disciplines with six tiers each, the three one-rank Outfitting licences, and a **24-node permanent prestige graph**. The four newest disciplines are **Arsenal doctrine** (requires the Arsenal licence), **Deep industry**, **Click engineering** (requires the Click tech licence) and **Hull integrity**, whose smaller rank caps (3, 5, 4, 4, 5 and 3) cover shields, light-ray dampers, salvage, reflection and comets. Research ranks and unspent skill points survive every prestige. Pan and zoom the map, select a node to inspect its costs and requirements, and follow prerequisite links across branches. Search and availability highlights help find the next investment while keeping the surrounding graph visible. Expand the map for more space; Escape closes the expanded view. Touch dragging and the zoom controls work on mobile.
+The research atlas has **118 connected normal nodes across twenty branches**: nineteen tuning disciplines with six tiers each, the four one-rank Outfitting licences, and a **25-node permanent prestige graph**. The later disciplines are **Arsenal doctrine** (requires the Arsenal licence), **Deep industry**, **Click engineering** (requires the Click tech licence) and **Hull integrity**, whose smaller rank caps (3, 5, 4, 4, 5 and 3) cover shields, light-ray dampers, salvage, reflection and comets. The frontier adds **Light vault**, **Surge science**, **Astrogation** (needs an open garden) and the Observatory's **Shooting stars** and **Quasars** (both require the **Observatory licence**), plus the permanent **Siege clock**; see *Frontier research* below. Research ranks and unspent skill points survive every prestige. Pan and zoom the map, select a node to inspect its costs and requirements, and follow prerequisite links across branches. Search and availability highlights help find the next investment while keeping the surrounding graph visible. Expand the map for more space; Escape closes the expanded view. Touch dragging and the zoom controls work on mobile.
 
 | Tier | Rank cap | Starting SP cost | Orb milestone | Completed rounds |
 | --- | ---: | ---: | ---: | ---: |
@@ -211,11 +215,25 @@ The board supports long-term development over many runs: stronger clicks, automa
 
 The six **Beam's garden** nodes improve growth speed, meal duration, purchase discounts, harvest yield and meal strength. Four permanent farm nodes—**Evergreen roots**, **Heirloom harvest**, **Endless lunch** and **Beam's bounty**—retain those improvements across runs. Both farm research paths require an unlocked garden as well as their displayed prerequisites and milestones.
 
+**Overflow (infinite mode).** Once **every regular research node is at maximum rank**, six endless sinks appear at the end of the trees: Endless light, orbit, bounty, clockwork, mint and luck, each hanging off one discipline's tier-6 node. They cost **LRC** instead of skill points (the shared bank in Co-op), start between 1 and 4 million LRC, grow **1.3× per rank**, and run to a thousand ranks of +1% damage, income, orb rewards, automatic speed, +2% mint or +0.01 critical multiplier. Like all research they are bought between rounds and survive prestige.
+
+### Frontier research
+
+**Light vault.** Your wallet (the shared bank in Co-op) earns interest every second of a round: `wallet × rate`, capped at a share of your own continuous output (half of it at first; Compound ledger, Trust fund, Reserve bank and Infinite ledger raise the headroom). Interest shows under your LRC total and counts toward the round goal. **Closing bell** pays a dividend of 2% to 24% of the LRC you earned in a round the moment it ends, before the goal is judged.
+
+**Surge science.** Early dawn, Solar dynamo and Corona start the final solar surge earlier (never beyond half the round); Surge coils speed automatic attacks, Flash point raises critical chance, Surge bounty enriches drops and Solar dynamo boosts machine income, all only while the surge lasts. Each pilot's surge window is personal, so a crew can surge at different moments.
+
+**Astrogation.** Fuel injectors and Star charts make Beam's meals fuel the ship further; Efficient routes lower every fuel target by up to half (the best-researched pilot sets a crew's target); Reinforced hull and Star charts let the jump flight survive more meteorite hits; Crash recovery keeps more fuel after a crash; Arrival bonus pays seconds of your steady output when the ship reaches a new system. The branch needs an open garden.
+
+**Siege clock** (prestige). Every rank adds five seconds to each system-boss attempt, to a 60-second clock. A Co-op crew uses its best-researched pilot's clock.
+
 ### Space hazards
 
 **Light rays.** While a system boss attempt (or the secret Haze challenge) is active, every **manual** hit has a **3% chance** to burst a light ray out of the core. If you own any machines, the ray destroys **one unit of a random owned machine type**; you buy it back at its current price. Automatic attacks never provoke rays, and a ray fired at an empty orbit does nothing. The hull branch answers this: **Prism shield** blocks up to three light-ray impacts (LRI) per boss attempt, refilling at every new attempt and round start; **Flare dampers** cut the chance by up to 50%; **Salvage drones** refund up to 60% of a destroyed machine's replacement price; **Ablative lattice** reflects each blocked ray back into the boss as automatic damage. The permanent **Hull plating** and **Salvage rights** chains add shield charges and refunds across every prestige. The boss panel shows your live shield charges, and the orbit draws each ray reaching its target or breaking on the shield ring.
 
 **Comets.** About three rounds in five, a comet crosses the sky for **six seconds** at a time fixed when the round starts (never during the surge). Manual hits during the comet deal **3× damage** and mint **5× LRC**; **Comet chaser**, **Aegis of light** and the permanent **Comet charts** raise those multipliers. Passive income and automatic attacks ignore comets.
+
+**The Observatory.** The **Observatory licence** (orb 15, six rounds) opens the sky. Licensed pilots see a **comet forecast** on the orbit before each comet, and two kinds of sky event appear during rounds, fixed by the host when the round starts. **Shooting stars** streak across the top of the orbit for four seconds; click one for a **tailwind** that runs every machine faster (attacks and income) for eight seconds, with Star catcher and Constellation stretching it, Tailwind raising its strength, Meteor shower adding stars, Stardust minting output on each catch and Slipstream adding damage while it blows. A **quasar** flares low on the left in about a third of rounds; tap it for a **windfall** worth ten seconds of your steady output and a **lens** that enriches orb drops by half for ten seconds, with Windfall and Blazar paying more, Quasar lens lasting longer, Deep field flaring more often, Gravitational focus strengthening the lens and Redshift keeping the quasar visible longer. Every licensed pilot may catch each star and the quasar once per round; the best-researched pilot sets the shared sky.
 
 ### Progression audit
 

@@ -3,7 +3,7 @@ import { getFarmStats, getFarmUnlocked } from '../src/farm.js';
 import test from 'node:test';
 import { compactGameState } from '../src/game.js';
 import assert from 'node:assert/strict';
-import { createGame, addPlayer, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, getOrb, getCoopDifficulty, generatorCost, generatorQuote, generatorAvailability, skillCost, skillAvailability, prestigeGain, prestigeNextThreshold, validateState, migrateState, GENERATORS, SKILLS, SKILL_BRANCHES, RESEARCH_TOTAL_COST, RESEARCH_TOTAL_RANKS, MAX_SKILL_POINTS_PER_ROUND, ECONOMY_LIMIT, COMBAT_VERSION } from '../src/game.js';
+import { createGame, addPlayer, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, getOrb, getCoopDifficulty, generatorCost, generatorQuote, generatorAvailability, skillCost, skillAvailability, prestigeGain, prestigeNextThreshold, validateState, migrateState, GENERATORS, SKILLS, SKILL_BRANCHES, RESEARCH_TOTAL_COST, RESEARCH_TOTAL_RANKS, MAX_SKILL_POINTS_PER_ROUND, ECONOMY_LIMIT, COMBAT_VERSION, hasObservatory } from '../src/game.js';
 const idOf = (key) => SKILLS.find((skill) => skill.key === key).id;
 
 function setup(count = 1) {
@@ -680,14 +680,17 @@ test('analytical multi-orb combat matches an iterative oracle for partial, boss 
 test('research has functional breadth and a proven multi-day completion floor', () => {
   const research = SKILLS.filter((skill) => skill.currency === 'skill');
   const prestige = SKILLS.filter((skill) => skill.currency === 'prestige');
-  assert.equal(research.length, 87); assert.equal(prestige.length, 24);
-  assert.equal(SKILL_BRANCHES.filter((branch) => branch.currency === 'skill').length, 15);
-  assert.equal(new Set(SKILLS.map((skill) => skill.id)).size, 111);
-  assert.equal(RESEARCH_TOTAL_RANKS, 534);
+  assert.equal(research.length, 118); assert.equal(prestige.length, 25);
+  assert.equal(SKILL_BRANCHES.filter((branch) => branch.currency === 'skill').length, 20);
+  assert.equal(new Set(SKILLS.map((skill) => skill.id)).size, 149);
+  assert.equal(SKILLS.filter((skill) => skill.currency === 'lrc').length, 6);
+  assert.equal(RESEARCH_TOTAL_RANKS, 715);
   // Shipped positions never move: Outfitting licences follow the first prestige lines, and every later discipline is appended.
   assert.deepEqual(SKILLS.slice(76, 79).map((skill) => skill.id), ['ki1', 'ki2', 'ki3']);
-  assert.equal(SKILLS[59].currency, 'skill'); assert.equal(SKILLS[60].id, 'p01'); assert.equal(SKILLS[79].id, 'ar1'); assert.equal(SKILLS.at(-1).id, 'p24');
-  for (const branch of ['arsenal', 'industry', 'engineering', 'hull']) assert.equal(research.filter((skill) => skill.branch === branch).length, 6);
+  assert.equal(SKILLS[59].currency, 'skill'); assert.equal(SKILLS[60].id, 'p01'); assert.equal(SKILLS[79].id, 'ar1'); assert.equal(SKILLS[110].id, 'p24'); assert.equal(SKILLS[116].id, 'ov6');
+  // The frontier follows the Overflow sinks: the Observatory licence, five disciplines, then the Siege prestige node.
+  assert.equal(SKILLS[117].id, 'ki4'); assert.equal(SKILLS[118].id, 'va1'); assert.equal(SKILLS.at(-1).id, 'p25'); assert.equal(SKILLS.at(-1).key, 'siege-clock');
+  for (const branch of ['arsenal', 'industry', 'engineering', 'hull', 'vault', 'surge', 'astrogation', 'shooting', 'quasars']) assert.equal(research.filter((skill) => skill.branch === branch).length, 6);
   const independentlySummedCost = research.reduce((total, skill) => total + Array.from({ length: skill.maxRank }, (_, i) => Math.ceil(skill.cost * skill.costGrowth ** i)).reduce((a, b) => a + b, 0), 0);
   assert.equal(RESEARCH_TOTAL_COST, independentlySummedCost);
   assert.ok(RESEARCH_TOTAL_COST / MAX_SKILL_POINTS_PER_ROUND / 1440 > 4);
@@ -699,7 +702,7 @@ test('research has functional breadth and a proven multi-day completion floor', 
     const full = player.skills[skill.id]; player.skills[skill.id] = 0;
     if (skill.branch === 'kit') {
       // A licence opens a feature instead of moving a number: each one must gate something.
-      const gate = { ki1: () => getFarmUnlocked({ ...player, farm: { ...player.farm, unlocked: false } }), ki2: () => generatorAvailability(player, 'wormhole', state).unlocked, ki3: () => generatorAvailability(player, 'mouse', state).unlocked }[skill.id];
+      const gate = { ki1: () => getFarmUnlocked({ ...player, farm: { ...player.farm, unlocked: false } }), ki2: () => generatorAvailability(player, 'wormhole', state).unlocked, ki3: () => generatorAvailability(player, 'mouse', state).unlocked, ki4: () => hasObservatory(player) }[skill.id];
       assert.equal(gate(), false, `${skill.name} must lock its feature`); player.skills[skill.id] = 1; assert.equal(gate(), true, `${skill.name} must open its feature`);
       player.skills[skill.id] = full; continue;
     }

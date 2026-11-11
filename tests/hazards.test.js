@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, addPlayer, reconcilePlayers, applyAction, advance, getStats, getOrb, getShipStatus, getTransit, getFlyer, cometWindow, generatorCost, generatorQuote, validateState, migrateState, compactGameState, SKILLS, GENERATORS, FLARE_CHANCE, COMET_SECONDS, SHIELD_LIMIT } from '../src/game.js';
+import { createGame, addPlayer, reconcilePlayers, applyAction, advance, getStats, getOrb, getShipStatus, getTransit, getFlyer, cometWindow, generatorCost, generatorQuote, skillCost, skillAvailability, isResearchComplete, validateState, migrateState, compactGameState, SKILLS, GENERATORS, FLARE_CHANCE, COMET_SECONDS, SHIELD_LIMIT } from '../src/game.js';
 import { fuelTarget } from '../src/campaign.js';
 
 const idOf = (key) => SKILLS.find((skill) => skill.key === key).id;
@@ -225,6 +225,32 @@ test('a cleared jump point enters transit: nothing damages it, the flyer alone m
     assert.equal(getShipStatus(a, state).fuel, 0); assert.equal(getShipStatus(a, state).target, fuelTarget(21));
     assert.equal(a.highestOrb, 21); if (mode === 'coop') assert.equal(b.highestOrb, 21);
     assert.equal(validateState(state), true);
+  }
+});
+
+test('Overflow sinks spend LRC between rounds, hang off each tree\'s last node, and never run out of ranks', () => {
+  for (const mode of ['scoreboard', 'coop']) {
+    const state = setup(mode), p = state.players[0], sink = idOf('endless-light');
+    const node = SKILLS.find((skill) => skill.id === sink);
+    assert.equal(node.currency, 'lrc'); assert.equal(node.maxRank, 1000); assert.deepEqual(node.requires, [idOf('quantum-barrage')]);
+    p.highestOrb = 175; p.completedRounds = 720; p.prestigeCount = 3; p.totalPrestige = 10; p.skills[idOf('quantum-barrage')] = 1;
+    advance(state, 60);
+    assert.equal(isResearchComplete(p), false);
+    assert.match(skillAvailability(p, sink, state).reason, /Master every node/, 'Infinite mode waits for the whole tree');
+    for (const skill of SKILLS) if (skill.currency === 'skill') p.skills[skill.id] = skill.maxRank;
+    assert.equal(isResearchComplete(p), true);
+    assert.match(skillAvailability(p, sink, state).reason, /LRC/, 'The sink asks for LRC, not SP');
+    if (mode === 'coop') state.sharedLrc = 5e6; else { p.lrc = 5e6; p.runLrc = p.lifetimeLrc = 5e6; }
+    const cost = skillCost(p, sink); assert.equal(cost, 2e6);
+    const before = getStats(p, state), damageResearch = SKILLS.filter((skill) => skill.currency === 'skill').reduce((sum, skill) => sum + (skill.effects.damagePct || 0) * skill.maxRank, 0);
+    assert.equal(applyAction(state, p.id, { type: 'buySkill', id: sink }).ok, true);
+    assert.equal(mode === 'coop' ? state.sharedLrc : p.lrc, 5e6 - cost); assert.equal(p.skillPoints, 2, 'Skill points are untouched');
+    assert.ok(Math.abs(getStats(p, state).clickDamage / before.clickDamage - (1 + damageResearch + 0.01) / (1 + damageResearch)) < 1e-12, 'One rank adds one more percentage point of damage');
+    assert.equal(skillCost(p, sink), Math.ceil(2e6 * 1.3), 'Each rank costs thirty percent more');
+    if (mode === 'coop') state.sharedLrc = 1e5; else p.lrc = 1e5;
+    assert.match(applyAction(state, p.id, { type: 'buySkill', id: sink }).reason, /LRC/, 'An unaffordable rank is refused');
+    p.skills[sink] = 1000; assert.equal(validateState(state), true); assert.match(skillAvailability(p, sink, state).reason, /Fully/);
+    p.skills[sink] = 1001; assert.equal(validateState(state), false);
   }
 });
 

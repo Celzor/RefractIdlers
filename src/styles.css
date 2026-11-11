@@ -493,3 +493,41 @@ dialog .dialog-danger{padding:12px;background:#e7c5a8;border-left:4px solid #a35
 .flight-hint{margin:0;font:5px/1.6 Pixel,monospace;color:#a89877}
 .flight-result{position:absolute;inset:auto 0 42%;display:grid;gap:6px;justify-items:center;padding:12px;background:#201d1aee;border-top:2px solid #a07750;border-bottom:2px solid #a07750}
 .flight-result strong{font:9px/1.5 Pixel,monospace;color:#bad797}.flight-result[data-outcome=crashed] strong{color:#e0876f}.flight-result span{font:17px/1.2 Terminal,monospace;color:#d9c7a2}
+
+/* Session dialog tabs: the Scoreboard (or Crew) beside this pilot's Achievements. */
+.dialog-tabs{display:flex;gap:6px;margin:0 36px 0 0;padding-bottom:12px;border-bottom:2px solid #a68d65}
+.dialog-tab{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:8px 12px 7px;background:#c4af81;color:#554333;border:2px solid var(--ink);font:7px/1.5 Pixel,monospace;box-shadow:2px 2px #211d1d;white-space:nowrap}
+.dialog-tab[aria-selected=true]{background:var(--gold);color:var(--ink)}
+.dialog-tab:hover{background:#f3d48a;color:var(--ink)}
+.dialog-tab small{font:14px/1 Terminal,monospace;color:inherit}
+.achievements-panel{margin-top:16px;padding:19px 21px}
+.achievements-panel .section-heading{align-items:center}
+.achievements-panel h2{font-size:11px}
+.achievements-panel .section-heading>small{font-size:18px;line-height:1.1;color:#7b634c;text-align:right;white-space:nowrap}
+.achievements-note{margin:8px 0 0;font:17px/1.2 Terminal,monospace;color:#7c6546}
+.achievements-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px;max-height:min(52dvh,440px);overflow-y:auto;scrollbar-width:thin;padding:2px 4px 2px 2px}
+.achievement{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px;align-items:center;min-height:56px;padding:7px 9px;border:2px solid #8c704e;background:#efe0b6;box-shadow:2px 2px #b59c71}
+.achievement-icon{display:grid;place-items:center;width:34px;height:36px;border:2px solid var(--ink);background:var(--gold);color:var(--ink);font-size:20px;line-height:1}
+.achievement strong{display:block;font:7px/1.5 Pixel,monospace;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.achievement small{display:block;margin-top:3px;font:15px/1.15 Terminal,monospace;color:#6a513e}
+.achievement.is-locked{background:#d9ccb0;border-color:#a89a80;border-style:dashed;box-shadow:none;filter:grayscale(1);opacity:.72}
+.achievement.is-locked .achievement-icon{background:#bfb29a;border-color:#8a7d68;color:#6f6454}
+.achievement.is-locked strong,.achievement.is-locked small{color:#7d7160}
+/* Sky events: shooting stars streak across the top of the orbit and a quasar flares low on the left. The layer itself never blocks the core. */
+.sky-events{position:absolute;inset:0;z-index:4;pointer-events:none}
+.sky-star,.sky-quasar{position:absolute;pointer-events:auto;display:grid;place-items:center;border:0;background:transparent;box-shadow:none;padding:0;color:#fff2b0;cursor:pointer;touch-action:manipulation}
+.sky-star{width:44px;height:44px;transform:translate(-50%,-50%);font-size:26px;line-height:1;text-shadow:0 0 6px #ffe08a,0 0 14px #ffb84d;transition:left .12s linear,top .12s linear}
+.sky-star::after{content:'';position:absolute;right:50%;top:50%;width:64px;height:3px;transform-origin:right center;transform:rotate(-14deg);background:linear-gradient(90deg,transparent,#ffe08a)}
+.sky-star[data-dir=left]::after{transform:rotate(194deg)}
+.sky-star:hover,.sky-star:focus-visible,.sky-quasar:hover,.sky-quasar:focus-visible{color:#fff;outline:2px solid #ffe08a;outline-offset:2px}
+.sky-quasar{left:11%;bottom:14%;width:58px;height:58px;font-size:30px;line-height:1;color:#e3b8ff;text-shadow:0 0 8px #c89ad8,0 0 20px #8a5fb3;animation:quasar-pulse 1.2s ease-in-out infinite alternate}
+.sky-quasar small{position:absolute;left:50%;top:100%;transform:translateX(-50%);font:5px/1.6 Pixel,monospace;color:#e3b8ff;white-space:nowrap}
+@keyframes quasar-pulse{from{transform:scale(.92)}to{transform:scale(1.08)}}
+@media(prefers-reduced-motion:reduce){.sky-quasar{animation:none}.sky-star{transition:none}}
+.sky-status{position:absolute;right:10px;bottom:10px;z-index:5;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}
+.sky-status .surge-label{position:static;transform:none;font-size:6px}
+.tailwind-label{background:#d2e4b8;border-color:#2e4a24;color:#1f3318}
+.lens-label{background:#dcc3f0;border-color:#3d2a52;color:#2a1b3b}
+.comet-label.is-forecast{background:#243d4d;border-color:#9fd3e0;color:#cfe8f0}
+@media(max-width:760px){.achievements-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:540px){.achievements-grid{grid-template-columns:1fr}.dialog-tabs{margin-right:30px}.dialog-tab{font-size:6px;padding:7px 9px}}

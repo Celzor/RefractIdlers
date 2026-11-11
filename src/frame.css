@@ -37,8 +37,6 @@ main{position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-tem
 .shop-catalogs button[aria-pressed=true]{border-color:#59432e;background:var(--gold);color:var(--ink)}
 .shop-catalogs button:hover{background:#f3d48a}.shop-catalogs small{font:14px/1 Terminal,monospace}.shop-catalogs small:empty{display:none}
 .shop-catalogs button.is-locked{background:#c4b393;color:#7d6a52;border-style:dashed}.shop-catalogs button.is-locked[aria-pressed=true]{background:#dcc99a;color:#4f3d2c}.shop-catalogs button.is-locked small{color:#a3553f}
-.generator-panel[data-catalog=arsenal] .generators{grid-template-rows:repeat(4,minmax(0,1fr))}
-.generator-panel[data-catalog=click] .generators{grid-template-rows:repeat(3,minmax(0,1fr))}
 .generator-panel[data-catalog=click] .generator-description{font-size:18px;line-height:1.2}
 .shop-catalogs button{gap:4px;padding-inline:4px}
 .navigation-cluster{gap:12px}.tabs{gap:5px}.tab{padding-inline:9px;font-size:7px}
@@ -47,9 +45,10 @@ main{position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-tem
 .generator.is-locked .generator-symbol{opacity:.55;filter:grayscale(.7)}
 .generator.is-locked button{font:13px/1.4 Terminal,monospace}
 .buy-quantity{padding:6px 0 8px;margin-bottom:8px}.buy-quantity button{min-height:26px}
-.generators{flex:1;min-height:0;grid-template-rows:repeat(5,minmax(0,1fr));gap:7px}
-/* Eight workshop tiers: cards keep a readable height and the catalogue scrolls inside its panel. */
-.generator-panel[data-catalog=workshop] .generators{grid-template-rows:none;grid-auto-rows:minmax(66px,1fr);overflow-y:auto;scrollbar-width:thin;padding-right:2px}
+/* Every catalogue scrolls inside its panel. Rows never shrink below their content, so a locked card's unlock line
+   (name, effect and requirement) is never covered by the card beneath it. */
+.generators{flex:1;min-height:0;grid-template-rows:none;grid-auto-rows:minmax(min-content,1fr);align-content:start;overflow-y:auto;scrollbar-width:thin;padding-right:2px;gap:7px}
+.generator{overflow:visible}
 .generator{min-height:0;grid-template-columns:36px minmax(0,1fr) 65px;padding:6px;gap:6px}
 .generator-symbol{width:36px;height:38px}.generator-symbol svg{width:36px;height:36px}
 .generator-name{font-size:20px}.generator-description{font-size:15px}.generator button{font-size:23px}
@@ -160,3 +159,8 @@ footer{margin:0;padding:0;min-height:0;height:28px;font-size:14px;align-self:end
 .core.final-core img{image-rendering:auto;filter:drop-shadow(0 0 12px #99f4e7) drop-shadow(0 0 26px #a4b8fa);width:100%;height:100%;object-fit:contain}
 .core.final-core{background:radial-gradient(ellipse,#96d7dc25,transparent 70%)}
 .prestige-machine .reset-zone{display:grid;grid-template-columns:1fr;gap:8px}
+/* The session dialog's tabs and the Achievements tab share the scorebook's flat framing. */
+#scoreboard-dialog .dialog-tabs{margin-bottom:12px}
+#scoreboard-dialog .achievements-panel{margin:0;padding:0;background:none;box-shadow:none;border:0}
+#scoreboard-dialog .achievements-panel .section-heading{padding-right:0}
+#scoreboard-dialog .achievements-grid{max-height:min(62dvh,780px)}

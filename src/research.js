@@ -1,4 +1,4 @@
-import { SKILLS, SKILL_BRANCHES, skillCost, skillAvailability } from './game.js';
+import { SKILLS, SKILL_BRANCHES, skillCost, skillAvailability, isResearchComplete } from './game.js';
 import { getFarmUnlocked } from './farm.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -7,17 +7,19 @@ const catalog = new Map(SKILLS.map(skill => [skill.id,skill]));
 const disciplines = SKILL_BRANCHES.filter(branch => branch.currency !== 'prestige');
 const research = SKILLS.filter(skill => skill.currency !== 'prestige');
 const legacy = SKILLS.filter(skill => skill.currency === 'prestige');
-const colors = ['#dfbf65','#94bc79','#7cbdb7','#c7909b','#8daccb','#e0ad69','#b4a0cd','#b8bc8b','#83bf88','#80cbd5','#d9a48c','#d08c7c','#a9b6c9','#e3c77a','#8fcbd6'];
+const colors = ['#dfbf65','#94bc79','#7cbdb7','#c7909b','#8daccb','#e0ad69','#b4a0cd','#b8bc8b','#83bf88','#80cbd5','#d9a48c','#d08c7c','#a9b6c9','#e3c77a','#8fcbd6','#e6c35c','#f0a35a','#9fb7d9','#d9d07a','#c89ad8','#f0d9a0'];
 const count = value => value >= 1e15 ? value.toExponential(1).replace('+','') : new Intl.NumberFormat('en',{notation:value >= 1e6 ? 'compact' : 'standard',maximumFractionDigits:0}).format(value || 0);
 const branchColor = skill => colors[disciplines.findIndex(branch => branch.id === skill.branch)] || '#c3a3cb';
 let lastPlayer, lastState, lastUsable, lastSignature = '';
-let selectedBranch = 'all', query = '', availableOnly = false;
+// The map is always the whole atlas: branches are told apart by colour and glyph, not by a filter strip.
+const selectedBranch = 'all';
+let query = '', availableOnly = false;
 let mainMap, legacyMap;
 
 /** Original pixel glyphs: eight optical motifs, with distinct tier geometry. */
 function glyph(skill) {
   const tier = skill.tier || 1;
-  const branch = skill.currency === 'prestige' ? ['click','idle','mastery','farm','kit','hull'][Math.floor(legacy.indexOf(skill)/4)] : skill.branch;
+  const branch = skill.currency === 'prestige' ? ['click','idle','mastery','farm','kit','hull','orbs'][skill.chain ?? Math.floor(legacy.indexOf(skill)/4)] : skill.branch;
   const ink = 'currentColor', pale = '#eee2ba';
   const motifs = {
     chronos: `<path d="M3 1h10v3h-2v2H9v4h2v2h2v3H3v-3h2v-2h2V6H5V4H3z" fill="${ink}"/><path d="M5 3h6L8 6zm3 7 3 3H5z" fill="${pale}"/>`,
@@ -38,8 +40,20 @@ function glyph(skill) {
     industry: `<path d="M1 7h3V3h3v4h2V3h3v4h3v8H1z" fill="${ink}"/><path d="M3 10h2v3H3zm4 0h2v3H7zm4 0h2v3h-2z" fill="${pale}"/><path d="M11 0h2v2h-2z" fill="${pale}"/>`,
     // A spanner laid across a gear.
     engineering: `<path d="M6 1h4v2h2v2h2v4h-2v2h-2v2H6v-2H4v-2H2V5h2V3h2z" fill="${ink}"/><path d="M7 6h2v2H7z" fill="${pale}"/><path d="M11 10h3v3h-3zM1 1h3v3H1z" fill="${pale}"/><path d="M3 3l9 9-1 1-9-9z" fill="${ink}"/>`,
+    // A lemniscate: two linked loops for the endless sinks.
+    overflow: `<path d="M0 5h5v2h2V5h2V3h5v2h2v6h-2v2H9v-2H7v2H5v2H0v-2H0zM2 7v4h3V7zm9 0v4h3V7z" fill="${ink}"/><path d="M3 8h1v2H3zm9 0h1v2h-1z" fill="${pale}"/>`,
     // A shield crest with a bright chevron.
     hull: `<path d="M2 1h12v8l-6 6-6-6z" fill="${ink}"/><path d="M4 3h8v5l-4 4-4-4z" fill="#4d718b"/><path d="M5 5h6v2H8v2H7V7H5z" fill="${pale}"/>`,
+    // A strongbox with a lit slot.
+    vault: `<path d="M4 1h2v2H4zm6 0h2v2h-2zM1 3h14v11H1z" fill="${ink}"/><path d="M3 5h10v7H3z" fill="#4d718b"/><path d="M7 7h2v3H7z" fill="${pale}"/>`,
+    // A sun with eight rays.
+    surge: `<path d="M7 0h2v3H7zm0 13h2v3H7zM0 7h3v2H0zm13 0h3v2h-3zM2 2h2v2H2zm10 0h2v2h-2zM2 12h2v2H2zm10 0h2v2h-2zM5 5h6v6H5z" fill="${ink}"/><path d="M6 6h4v4H6z" fill="#e6bc61"/>`,
+    // A rocket climbing on a flame.
+    astrogation: `<path d="M7 0h2v2h2v6h2v3h-2v1H5v-1H3V8h2V2h2z" fill="${ink}"/><path d="M7 4h2v3H7z" fill="${pale}"/><path d="M6 12h4v2H9v2H7v-2H6z" fill="#e6bc61"/>`,
+    // A star with a trailing tail.
+    shooting: `<path d="M10 1h2v2h2v2h-2v2h-2V5H8V3h2zM8 6h2v2H8zM6 8h2v2H6zM4 10h2v2H4zM2 12h2v2H2z" fill="${ink}"/><path d="M11 3h1v1h-1z" fill="${pale}"/>`,
+    // A bright core with two jets.
+    quasars: `<path d="M7 0h2v4H7zm0 12h2v4H7z" fill="${pale}"/><path d="M3 7h2v2H3zm8 0h2v2h-2zM5 5h6v6H5z" fill="${ink}"/><path d="M6 6h4v4H6z" fill="#c89ad8"/><path d="M7 7h2v2H7z" fill="${pale}"/>`,
   };
   const marks = Array.from({length:Math.min(tier,6)},(_,index) => `<rect x="${3+index*2}" y="18" width="1" height="2"/>`).join('');
   const crown = tier >= 5 || skill.currency === 'prestige' ? '<path d="M3 0h2v2h2V0h2v2h2V0h2v4H3z" fill="#e6bc61" transform="translate(2 -3)"/>' : '';
@@ -48,17 +62,19 @@ function glyph(skill) {
 }
 
 function layout(skills,isLegacy) {
-  // Fifteen disciplines share the circle, so the rings sit further out and the per-tier jitter stays small enough that
-  // neighbouring branches never overlap at any tier.
-  const width = isLegacy ? 1560 : 2360, height = isLegacy ? 1300 : 2040;
+  // Twenty-one disciplines share the circle, so the rings sit further out and the per-tier jitter stays small enough that
+  // neighbouring branches never overlap at any tier. Legacy nodes sit on their chain's spoke; a chain may be shorter than four tiers.
+  const chainOf = skill => skill.chain ?? Math.floor(skills.indexOf(skill)/4);
+  const chains = isLegacy ? Math.max(...skills.map(skill => chainOf(skill)+1)) : 0;
+  const width = isLegacy ? 1700 : 3000, height = isLegacy ? 1400 : 2560;
   const center = {x:width/2,y:height/2};
   const points = new Map();
-  const shifts = isLegacy ? [0,6,-8,10] : [0,3,-4,5,-3,2];
+  const shifts = isLegacy ? [0,6,-8,10] : [0,2,-3,3,-2,2];
   for (const skill of skills) {
-    const branch = isLegacy ? Math.floor(skills.indexOf(skill)/4) : disciplines.findIndex(item => item.id === skill.branch);
+    const branch = isLegacy ? chainOf(skill) : disciplines.findIndex(item => item.id === skill.branch);
     const tier = skill.tier-1;
-    const radius = isLegacy ? [160,320,480,640][tier] : [400,540,680,820,960,1100][tier];
-    const base = isLegacy ? -135+branch*360/(legacy.length/4) : -90+branch*360/disciplines.length;
+    const radius = isLegacy ? [160,320,480,640][tier] : [560,720,880,1040,1200,1360][tier];
+    const base = isLegacy ? -135+branch*360/chains : -90+branch*360/disciplines.length;
     const degrees = base + shifts[tier] * (branch%2 ? -1 : 1);
     const angle = degrees*Math.PI/180;
     points.set(skill.id,{x:center.x+Math.cos(angle)*radius,y:center.y+Math.sin(angle)*radius*(isLegacy ? .8 : .82)});
@@ -196,13 +212,17 @@ class SkillMap {
   }
   render(player,state,usable){
     const path=ancestors(this.selected);path.add(this.selected);
+    // Infinite mode is a reward for finishing the tree: its nodes and links stay hidden until then.
+    const infinite=Boolean(player&&isResearchComplete(player));
+    for(const skill of this.skills)if(skill.currency==='lrc'){this.nodeElements.get(skill.id).hidden=!infinite;for(const edge of this.root.querySelectorAll(`[data-edge-to="${skill.id}"]`))edge.classList.toggle('is-hidden',!infinite);}
+    if(!infinite&&catalog.get(this.selected)?.currency==='lrc')this.selected=this.skills[0].id;
     let matches=0;
     for(const skill of this.skills){
       const node=this.nodeElements.get(skill.id),rank=player?.skills[skill.id]||0;
       const availability=player?skillAvailability(player,skill.id,state):{available:false,reason:'Join the session to research.'};
       const status=rank>=skill.maxRank?'maxed':availability.available&&usable?'ready':rank?'owned':'locked';
       let matching=true;
-      if(!this.legacy){matching=(!query||`${skill.name} ${skill.description} ${skill.requires.map(id=>catalog.get(id)?.name).join(' ')}`.toLowerCase().includes(query))&&(selectedBranch==='all'||!!query||skill.branch===selectedBranch)&&(!availableOnly||availability.available);if(matching)matches++;}
+      if(!this.legacy){if(skill.currency==='lrc'&&!infinite){node.classList.add('is-dim');continue;}matching=(!query||`${skill.name} ${skill.description} ${skill.requires.map(id=>catalog.get(id)?.name).join(' ')}`.toLowerCase().includes(query))&&(selectedBranch==='all'||!!query||skill.branch===selectedBranch)&&(!availableOnly||availability.available);if(matching)matches++;}
       node.dataset.state=status;node.classList.toggle('is-ready',status==='ready');node.classList.toggle('is-owned',rank>0);node.classList.toggle('is-maxed',status==='maxed');node.classList.toggle('is-locked',status==='locked');
       node.classList.toggle('is-selected',skill.id===this.selected);node.classList.toggle('is-path',path.has(skill.id));node.classList.toggle('is-dim',!matching);node.classList.toggle('is-match',matching&&!!query);
       node.setAttribute('aria-pressed',String(skill.id===this.selected));node.setAttribute('aria-label',`${skill.name}. Rank ${rank} of ${skill.maxRank}. ${availability.reason} Select to inspect.`);
@@ -217,12 +237,12 @@ class SkillMap {
     return matches;
   }
   renderInspector(player,state,usable){
-    const skill=catalog.get(this.selected),rank=player?.skills[skill.id]||0,currency=this.legacy?'PP':'SP',cost=player?skillCost(player,skill.id):skill.cost;
+    const skill=catalog.get(this.selected),rank=player?.skills[skill.id]||0,currency=this.legacy?'PP':skill.currency==='lrc'?'LRC':'SP',cost=player?skillCost(player,skill.id):skill.cost;
     this.root.querySelector('[data-graph-action="details"]').textContent=`${skill.name} · DETAILS ↓`;
     const availability=player?skillAvailability(player,skill.id,state):{available:false,reason:'Join the session to research.'},maxed=rank>=skill.maxRank;
     const requirements=skill.requires.map(id=>{const required=catalog.get(id),needed=skill.requiredRanks?.[id]||1,owned=player?.skills[id]||0;return `<button class="graph-dependency${owned>=needed?' is-met':''}" data-focus-skill="${id}"><span>${safe(required?.name||id)} ↗</span><b>${owned}/${needed}</b></button>`;}).join('');
-    const gates=[['orb','Reach orb',player?.highestOrb],['rounds','Complete rounds',player?.completedRounds],['prestiges','Prestige resets',player?.prestigeCount],['prestige','Lifetime PP',player?.totalPrestige]].filter(([key])=>skill.gates?.[key]>0).map(([key,label,value])=>`<li class="${(value||0)>=skill.gates[key]?'is-met':''}"><span>${label}</span><b>${count(value)} / ${count(skill.gates[key])}</b></li>`).join('');
-    const markup=`<button class="graph-back" data-graph-action="back">↑ Back to the tree</button><div class="graph-inspector-heading"><span class="graph-inspector-icon" style="color:${branchColor(skill)}">${glyph(skill)}</span><div><span class="graph-eyebrow">${safe(SKILL_BRANCHES.find(branch=>branch.id===skill.branch)?.name||'Research')} · TIER ${skill.tier}</span><h3>${safe(skill.name)}</h3></div></div><div class="graph-rank-preview"><span>RANK</span><strong>${rank} <em>→</em> ${maxed?'MAX':rank+1}</strong><small>of ${skill.maxRank}</small></div><p class="graph-effect">${safe(skill.description)}</p><div class="graph-inspector-progress"><span style="width:${rank/skill.maxRank*100}%"></span></div>${requirements?`<div class="graph-requires"><h4>CONNECTED RESEARCH</h4>${requirements}</div>`:'<p class="graph-starting">Starting node · no prerequisite</p>'}${gates?`<ul class="graph-gates">${gates}</ul>`:''}<div class="graph-purchase"><p id="research-reason-${skill.id}" role="status">${maxed?'Every rank mastered.':safe(availability.reason)}</p><button class="primary-button graph-buy" data-buy-skill="${skill.id}" ${!usable||!availability.available?'disabled':''}><span>${maxed?'MASTERED':rank?'UPGRADE NODE':'UNLOCK NODE'}</span><b id="skill-cost-${skill.id}">${maxed?'✓':`${count(cost)} ${currency}`}</b></button><small>Research survives every prestige.</small></div>`;
+    const gates=[['orb','Reach orb',player?.highestOrb],['rounds','Complete rounds',player?.completedRounds],['prestiges','Prestige resets',player?.prestigeCount],['prestige','Lifetime PP',player?.totalPrestige]].filter(([key])=>typeof skill.gates?.[key]==='number'&&skill.gates[key]>0).map(([key,label,value])=>`<li class="${(value||0)>=skill.gates[key]?'is-met':''}"><span>${label}</span><b>${count(value)} / ${count(skill.gates[key])}</b></li>`).join('');
+    const markup=`<button class="graph-back" data-graph-action="back">↑ Back to the tree</button><div class="graph-inspector-heading"><span class="graph-inspector-icon" style="color:${branchColor(skill)}">${glyph(skill)}</span><div><span class="graph-eyebrow">${safe(SKILL_BRANCHES.find(branch=>branch.id===skill.branch)?.name||'Research')} · TIER ${skill.tier}</span><h3>${safe(skill.name)}</h3></div></div><div class="graph-rank-preview"><span>RANK</span><strong>${rank} <em>→</em> ${maxed?'MAX':rank+1}</strong><small>of ${skill.maxRank}</small></div><p class="graph-effect">${safe(skill.description)}</p><div class="graph-inspector-progress"><span style="width:${rank/skill.maxRank*100}%"></span></div>${requirements?`<div class="graph-requires"><h4>CONNECTED RESEARCH</h4>${requirements}</div>`:'<p class="graph-starting">Starting node · no prerequisite</p>'}${gates?`<ul class="graph-gates">${gates}</ul>`:''}<div class="graph-purchase"><p id="research-reason-${skill.id}" role="status">${maxed?'Every rank mastered.':safe(availability.reason)}</p><button class="primary-button graph-buy" data-buy-skill="${skill.id}" ${!usable||!availability.available?'disabled':''}><span>${maxed?'MASTERED':rank?'UPGRADE NODE':'UNLOCK NODE'}</span><b id="skill-cost-${skill.id}">${maxed?'✓':`${count(cost)} ${currency}`}</b></button><small>${skill.currency==='lrc'?'Infinite mode: a thousand ranks, each 30% dearer, bought with LRC between rounds. Survives every prestige.':'Research survives every prestige.'}</small></div>`;
     // Preserve the purchase button during a successful action so keyboard users
     // retain focus. The inspector changes only when its selected data changes.
     if(this.inspectorMarkup!==markup){const focused=this.inspector.querySelector('[data-buy-skill]')===document.activeElement;this.inspector.innerHTML=markup;this.inspectorMarkup=markup;if(focused){const buy=this.inspector.querySelector('[data-buy-skill]');if(!buy.disabled)buy.focus({preventScroll:true});else this.nodeElements.get(skill.id)?.focus({preventScroll:true});}}
@@ -232,32 +252,27 @@ class SkillMap {
 
 export function initializeResearch(){
   // Names sit in their own box so a narrow tab truncates them with an ellipsis; the title keeps the full name.
-  $('#research-branches').innerHTML=`<button data-research-branch="all" aria-pressed="true" title="All paths"><b class="branch-name">All paths</b><span>${research.length}</span></button>`+disciplines.map((branch,index)=>`<button data-research-branch="${branch.id}" aria-pressed="false" title="${safe(branch.name)}" style="--branch-color:${colors[index]}"><i></i><b class="branch-name">${safe(branch.name)}</b><span id="branch-count-${branch.id}">0</span></button>`).join('');
   mainMap=new SkillMap('#research-map','#research-inspector',research);
   legacyMap=new SkillMap('#legacy-map','#legacy-inspector',legacy,true);
-  $('#research-branches').addEventListener('click',event=>{const button=event.target.closest('[data-research-branch]');if(!button)return;selectedBranch=button.dataset.researchBranch;query='';$('#research-search').value='';lastSignature='';renderResearch(lastPlayer,lastState,lastUsable);
-    if(selectedBranch==='all')mainMap.fit(false);else{const nodes=research.filter(skill=>skill.branch===selectedBranch);mainMap.select(nodes[1]?.id||nodes[0].id,true);}});
   $('#research-search').addEventListener('input',event=>{query=event.target.value.trim().toLowerCase();lastSignature='';renderResearch(lastPlayer,lastState,lastUsable);if(query){const first=research.find(skill=>`${skill.name} ${skill.description} ${skill.requires.map(id=>catalog.get(id)?.name).join(' ')}`.toLowerCase().includes(query));if(first)mainMap.select(first.id,true);}});
   $('#research-available').addEventListener('click',()=>{availableOnly=!availableOnly;lastSignature='';renderResearch(lastPlayer,lastState,lastUsable);});
-  document.addEventListener('click',event=>{const button=event.target.closest('[data-focus-skill]');if(!button)return;const skill=catalog.get(button.dataset.focusSkill);if(!skill)return;query='';availableOnly=false;selectedBranch='all';$('#research-search').value='';document.querySelector(`[data-tab="${skill.currency==='prestige'?'prestige':'skills'}"]`).click();(skill.currency==='prestige'?legacyMap:mainMap).select(skill.id,true);});
+  document.addEventListener('click',event=>{const button=event.target.closest('[data-focus-skill]');if(!button)return;const skill=catalog.get(button.dataset.focusSkill);if(!skill)return;query='';availableOnly=false;$('#research-search').value='';document.querySelector(`[data-tab="${skill.currency==='prestige'?'prestige':'skills'}"]`).click();(skill.currency==='prestige'?legacyMap:mainMap).select(skill.id,true);});
 }
+
+/** Jump the research map to one node by catalog key, e.g. the garden's first discipline from the Farm tab. */
+export function focusResearch(key){const skill=SKILLS.find(entry=>entry.key===key||entry.id===key);if(skill&&mainMap)mainMap.select(skill.id,true);}
 
 export function renderResearch(player,state,usable){
   lastPlayer=player;lastState=state;lastUsable=usable;if(!state||!mainMap)return;
   mainMap.ensureCamera();legacyMap.ensureCamera();
   const signature=JSON.stringify([player?.id,player?.skills,player?.skillPoints,player?.prestigePoints,player?.totalPrestige,player?.prestigeCount,player?.highestOrb,player?.completedRounds,getFarmUnlocked(player),state.phase,state.mode,usable,selectedBranch,query,availableOnly,mainMap.selected,legacyMap.selected]);
   if(signature===lastSignature)return;lastSignature=signature;
-  const owned=research.reduce((sum,skill)=>sum+(player?.skills[skill.id]||0),0),total=research.reduce((sum,skill)=>sum+skill.maxRank,0);
-  $('#research-progress').textContent=`${count(owned)} / ${count(total)} ranks · ${research.length} nodes`;
+  const tuning=research.filter(skill=>skill.currency==='skill'),sinks=research.filter(skill=>skill.currency==='lrc').reduce((sum,skill)=>sum+(player?.skills[skill.id]||0),0);
+  const owned=tuning.reduce((sum,skill)=>sum+(player?.skills[skill.id]||0),0),total=tuning.reduce((sum,skill)=>sum+skill.maxRank,0);
+  $('#research-progress').textContent=`${count(owned)} / ${count(total)} ranks · ${research.length} nodes${sinks?` · ${count(sinks)} overflow ranks`:''}`;
   $('#research-milestone').textContent=`Orb ${count(player?.highestOrb)} · ${count(player?.completedRounds)} rounds · ${count(player?.prestigeCount)} prestiges`;
   $('#legacy-points').textContent=count(player?.prestigePoints);
-  for(const branch of disciplines){const ranks=research.filter(skill=>skill.branch===branch.id).reduce((sum,skill)=>sum+(player?.skills[skill.id]||0),0);$(`#branch-count-${branch.id}`).textContent=String(ranks);}
-  for(const button of $('#research-branches').querySelectorAll('[data-research-branch]'))button.setAttribute('aria-pressed',String(selectedBranch===button.dataset.researchBranch));
   $('#research-available').setAttribute('aria-pressed',String(availableOnly));
-  const branch=disciplines.find(item=>item.id===selectedBranch);
-  $('#research-branch-title').textContent=query?'Search the circuit':branch?.name||'Follow the light';
-  $('#research-branch-description').textContent=query?'Matching nodes are lit. Their connections stay visible.':branch?.description||'Click a node to inspect it; double-click to research a rank. Bright lines trace its prerequisites.';
   const matches=mainMap.render(player,state,usable);legacyMap.render(player,state,usable);
-  $('#research-branch-progress').textContent=query||availableOnly||branch?`${matches} highlighted`:`${disciplines.length} disciplines`;
   $('#research-empty').hidden=matches!==0;
 }

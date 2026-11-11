@@ -17,7 +17,7 @@ const report = {
   methodology: {
     mode: 'Solo scoreboard, fixed RNG seed 0x5eed.',
     policies: '0 manual clicks/sec and 2 manual clicks/sec. Both policies buy the most expensive unlocked, affordable machine type first every 10 seconds, then cheaper types, using Buy Max. Arsenal gates are never bypassed.',
-    research: 'Between rounds buy the cheapest currently legal research repeatedly. Every purchase uses skillAvailability and applyAction; no gates or resources are bypassed.',
+    research: 'Between rounds buy the cheapest currently legal research repeatedly (Overflow LRC sinks are never bought, so their cost cannot be ranked against SP). Every purchase uses skillAvailability and applyAction; no gates or resources are bypassed.',
     prestige: 'First prestige as soon as eligible at intermission. Subsequent prestige requires at least 15 completed rounds since the previous reset and a gain of at least 5 points. Research is retained.',
     unattended: 'The two long simulations automatically ready and shop between rounds. They model continuously managed play, not closed-tab or hands-free progress. There is no offline progress. A separate true-unattended check stops at the first intermission.',
     gardening: 'No planting, harvesting, feeding or garden equipment purchases. The 14,000-LRC orb farm unlocks legal garden research; this baseline receives no meal bonuses and buys no paid seeds. All twelve machine types, including Click tech, participate in the investment policy.',
@@ -42,7 +42,7 @@ const report = {
 function researchAllAvailable(state, player) {
   let bought = 0;
   while (true) {
-    const choices = game.SKILLS.filter(skill => game.skillAvailability(player, skill.id, state).available)
+    const choices = game.SKILLS.filter(skill => skill.currency !== 'lrc' && game.skillAvailability(player, skill.id, state).available)
       .sort((a,b) => game.skillCost(player,a.id)-game.skillCost(player,b.id) || a.id.localeCompare(b.id));
     if (!choices.length) return bought;
     const result = game.applyAction(state, player.id, {type:'buySkill',id:choices[0].id});

@@ -15,6 +15,12 @@ export const SKILL_BRANCHES = Object.freeze([
   { id: 'industry', name: 'Deep industry', description: 'Sails, cathedrals, lanterns, sharper refractometers and bulk machine contracts.', currency: 'skill' },
   { id: 'engineering', name: 'Click engineering', description: 'Tune wormholes, quantum foam, strings, combo memory and the solar surge.', currency: 'skill' },
   { id: 'hull', name: 'Hull integrity', description: 'Shields against boss light rays, salvage, reflected rays and comet chasing.', currency: 'skill' },
+  { id: 'vault', name: 'Light vault', description: 'Your wallet earns interest during rounds, capped by your own continuous output.', currency: 'skill' },
+  { id: 'surge', name: 'Surge science', description: 'A longer solar surge that also speeds machines, sharpens criticals and enriches drops.', currency: 'skill' },
+  { id: 'astrogation', name: 'Astrogation', description: 'Fuel-efficient meals, a tougher hull for the jump flight, cheaper jumps and pay on arrival.', currency: 'skill' },
+  { id: 'shooting', name: 'Shooting stars', description: 'Catch shooting stars in the orbit for a tailwind that speeds every machine.', currency: 'skill' },
+  { id: 'quasars', name: 'Quasars', description: 'Tap a flaring quasar for a windfall and a lens that enriches orb drops.', currency: 'skill' },
+  { id: 'overflow', name: 'Overflow', description: 'Infinite mode: pour spare LRC into endless minor upgrades at the end of each tree. Every rank costs 30% more than the last.', currency: 'lrc' },
   { id: 'ascension', name: 'Eternal light', description: 'Spend prestige points on permanent disciplines.', currency: 'prestige' },
 ]);
 
@@ -143,14 +149,65 @@ const maxRanks = [8, 8, 8, 6, 5, 4];
 const hullRanks = [3, 5, 4, 4, 5, 3];
 const orbGates = [0, 10, 25, 50, 100, 175];
 const roundGates = [0, 3, 15, 60, 240, 720];
+/**
+ * Frontier disciplines: the vault, the surge, the ship, and the two Observatory sky events. Like the later lines they
+ * are appended after every shipped node (after the Overflow sinks and the Observatory licence) so packed saves keep their positions.
+ */
+const frontierLines = {
+  vault: [
+    ['light-vault', 'Light vault', 'Your wallet earns 0.1% interest per second during rounds per rank, up to half your continuous output.', { vaultRate: 0.001 }],
+    ['compound-ledger', 'Compound ledger', 'Interest may reach another 10% of your continuous output per rank.', { vaultCap: 0.1 }],
+    ['trust-fund', 'Trust fund', '+0.15% interest per second and +5% interest headroom per rank.', { vaultRate: 0.0015, vaultCap: 0.05 }],
+    ['closing-bell', 'Closing bell', 'Each round ends with a dividend of 2% of the LRC you earned during it per rank.', { bellPct: 0.02 }],
+    ['reserve-bank', 'Reserve bank', '+0.2% interest per second and +10% interest headroom per rank.', { vaultRate: 0.002, vaultCap: 0.1 }],
+    ['infinite-ledger', 'Infinite ledger', '+0.3% interest per second, +20% headroom and +3% closing dividend per rank.', { vaultRate: 0.003, vaultCap: 0.2, bellPct: 0.03 }],
+  ],
+  surge: [
+    ['early-dawn', 'Early dawn', 'The solar surge begins 1 second earlier per rank.', { surgeSeconds: 1 }],
+    ['surge-coils', 'Surge coils', '+10% automatic attack speed during the solar surge per rank.', { surgeAutoPct: 0.1 }],
+    ['flash-point', 'Flash point', '+2 percentage points of critical chance during the surge per rank.', { surgeCrit: 0.02 }],
+    ['surge-bounty', 'Surge bounty', '+10% orb rewards during the surge per rank.', { surgeDropPct: 0.1 }],
+    ['solar-dynamo', 'Solar dynamo', '+15% machine income during the surge and +1 second of surge per rank.', { surgeIncomePct: 0.15, surgeSeconds: 1 }],
+    ['corona', 'Corona', 'The surge multiplies damage by another +0.25× and lasts +2 seconds per rank.', { surgeDamagePct: 0.25, surgeSeconds: 2 }],
+  ],
+  astrogation: [
+    ['fuel-injectors', 'Fuel injectors', 'Beam’s meals add 10% more fuel to the ship per rank.', { fuelPct: 0.1 }],
+    ['reinforced-hull', 'Reinforced hull', 'The jump flight survives one more meteorite hit per rank.', { flightHits: 1 }],
+    ['crash-recovery', 'Crash recovery', 'A crashed ship keeps another 10% of its fuel per rank.', { crashRetain: 0.1 }],
+    ['arrival-bonus', 'Arrival bonus', 'Arriving in a new system pays 20 seconds of your steady output per rank.', { arrivalSeconds: 20 }],
+    ['efficient-routes', 'Efficient routes', 'Fuel targets drop 5% per rank, to at most half. The best-researched pilot sets a crew’s target.', { fuelTargetPct: 0.05 }],
+    ['star-charts', 'Star charts', '+1 hull hit, +20% fuel from meals and 60 seconds of arrival pay per rank.', { flightHits: 1, fuelPct: 0.2, arrivalSeconds: 60 }],
+  ],
+  shooting: [
+    ['star-catcher', 'Star catcher', 'A caught shooting star’s tailwind lasts +2 seconds per rank.', { tailwindSeconds: 2 }],
+    ['tailwind', 'Tailwind', 'Tailwinds speed machines by another 10% per rank.', { tailwindPct: 0.1 }],
+    ['meteor-shower', 'Meteor shower', '+1 shooting star each round per rank. The best-researched pilot sets the shared sky.', { starCount: 1 }],
+    ['stardust', 'Stardust', 'Catching a star also mints 5 seconds of your continuous output per rank.', { stardustSeconds: 5 }],
+    ['slipstream', 'Slipstream', 'Your hits deal +10% damage while a tailwind blows per rank.', { slipstreamPct: 0.1 }],
+    ['constellation', 'Constellation', '+4 seconds of tailwind and +25% tailwind strength per rank.', { tailwindSeconds: 4, tailwindPct: 0.25 }],
+  ],
+  quasars: [
+    ['quasar-lens', 'Quasar lens', 'A tapped quasar’s lens lasts +2 seconds per rank.', { lensSeconds: 2 }],
+    ['windfall', 'Windfall', 'Tapping a quasar pays +3 more seconds of your steady output per rank.', { windfallSeconds: 3 }],
+    ['deep-field', 'Deep field', 'A quasar flares in 8% more rounds per rank. The best-researched pilot sets the shared sky.', { quasarChance: 0.08 }],
+    ['gravitational-focus', 'Gravitational focus', 'The lens enriches orb drops by another 25% per rank.', { lensPct: 0.25 }],
+    ['redshift', 'Redshift', 'Quasars stay visible +2 seconds longer per rank.', { quasarSeconds: 2 }],
+    ['blazar', 'Blazar', '+10 seconds of windfall pay and +50% lens strength per rank.', { windfallSeconds: 10, lensPct: 0.5 }],
+  ],
+};
 const branchIds = Object.keys(lines);
 const laterBranchIds = Object.keys(laterLines);
+const frontierBranchIds = Object.keys(frontierLines);
 /** Later lines link into the shipped discipline they extend. */
-const laterCross = { arsenal: 'automation', industry: 'idle', engineering: 'click', hull: 'orbs' };
-const licenceFor = { arsenal: 'arsenal-licence', engineering: 'click-licence' };
+const laterCross = { arsenal: 'automation', industry: 'idle', engineering: 'click', hull: 'orbs', vault: 'mint', surge: 'click', astrogation: 'farm', shooting: 'automation', quasars: 'orbs' };
+const licenceFor = { arsenal: 'arsenal-licence', engineering: 'click-licence', shooting: 'observatory-licence', quasars: 'observatory-licence' };
+/** Smaller rank caps keep hull hits, crash recovery and the number of stars per round in proportion. */
+const rankCaps = { hull: hullRanks, astrogation: [8, 3, 4, 6, 5, 2], shooting: [8, 8, 4, 6, 5, 4] };
+const gardenGated = new Set(['farm', 'astrogation']);
 const icons = ['✦', '☀', '⌁', '◈', '◎', '¤', '✧', '∞', '♧', '⌛', '⚿', '⌖', '✺', '↻', '⛨'];
-function researchNode(branch, branchIndex, [id, name, description, effects], tier, later = false) {
-  const source = later ? laterLines[branch] : lines[branch];
+const branchIcons = { arsenal: '⌖', industry: '✺', engineering: '↻', hull: '⛨', vault: '¤', surge: '☀', astrogation: '⌂', shooting: '✦', quasars: '◉' };
+function researchNode(branch, branchIndex, [id, name, description, effects], tier, catalogLines = lines) {
+  const later = catalogLines !== lines, source = catalogLines[branch];
   const requires = tier ? [source[tier - 1][0]] : [];
   const requiredRanks = tier ? { [requires[0]]: tier < 3 ? tier + 1 : 2 } : {};
   if (tier >= 3) {
@@ -161,12 +218,13 @@ function researchNode(branch, branchIndex, [id, name, description, effects], tie
   }
   if (!tier && licenceFor[branch]) { requires.push(licenceFor[branch]); requiredRanks[licenceFor[branch]] = 1; }
   return { id, name, branch, description, effects, cost: tiers[tier], costGrowth: 1.38,
-    maxRank: branch === 'hull' ? hullRanks[tier] : maxRanks[tier], requires, requiredRanks, currency: 'skill', tier: tier + 1,
-    gates: { orb: orbGates[tier], rounds: roundGates[tier], prestiges: tier >= 4 ? 3 : tier >= 3 ? 1 : 0, prestige: tier === 5 ? 10 : 0, ...(branch === 'farm' ? {farm:true} : {}) },
-    icon: icons[later ? branchIds.length + 1 + laterBranchIds.indexOf(branch) : branchIndex] || '♧' };
+    maxRank: (rankCaps[branch] || maxRanks)[tier], requires, requiredRanks, currency: 'skill', tier: tier + 1,
+    gates: { orb: orbGates[tier], rounds: roundGates[tier], prestiges: tier >= 4 ? 3 : tier >= 3 ? 1 : 0, prestige: tier === 5 ? 10 : 0, ...(gardenGated.has(branch) ? {farm:true} : {}) },
+    icon: (later ? branchIcons[branch] : icons[branchIndex]) || '♧' };
 }
 const research = branchIds.flatMap((branch, branchIndex) => lines[branch].map((entry, tier) => researchNode(branch, branchIndex, entry, tier)));
-const laterResearch = laterBranchIds.flatMap((branch, index) => laterLines[branch].map((entry, tier) => researchNode(branch, index, entry, tier, true)));
+const laterResearch = laterBranchIds.flatMap((branch, index) => laterLines[branch].map((entry, tier) => researchNode(branch, index, entry, tier, laterLines)));
+const frontierResearch = frontierBranchIds.flatMap((branch, index) => frontierLines[branch].map((entry, tier) => researchNode(branch, index, entry, tier, frontierLines)));
 
 const eternalLines = [
   [
@@ -209,14 +267,35 @@ const laterEternalLines = [
     ['brighter-legacy', 'Brighter legacy', 'Each lifetime prestige point adds another +1% production per rank, on top of its +10%.', { legacyPct: 0.01 }],
   ],
 ];
-const eternalNode = (line, [id, name, description, effects], tier, farm) => ({
-  id, name, description, effects, branch: 'ascension', currency: 'prestige', tier: tier + 1,
+/** `chain` is the spoke a prestige node sits on in the legacy map; a chain may be shorter than four tiers. */
+const eternalNode = (line, [id, name, description, effects], tier, farm, chain) => ({
+  id, name, description, effects, branch: 'ascension', currency: 'prestige', tier: tier + 1, chain,
   cost: [1, 3, 8, 20][tier], costGrowth: 1.65, maxRank: 5,
   requires: tier ? [line[tier - 1][0]] : [], requiredRanks: tier ? { [line[tier - 1][0]]: 2 } : {},
   gates: { orb: [0, 30, 80, 150][tier], rounds: [0, 30, 180, 720][tier], prestiges: 1, prestige: [1, 5, 20, 100][tier], ...(farm ? {farm:true} : {}) }, icon: '✧',
 });
-const prestige = eternalLines.flatMap((line, lineIndex) => line.map((entry, tier) => eternalNode(line, entry, tier, lineIndex === 3)));
-const laterPrestige = laterEternalLines.flatMap((line) => line.map((entry, tier) => eternalNode(line, entry, tier, false)));
+const prestige = eternalLines.flatMap((line, lineIndex) => line.map((entry, tier) => eternalNode(line, entry, tier, lineIndex === 3, lineIndex)));
+const laterPrestige = laterEternalLines.flatMap((line, lineIndex) => line.map((entry, tier) => eternalNode(line, entry, tier, false, eternalLines.length + lineIndex)));
+/** Siege: one permanent node on its own spoke. Each rank adds five seconds to every system-boss attempt; the engine caps the clock at 60 seconds. */
+const siegeLine = [['siege-clock', 'Siege clock', 'Every system boss attempt lasts +5 seconds per rank. The clock never exceeds 60 seconds.', { bossSeconds: 5 }]];
+const siege = siegeLine.map((entry, tier) => ({ ...eternalNode(siegeLine, entry, tier, false, eternalLines.length + laterEternalLines.length), cost: 2, maxRank: 6 }));
+
+/**
+ * Overflow: the LRC sinks of infinite mode. Each hangs off one discipline's final node, has a thousand ranks, and
+ * spends LRC (the shared bank in Co-op) instead of skill points. Prices grow 1.3× per rank, so they are never "done".
+ * Infinite mode only opens once every regular node is at maximum rank (`gates.complete`).
+ */
+const overflowLines = [
+  ['endless-light', 'Endless light', '+1% damage from every hit per rank. Costs LRC, not SP.', { damagePct: 0.01 }, 'quantum-barrage', 2e6],
+  ['endless-orbit', 'Endless orbit', '+1% continuous income per rank. Costs LRC, not SP.', { passivePct: 0.01 }, 'dyson-crown', 2e6],
+  ['endless-bounty', 'Endless bounty', '+1% orb rewards per rank. Costs LRC, not SP.', { dropPct: 0.01 }, 'event-harvester', 3e6],
+  ['endless-clockwork', 'Endless clockwork', '+1% automatic attack speed per rank. Costs LRC, not SP.', { autoPct: 0.01 }, 'eternal-engine', 3e6],
+  ['endless-mint', 'Endless mint', '+2% click-mint income per rank. Costs LRC, not SP.', { mintPct: 0.02 }, 'stellar-treasury', 1e6],
+  ['endless-luck', 'Endless luck', '+0.01 critical damage multiplier per rank. Costs LRC, not SP.', { critMultiplier: 0.01 }, 'supernova-luck', 4e6],
+];
+const overflow = overflowLines.map(([id, name, description, effects, parent, cost], tier) => ({ id, name, branch: 'overflow', description, effects, cost, costGrowth: 1.3,
+  maxRank: 1000, requires: [parent], requiredRanks: { [parent]: 1 }, currency: 'lrc', tier: tier + 1,
+  gates: { orb: 175, rounds: 720, prestiges: 3, prestige: 10, complete: true }, icon: '∞' }));
 
 /** Outfitting: independent one-rank licences. Each opens a whole feature rather than tuning a number. */
 const kitLines = [
@@ -224,15 +303,21 @@ const kitLines = [
   ['click-licence', 'Click tech licence', 'Opens the Click technology catalogue: wormholes, quantum foam, string theory and flywheels.', { clickTech: 1 }, 3, { orb: 5, rounds: 2 }],
   ['arsenal-licence', 'Arsenal licence', 'Opens the Arsenal catalogue: autonomous weapons that strike and mint on their own.', { arsenal: 1 }, 4, { orb: 10, rounds: 4 }],
 ];
-const kit = kitLines.map(([id, name, description, effects, cost, gates], tier) => ({ id, name, branch: 'kit', description, effects, cost, costGrowth: 1,
-  maxRank: 1, requires: [], requiredRanks: {}, currency: 'skill', tier: tier + 1, gates: { ...gates, prestiges: 0, prestige: 0 }, icon: '⚿' }));
+const kitNode = ([id, name, description, effects, cost, gates], tier) => ({ id, name, branch: 'kit', description, effects, cost, costGrowth: 1,
+  maxRank: 1, requires: [], requiredRanks: {}, currency: 'skill', tier: tier + 1, gates: { ...gates, prestiges: 0, prestige: 0 }, icon: '⚿' });
+const kit = kitLines.map(kitNode);
+/** The Observatory opens the sky: a comet forecast, shooting stars and quasars. Appended after the shipped catalog. */
+const frontierKitLines = [
+  ['observatory-licence', 'Observatory licence', 'Opens the Observatory: a comet forecast on the orbit, shooting stars to catch and quasars to tap during rounds.', { observatory: 1 }, 4, { orb: 15, rounds: 6 }],
+];
+const frontierKit = frontierKitLines.map((entry, index) => kitNode(entry, kitLines.length + index));
 
 // Compact new IDs keep eight completed builds inside Refract's relay envelope.
 // Original shipped IDs remain unchanged; readable keys stay in catalog metadata.
 // Packed saves index this array by position, so every later discipline is appended after the
 // shipped research, prestige and Outfitting nodes.
 const legacy = new Set(['tap-tuning', 'lucky-photon', 'singularity', 'solar-cells', 'orbital-array', 'perpetuity', 'shared-frequency', 'resonance', 'unity']);
-const raw = [...research, ...prestige, ...kit, ...laterResearch, ...laterPrestige];
+const raw = [...research, ...prestige, ...kit, ...laterResearch, ...laterPrestige, ...overflow, ...frontierKit, ...frontierResearch, ...siege];
 let prestigeOrdinal = 0;
 const ids = new Map(raw.map((skill) => [skill.id, legacy.has(skill.id) ? skill.id
   : skill.currency === 'prestige' ? `p${String(++prestigeOrdinal).padStart(2, '0')}` : `${skill.branch.slice(0, 2)}${skill.tier}`]));

@@ -25,7 +25,7 @@ export class FlightGame {
         <span class="flight-eyebrow">JUMP POINT CLEARED</span><strong data-flight-route>Next system</strong>
         <p data-flight-status>Fuel the ship to launch.</p>
         <button class="primary-button" data-flight-launch-button type="button" disabled>Launch ↗</button>
-        <small>Dodge meteorites with WASD or the arrow keys. Three hits and the ship turns back with half its fuel.</small>
+        <small data-flight-rules>Dodge meteorites with WASD or the arrow keys. Three hits and the ship turns back with half its fuel.</small>
       </section>
       <section class="flight-stage" data-flight-stage hidden aria-label="Jump flight">
         <div class="flight-hud"><strong data-flight-hud-route></strong><span data-flight-hull aria-live="polite">HULL ◆◆◆</span><span data-flight-distance>0%</span></div>
@@ -58,10 +58,13 @@ export class FlightGame {
   }
 
   /** The waiting room between the shattered gate and the flight. `show` is called every render while a transit exists. */
-  show({ from = '', to = '', fuel = 0, target = 1, isFlyer = false, flyerName = '', canLaunch = false } = {}) {
+  show({ from = '', to = '', fuel = 0, target = 1, isFlyer = false, flyerName = '', canLaunch = false, maxHits = MAX_HITS, keepFuel = 0.5 } = {}) {
     this.root.hidden = false;
     if (this.active || this.result) return;
     this.launch.hidden = false; this.stage.hidden = true;
+    // Astrogation research hardens the hull and saves more fuel from a crash; the rules line shows the live values.
+    this.rules = { maxHits: Math.max(1, Math.floor(maxHits)), keepFuel: Math.max(0, Math.min(1, keepFuel)) };
+    this.root.querySelector('[data-flight-rules]').textContent = `Dodge meteorites with WASD or the arrow keys. ${this.rules.maxHits} hits and the ship turns back with ${Math.round(this.rules.keepFuel * 100)}% of its fuel.`;
     this.root.querySelector('[data-flight-route]').textContent = `${from} → ${to}`;
     const status = this.root.querySelector('[data-flight-status]');
     status.textContent = !isFlyer ? `${flyerName || 'Another pilot'} is flying the ship. Hold tight.`
@@ -72,9 +75,10 @@ export class FlightGame {
 
   hide() { if (this.active || this.result) return; this.root.hidden = true; }
 
-  start({ from = '', to = '', systemIndex = 0, seed = 1 } = {}) {
+  start({ from = '', to = '', systemIndex = 0, seed = 1, maxHits = this.rules?.maxHits ?? MAX_HITS, keepFuel = this.rules?.keepFuel ?? 0.5 } = {}) {
     if (this.active) return;
     this.active = true; this.result = null; clearTimeout(this.resultTimer);
+    this.maxHits = Math.max(1, Math.floor(maxHits)); this.keepFuel = Math.max(0, Math.min(1, keepFuel));
     this.root.hidden = false; this.launch.hidden = true; this.stage.hidden = false;
     this.root.querySelector('[data-flight-result]').hidden = true;
     this.root.querySelector('[data-flight-hud-route]').textContent = `${from} → ${to}`.toUpperCase();
@@ -108,7 +112,7 @@ export class FlightGame {
     this.result = arrived ? 'arrived' : 'crashed';
     const splash = this.root.querySelector('[data-flight-result]');
     splash.hidden = false;
-    splash.innerHTML = arrived ? '<strong>JUMP COMPLETE</strong><span>Welcome to the next system.</span>' : '<strong>HULL BREACH</strong><span>Three hits. The ship turns back and loses half its fuel.</span>';
+    splash.innerHTML = arrived ? '<strong>JUMP COMPLETE</strong><span>Welcome to the next system.</span>' : `<strong>HULL BREACH</strong><span>${this.maxHits ?? MAX_HITS} hits. The ship turns back with ${Math.round((this.keepFuel ?? 0.5) * 100)}% of its fuel.</span>`;
     splash.dataset.outcome = this.result;
     this.draw();
     this.resultTimer = setTimeout(() => { this.result = null; this.onResult?.(arrived); }, 1400);
@@ -116,7 +120,8 @@ export class FlightGame {
 
   updateHud() {
     const hull = this.root.querySelector('[data-flight-hull]');
-    hull.textContent = `HULL ${'◆'.repeat(Math.max(0, MAX_HITS - this.hits))}${'◇'.repeat(Math.min(MAX_HITS, this.hits))}`;
+    const maxHits = this.maxHits ?? MAX_HITS;
+    hull.textContent = `HULL ${'◆'.repeat(Math.max(0, maxHits - this.hits))}${'◇'.repeat(Math.min(maxHits, this.hits))}`;
     this.root.querySelector('[data-flight-distance]').textContent = `${Math.min(100, Math.floor(this.time / FLIGHT_SECONDS * 100))}%`;
   }
 
@@ -161,7 +166,7 @@ export class FlightGame {
         for (let i = 0; i < 8; i++) { const angle = this.random() * TAU; this.sparks.push({ x: this.ship.x, y: this.ship.y, vx: Math.cos(angle) * 50, vy: Math.sin(angle) * 50, life: 1, color: i % 2 ? P.yellow : P.red }); }
         this.audio?.play?.('error', { intensity: .7 });
         this.updateHud();
-        if (this.hits >= MAX_HITS) { this.finish(false); return; }
+        if (this.hits >= (this.maxHits ?? MAX_HITS)) { this.finish(false); return; }
       }
     }
     this.updateHud();

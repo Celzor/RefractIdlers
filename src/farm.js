@@ -148,6 +148,7 @@ const fuelRoomOf = context => Number.isFinite(context?.fuelRoom) ? context.fuelR
 /**
  * The game supplies the current bank and commits the charge only after validation.
  * `context.fuelRoom` is the space left in the ship's tank; a meal's `fuel` result is what the game should add.
+ * `context.fuelMultiplier` (Astrogation research) scales the fuel a meal yields before the tank's room caps it.
  */
 export function applyFarmAction(player,action,balance,spend,context={}) {
   if (!getFarmUnlocked(player)) return fail('Research the Garden licence to open Beam’s Garden.');
@@ -200,7 +201,8 @@ export function applyFarmAction(player,action,balance,spend,context={}) {
     if (!crop || !farm.crops[crop.id] || !(farm.inventory[crop.id] > 0)) return fail('Harvest that vegetable before feeding Beam.');
     // Every meal also fuels the ship. When Beam is already full, the food goes straight into the tank.
     const fuelRoom = Math.max(0,fuelRoomOf(context)), mealValue = crop.secret ? COOKED_SECONDS : crop.feedSeconds*getFarmStats(player).feedMultiplier;
-    const fuel = Math.min(fuelRoom,mealValue), eat = () => { farm.inventory[crop.id]--; farm.meals = Math.min(Number.MAX_SAFE_INTEGER,farm.meals+1); };
+    const fuelMultiplier = Number.isFinite(context?.fuelMultiplier) && context.fuelMultiplier > 0 ? context.fuelMultiplier : 1;
+    const fuel = Math.min(fuelRoom,mealValue*fuelMultiplier), eat = () => { farm.inventory[crop.id]--; farm.meals = Math.min(Number.MAX_SAFE_INTEGER,farm.meals+1); };
     if (crop.secret) {
       if (farm.cookedSeconds >= COOKED_SECONDS && fuel <= 0) return fail('Beam is already cooked for 4m 20s, and the ship’s tank is full.');
       eat(); const seconds = COOKED_SECONDS-farm.cookedSeconds; farm.cookedSeconds = COOKED_SECONDS;

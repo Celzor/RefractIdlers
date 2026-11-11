@@ -1,9 +1,10 @@
-import { createGame, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, getRoundDuration, getOrb, getShipStatus, cometWindow, migrateState, compactGameState, GENERATORS, generatorQuote, generatorAvailability, prestigeGain, prestigeNextThreshold } from './game.js';
+import { createGame, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, getRoundDuration, getOrb, getShipStatus, cometWindow, skyEvents, migrateState, compactGameState, GENERATORS, generatorQuote, generatorAvailability, prestigeGain, prestigeNextThreshold } from './game.js';
+import { getAchievements } from './achievements.js';
 import { createActivityBridge } from './activity.js';
 import { OrbitArena } from './arena.js';
 import { GameAudio } from './audio.js';
 import { generatorIcon, orbIcon, orbAppearanceKey } from './icons.js';
-import { initializeResearch, renderResearch } from './research.js';
+import { initializeResearch, renderResearch, focusResearch } from './research.js';
 import { BeamCompanion } from './beam.js';
 import { FarmView } from './farm-view.js';
 import { getFarmUnlocked } from './farm.js';
@@ -25,7 +26,7 @@ arena.onFire = ({id,pan=0}) => audio.play({mote:'ray',mouse:'mouse',laser:'laser
 const beam = new BeamCompanion($('#beam-companion'));
 const farmView = new FarmView($('#farm-view'), {send, onEvent: (type) => { if (type === 'autoHarvest') audio.play('collect',{intensity:.35}); }, onResearch: () => {
   showTab('skills');
-  $('[data-research-branch="farm"]')?.click();
+  focusResearch('seed-science');
 }});
 const galaxyView = new GalaxyView($('#galaxy-view'), {onOrbit:()=>showTab('orbit'),onReplay:async()=>{await audio.unlock();playVictory(true);},onNewJourney:()=>send({type:'newJourney'}),onSecretChallenge:()=>{send({type:'startSecretChallenge'});showTab('orbit');},onLeaveSecret:()=>send({type:'leaveSecretChallenge'})});
 const finale = new FinaleScene($('#finale-root'), {audio,onContinue:()=>{syncSoundButton();showTab('galaxy');}});
@@ -36,7 +37,8 @@ const flight = new FlightGame($('#flight-root'), {audio,
     const ship = getShipStatus(player,state); if (!ship.launchReady || ship.flyer !== selfId) return;
     const level = getOrb(player,state).level, from = getCampaignLocation(level), to = SYSTEMS[from.index + 1];
     void audio.unlock(); audio.play('start'); beam.react('launch');
-    flight.start({from:from.system.name,to:to?.name ?? 'home',systemIndex:from.index,seed:Math.floor(state.now) + level});
+    const stats = getStats(player,state);
+    flight.start({from:from.system.name,to:to?.name ?? 'home',systemIndex:from.index,seed:Math.floor(state.now) + level,maxHits:stats.flightHits,keepFuel:stats.crashRetain});
   },
   onResult: (arrived) => send({type:'completeJump',arrived}),
 });
@@ -59,6 +61,9 @@ let lastRender = 0;
 let bridge;
 let crewMarkup = '';
 let scoreboardMarkup = '';
+let achievementsMarkup = '';
+let skyMarkup = '';
+let dialogTab = 'scoreboard';
 let previousVisualPlayer = null;
 let previousOrb = null;
 let orbImageKey = '';
@@ -176,9 +181,11 @@ function execute(fromId, action) {
     else if (action.type === 'feedBeam') { audio.play('boost'); if(action.crop==='weed')toast('Beam is cooked! 4.20× earned scores for 4m 20s.'); }
     else if (action.type === 'prestige') { audio.play('levelup'); toast(`Fresh start. +${result.amount} permanent prestige points.`); }
     else if (action.type === 'completeJump') {
-      if (result.arrived) { audio.play('levelup'); toast(`Jump complete. Welcome to ${getCampaignLocation(result.level).system.name}.`); }
-      else { audio.play('error'); beam.react('crash'); toast('Three meteorite hits. The ship turned back and lost half its fuel. Feed Beam, then launch again.'); }
+      if (result.arrived) { audio.play('levelup'); toast(`Jump complete. Welcome to ${getCampaignLocation(result.level).system.name}.${result.bonus > 0 ? ` Arrival pay: +${fmt(result.bonus)} LRC.` : ''}`); }
+      else { audio.play('error'); beam.react('crash'); toast(`Too many meteorite hits. The ship turned back with ${Math.round((result.kept ?? .5) * 100)}% of its fuel. Feed Beam, then launch again.`); }
     }
+    else if (action.type === 'catchStar') { audio.play('surge',{intensity:.45}); beam.react('comet'); toast(`Shooting star caught! Machines run ${Math.round(result.tailwindPct * 100)}% faster for ${result.seconds}s${result.amount > 0 ? ` · +${fmt(result.amount)} LRC stardust` : ''}.`); }
+    else if (action.type === 'tapQuasar') { audio.play('levelup',{intensity:.6}); beam.react('comet'); toast(`Quasar tapped! +${fmt(result.amount)} LRC windfall · ${fmt(1 + result.lensPct,2)}× orb drops for ${result.seconds}s.`); }
     else if (action.type === 'resetProgress') { audio.play('start'); toast('Your pilot starts fresh. The session carries on.'); }
   }
   onStateChange();
@@ -304,6 +311,7 @@ function render(force = false) {
   $('#lrc-label').textContent = coop ? 'CREW LRC POOL' : 'YOUR LRCs';
   $('#lrc-description').textContent = coop ? 'Shared by everyone in the session' : 'Light Refraction Credits';
   if(player?.farm?.cookedSeconds>0){const seconds=Math.ceil(player.farm.cookedSeconds);$('#lrc-description').textContent=`4.20× your earnings · ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;}
+  else if (stats.interestRate > 0) $('#lrc-description').textContent = `+${fmt(stats.interestRate,1)} LRC / sec vault interest`;
   $('#output-label').textContent = coop ? 'CREW STEADY LRC' : 'STEADY LRC OUTPUT';
   $('#idle-rate').parentElement.title = 'Continuous machine income and automatic minting. Orb drops and manual clicks are extra.';
   $('#lrc').textContent = fmt(balance);
@@ -335,7 +343,7 @@ function render(force = false) {
     $('#orb-name').textContent = `${from.system.name.toUpperCase()} / JUMP POINT CLEARED`;
     $('#orb-reward').textContent = `Ship fuel ${fmt(Math.floor(ship.fuel))} / ${fmt(ship.target)} · launch to ${to?.name ?? 'home'}`;
     $('#core-hint').textContent = ship.flyer === selfId ? (ship.launchReady ? 'LAUNCH WHEN READY' : 'FEED BEAM TO REFUEL') : 'SHIP IN TRANSIT';
-    flight.show({from:from.system.name,to:to?.name ?? 'home',fuel:ship.fuel,target:ship.target,isFlyer:ship.flyer === selfId && usable && !won,flyerName:flyer?.name || '',canLaunch:ship.launchReady && (playing || shopping)});
+    flight.show({from:from.system.name,to:to?.name ?? 'home',fuel:ship.fuel,target:ship.target,isFlyer:ship.flyer === selfId && usable && !won,flyerName:flyer?.name || '',canLaunch:ship.launchReady && (playing || shopping),maxHits:stats.flightHits,keepFuel:stats.crashRetain});
   } else flight.hide();
   // The arena banner: where the pilot is, and that the route only advances one core at a time.
   const nextSystem = SYSTEMS[location.index + 1], nextPlanet = orb.level < FINAL_LEVEL ? getCampaignLocation(orb.level + 1).planetName : null;
@@ -376,9 +384,19 @@ function render(force = false) {
   }
   previousOrb = {level:orb.level,mode:state.mode,secret:orb.secret};
   $('#surge-label').hidden = !stats.surge;
+  if (stats.surge) $('#surge-label').textContent = `✦ SOLAR SURGE · ${fmt(stats.surgeDamageMultiplier || 2,2)}× DAMAGE`;
   const comet = cometWindow(state);
   $('#comet-label').hidden = !(playing && comet?.active && !orb.secret && !inTransit);
   if (comet?.active) $('#comet-label').textContent = `☄ COMET · ${fmt(stats.cometDamage || 3,1)}× DAMAGE · ${fmt(stats.cometMint || 5,1)}× MINT · ${Math.ceil(comet.remaining)}s`;
+  // The Observatory: a comet forecast, shooting stars to catch and a quasar to tap. Only licensed pilots see the sky.
+  const forecast = Boolean(stats.observatory && playing && comet && !comet.active && comet.until > 0 && !orb.secret && !inTransit);
+  if (forecast) { $('#comet-label').hidden = false; $('#comet-label').textContent = `☄ COMET IN ${Math.ceil(comet.until)}s`; }
+  $('#comet-label').classList.toggle('is-forecast',forecast);
+  renderSky(player && playing && !won && !orb.secret && !inTransit ? skyEvents(state,player) : null);
+  $('#tailwind-label').hidden = !stats.tailwind;
+  if (stats.tailwind) $('#tailwind-label').textContent = `✦ TAILWIND · +${Math.round(stats.tailwindPct * 100)}% MACHINE SPEED · ${Math.ceil(player.tailwindUntil - state.now)}s`;
+  $('#lens-label').hidden = !stats.lens;
+  if (stats.lens) $('#lens-label').textContent = `◉ QUASAR LENS · ${fmt(1 + stats.lensPct,2)}× DROPS · ${Math.ceil(player.lensUntil - state.now)}s`;
   const cometKey = comet?.active ? `${state.round}:${comet.at}` : '';
   if (cometKey && cometKey !== lastComet && player && playing) { toast('A comet is passing! Click the core for bonus damage and mint.'); audio.play('surge',{intensity:.5}); beam.react('comet'); }
   if (cometKey) lastComet = cometKey;
@@ -451,10 +469,16 @@ function render(force = false) {
   if ($('#confirm-reset')) $('#confirm-reset').disabled = $('#reset-progress').disabled || !$('#reset-acknowledge').checked;
   $('#crew-count').textContent = `${state.players.length} / 8`;
   $('#crew-mode').textContent = bridge?.mode === 'refract' ? 'Shared Refract activity' : 'Invite your people through Refract';
-  $('#scoreboard-panel').hidden = coop;
+  // The session dialog has two tabs: the Scoreboard (the Crew in Co-op) and this pilot's Achievements.
+  const showScores = dialogTab === 'scoreboard';
+  $('#scoreboard-panel').hidden = coop || !showScores;
   $('#scoreboard-toggle').textContent = coop ? 'Crew' : 'Scoreboard';
-  $('#scoreboard-dialog').setAttribute('aria-label',coop ? 'Co-op crew and shared production' : 'Scoreboard');
-  $('.session-desk').hidden = !coop;
+  $('#scoreboard-dialog').setAttribute('aria-label',coop ? 'Co-op crew, shared production and achievements' : 'Scoreboard and achievements');
+  $('[data-dialog-tab="scoreboard"]').textContent = coop ? 'Crew' : 'Scoreboard';
+  for (const button of document.querySelectorAll('[data-dialog-tab]')) { const selected = button.dataset.dialogTab === dialogTab; button.setAttribute('aria-selected',String(selected)); button.classList.toggle('active',selected); }
+  $('.session-desk').hidden = !coop || !showScores;
+  $('#achievements-panel').hidden = showScores;
+  renderAchievements(player,state);
   $('#coop-panel').hidden = !coop;
   $('#crew-panel').hidden = !coop;
   $('#coop-contribution').textContent = fmt(player?.roundLrc);
@@ -472,6 +496,8 @@ function render(force = false) {
   if (player) {
     if (previousVisualPlayer?.id === player.id) {
       if (getFarmUnlocked(player) && !previousVisualPlayer.farmUnlocked) toast('Farm unlocked! Open the Farm tab to grow Beam’s lunch.');
+      const fresh = getAchievements(player,state).filter((entry) => entry.unlocked && !previousVisualPlayer.achievements.has(entry.id));
+      if (fresh.length) { audio.play('levelup',{intensity:.5}); toast(fresh.length === 1 ? `Achievement unlocked: ${fresh[0].name}. Find it on the Achievements tab beside the scoreboard.` : `${fresh.length} achievements unlocked. Find them on the Achievements tab beside the scoreboard.`); }
       if(player.farm?.crops?.weed&&!previousVisualPlayer.weedUnlocked){toast('Secret boss defeated! Weed is now unlocked in your farm.');audio.play('levelup');}
       else if(previousVisualPlayer.secretStart!==null&&!player.secretOrb&&state.now-previousVisualPlayer.secretStart>=SECRET_DURATION-1e-8&&!player.farm?.crops?.weed)toast('Haze survived. Improve your DPS and retry from the green star.');
       for (const generator of GENERATORS) if ((player.generators[generator.id] || 0) > (previousVisualPlayer.generators[generator.id] || 0)) {
@@ -480,9 +506,38 @@ function render(force = false) {
         audio.play({mote:'purchase',satellite:'collect',prism:'levelup',star:'boost',wormhole:'boost',foamer:'collect',string:'levelup',nova:'surge',mouse:'mouse',laser:'laser',probe:'probe',gate:'gate',sail:'collect',lens:'levelup',dyson:'surge',flywheel:'boost',forge:'surge'}[generator.id] || 'purchase',{intensity:.55});
       }
     }
-    previousVisualPlayer = {id:player.id,generators:{...player.generators},autoClicks:player.autoClicks || 0,farmUnlocked:getFarmUnlocked(player),weedUnlocked:Boolean(player.farm?.crops?.weed),secretStart:player.secretOrb?.startedAt??null};
+    previousVisualPlayer = {id:player.id,generators:{...player.generators},autoClicks:player.autoClicks || 0,farmUnlocked:getFarmUnlocked(player),weedUnlocked:Boolean(player.farm?.crops?.weed),secretStart:player.secretOrb?.startedAt??null,
+      achievements:new Set(getAchievements(player,state).filter((entry) => entry.unlocked).map((entry) => entry.id))};
   }
   beam.render(state,selfId);
+}
+/** The Achievements tab: every badge in catalog order; locked ones are greyed out and read ??? until they are earned. */
+function renderAchievements(player,state) {
+  const list = getAchievements(player,state), unlocked = list.filter((entry) => entry.unlocked).length;
+  $('#achievements-count').textContent = `${unlocked} / ${list.length}`;
+  $('#achievements-progress').textContent = `${unlocked} of ${list.length} unlocked`;
+  const markup = list.map((entry) => entry.unlocked
+    ? `<div class="achievement is-unlocked" role="listitem" data-achievement="${entry.id}" data-unlocked="true"><span class="achievement-icon" aria-hidden="true">${entry.icon}</span><div><strong>${escape(entry.name)}</strong><small>${escape(entry.description)}</small></div></div>`
+    : `<div class="achievement is-locked" role="listitem" data-achievement="${entry.id}" data-unlocked="false" aria-label="Locked achievement"><span class="achievement-icon" aria-hidden="true">?</span><div><strong>???</strong><small>???</small></div></div>`).join('');
+  if (markup !== achievementsMarkup) { $('#achievements-list').innerHTML = markup; achievementsMarkup = markup; }
+}
+/** Sky events over the orbit. Stars streak across the top; the quasar flares low on the left. Caught events vanish for this pilot. */
+function renderSky(sky) {
+  const layer = $('#sky-events');
+  const stars = sky ? sky.stars.filter((star) => star.active && !star.caught) : [];
+  const quasar = sky?.quasar?.active && !sky.quasar.tapped ? sky.quasar : null;
+  const key = `${stars.map((star) => star.index).join(',')}|${quasar ? 'q' : ''}`;
+  if (key !== skyMarkup) {
+    layer.innerHTML = stars.map((star) => `<button class="sky-star" type="button" data-sky-star="${star.index}" data-dir="${star.index % 2 ? 'left' : 'right'}" aria-label="Catch the shooting star">✦</button>`).join('')
+      + (quasar ? `<button class="sky-quasar" type="button" data-sky-quasar aria-label="Tap the quasar">◉<small>QUASAR</small></button>` : '');
+    skyMarkup = key;
+  }
+  for (const star of stars) {
+    const node = layer.querySelector(`[data-sky-star="${star.index}"]`); if (!node) continue;
+    const forward = star.index % 2 === 0, x = forward ? 6 + star.progress * 88 : 94 - star.progress * 88, y = 8 + star.progress * 24 + (star.index % 3) * 4;
+    node.style.left = `${x.toFixed(1)}%`; node.style.top = `${y.toFixed(1)}%`;
+  }
+  if (quasar) { const label = layer.querySelector('[data-sky-quasar] small'); if (label) label.textContent = `QUASAR · ${Math.ceil(quasar.remaining)}s`; }
 }
 
 function info(title,content) {
@@ -495,6 +550,12 @@ function multiplayerInfo() {
 }
 $('#multiplayer').addEventListener('click', multiplayerInfo);
 $('#scoreboard-toggle').addEventListener('click', () => $('#scoreboard-dialog').showModal());
+for (const button of document.querySelectorAll('[data-dialog-tab]')) button.addEventListener('click', () => { dialogTab = button.dataset.dialogTab; audio.play('click',{intensity:.4}); render(true); });
+$('#sky-events').addEventListener('click', (event) => {
+  const star = event.target.closest('[data-sky-star]');
+  if (star) { send({type:'catchStar',index:Number(star.dataset.skyStar)}); return; }
+  if (event.target.closest('[data-sky-quasar]')) send({type:'tapQuasar'});
+});
 $('#scoreboard-close').addEventListener('click', () => $('#scoreboard-dialog').close());
 $('#scoreboard-dialog').addEventListener('click', (event) => { if (event.target === event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.currentTarget.close(); } });
 $('#crew').addEventListener('click', (event) => { if (event.target.closest('#invite-crew')) multiplayerInfo(); });
