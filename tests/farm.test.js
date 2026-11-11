@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, addPlayer, applyAction, advance, getStats, getBalance, getFuel, getShipStatus, validateState, migrateState, compactGameState, SKILLS, GENERATORS, generatorQuote, skillAvailability } from '../src/game.js';
+import { createGame, addPlayer, applyAction, advance, getStats, getBalance, getFuel, getShipStatus, validateState, migrateState, compactGameState, SKILLS, GENERATORS, generatorQuote, generatorAvailability, skillAvailability } from '../src/game.js';
 import { FUEL_TARGETS } from '../src/campaign.js';
 import { createFarm, emptyPlot, CROPS, FARM_UPGRADES, MAX_PLOTS, WATER_SECONDS, COOKED_SECONDS, COOKED_SCORE_MULTIPLIER, advanceFarm, packFarm, unpackFarm, migrateFarm, validateFarm, getFarmUnlocked, getFarmStats, farmPlotCost, farmUpgradeCost, farmCropCost, farmSeedCost } from '../src/farm.js';
 
@@ -19,10 +19,33 @@ function action(state,details,id='p0') {
   assert.equal(result.ok,true,result.reason);
   return result;
 }
-function unlock(state,id='p0') { action(state,{type:'buyGenerator',id:'satellite'},id); }
+/** Grants the Garden licence the way research does: the Outfitting rank plus the garden's own flag. */
+function unlock(state,id='p0') { const p=state.players.find(player=>player.id===id);p.skills.ki1=1;p.farm.unlocked=true; }
 const rejected=(state,details,id='p0')=>{const before=structuredClone(state);assert.equal(applyAction(state,id,details).ok,false,`${details.type} should be rejected`);assert.deepEqual(state,before,`${details.type} must not change state`);};
 
-test('buying the first orb farm opens a complete plant, water, harvest and feed loop',()=>{
+test('the Garden licence is Outfitting research; an orb farm machine alone no longer opens the garden',()=>{
+  const state=setup(),p=state.players[0];fund(state);
+  action(state,{type:'buyGenerator',id:'satellite'});
+  assert.equal(getFarmUnlocked(p),false,'Buying the orb farm machine does not open the garden');
+  rejected(state,{type:'plantCrop',plot:0,crop:'carrot'});
+  const licence=SKILLS.find(skill=>skill.key==='garden-licence');assert.equal(licence.id,'ki1');assert.equal(licence.maxRank,1);
+  assert.equal(applyAction(state,p.id,{type:'buySkill',id:'ki1'}).ok,false,'Research opens between rounds');
+  advance(state,60);p.skillPoints=10;
+  assert.match(skillAvailability(p,'ki1',state).reason,/Ready/);
+  action(state,{type:'buySkill',id:'ki1'});
+  assert.equal(p.farm.unlocked,true);assert.equal(getFarmUnlocked(p),true);assert.equal(p.skillPoints,8);
+  assert.equal(applyAction(state,p.id,{type:'buySkill',id:'ki1'}).ok,false,'A licence has a single rank');
+  for(const [id,gate] of [['ki2','wormhole'],['ki3','mouse']]){
+    assert.match(generatorAvailability(p,gate,state).reason,/licence/i,`${gate} waits for its catalogue licence`);
+    p.highestOrb=10;p.completedRounds=4;action(state,{type:'buySkill',id});
+    assert.doesNotMatch(generatorAvailability(p,gate,state).reason,/licence/i);
+  }
+  assert.equal(validateState(state),true);
+  const packed=compactGameState(state),restored=migrateState(structuredClone(packed));
+  assert.deepEqual(restored.players[0].skills,{ki1:1,ki2:1,ki3:1},'Licences survive the packed save format');
+});
+
+test('the Garden licence opens a complete plant, water, harvest and feed loop',()=>{
   const state=setup(),p=state.players[0];fund(state);
   assert.equal(getFarmUnlocked(p),false);
   rejected(state,{type:'plantCrop',plot:0,crop:'carrot'});
@@ -224,6 +247,7 @@ test('weed cooks Beam for exactly 260 active seconds independently of normal mea
 test('cooked expiry splits earned income at the boundary without changing damage or multiplying old scores',()=>{
   for(const mode of ['scoreboard','coop']){
     const state=setup(mode),p=state.players[0];fund(state);unlock(state);
+    action(state,{type:'buyGenerator',id:'satellite'});// 90 LRC/s on top of the 1 LRC/s base
     p.generators.mote=1;p.farm.crops.weed=true;p.farm.inventory.weed=1;
     const damage=getStats(p,state).clickDamage,score=p.lifetimeLrc;
     action(state,{type:'feedBeam',crop:'weed'});
@@ -233,7 +257,7 @@ test('cooked expiry splits earned income at the boundary without changing damage
     const sliced=structuredClone(state);advance(state,20);for(let i=0;i<20;i++)advance(sliced,1);
     for(const key of ['lrc','runLrc','lifetimeLrc','roundLrc'])assert.ok(Math.abs(p[key]-sliced.players[0][key])<1e-6,`${key} is stable across catch-up slicing`);
     assert.ok(Math.abs(state.sharedLrc-sliced.sharedLrc)<1e-6);
-    assert.equal(p.roundLrc,364,'Ten seconds at 4.2× plus ten seconds at the base 7 LRC/s');
+    assert.equal(p.roundLrc,4732,'Ten seconds at 4.2× plus ten seconds at the base 91 LRC/s');
     assert.deepEqual(p.orb,sliced.players[0].orb,'Damage stays independent of the score boost');
     assert.deepEqual(p.farm,sliced.players[0].farm);
     assert.equal(p.farm.cookedSeconds,0);assert.equal(validateState(state),true);
@@ -369,6 +393,8 @@ test('wormhole, quantum foam and string tech improve hits, criticals and normal 
   for(const mode of ['scoreboard','coop']){
     const state=setup(mode,2),[p,other]=state.players;fund(state,1e9);
     const baseline=getStats(p,state);
+    assert.match(generatorAvailability(p,'wormhole',state).reason,/Click tech licence/,'Click technology waits for its Outfitting licence');
+    p.skills.ki2=1;
     for(const id of ['wormhole','foamer','string']){
       assert.ok(GENERATORS.some(generator=>generator.id===id));
       const quote=generatorQuote(p,id,10,state),before=getBalance(p,state);

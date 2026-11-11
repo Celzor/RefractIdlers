@@ -52,7 +52,7 @@ Beam can be greeted with a harmless poke, limited to once every three seconds, o
 
 The first Refract orb farm opens **Beam's Garden**. Players grow carrots, lettuce, tomatoes and pumpkins, harvest them, then use the Farm's **Feed** controls. Feeding consumes produce through the host-authoritative game engine and grants a base **+25% personal income and hit damage** bonus. Meals stack to 300 active seconds; crop growth and meal timers pause between rounds. Farming research improves the garden and its meals. These systems and Beam's snack dialogue are specific to Idlers. His portrait, animations, greetings and reactions remain cosmetic; hiding the companion does not remove an earned meal bonus.
 
-The garden is a later investment: its first machine costs 14,000 LRCs, and every planting buys fresh seeds. Unlocking a vegetable variety does not make subsequent planting free. These costs are game rules, not character lore.
+The garden is a later investment: it opens with the Garden licence from Outfitting research, and every planting buys fresh seeds. Every vegetable is chopped four times on the board before Beam eats it; what he leaves on the throne runs down the pipe into the ship's tank. Unlocking a vegetable variety does not make subsequent planting free. These costs are game rules, not character lore.
 
 ## Crystal and the homecoming
 

@@ -6,7 +6,7 @@ export const PIXEL_PALETTE = Object.freeze({
   blue: '#4d718b', red: '#a35b50', pink: '#d3917c', purple: '#a491b1',
 });
 
-export const GENERATOR_IDS = Object.freeze(['mote', 'satellite', 'prism', 'star', 'nova', 'mouse', 'laser', 'probe', 'gate', 'wormhole', 'foamer', 'string']);
+export const GENERATOR_IDS = Object.freeze(['mote', 'satellite', 'prism', 'star', 'nova', 'mouse', 'laser', 'probe', 'gate', 'wormhole', 'foamer', 'string', 'sail', 'lens', 'dyson']);
 const IDS = GENERATOR_IDS;
 
 function sprite(id, phase = 0.5, running = false) {
@@ -169,6 +169,37 @@ function sprite(id, phase = 0.5, running = false) {
       r(x-bend,13,bend+1,1,'cream'); r(x-bend,19,bend+1,1,'cream');
     }
     r(1,15,4,4,'ink'); r(0,16,3,2,'yellow');
+  } else if (id === 'sail') {
+    // A sheet of mirror film on a slim mast; a glint sweeps across the film as it catches starlight.
+    r(14,26,4,5,'ink'); r(10,29,12,2,'ink'); r(15,8,2,19,'ink');
+    const glint = running ? Math.floor(phase*6) : 2;
+    for (let row = 0; row < 7; row++) {
+      const w = 3 + row*3, x = 17;
+      r(x-1, 4+row*3, w+2, 3, 'ink'); r(x, 5+row*3, w, 1, row === glint ? 'cream' : 'sky'); r(x, 6+row*3, w, 1, row === glint ? 'paper' : 'blue');
+    }
+    r(3,12,12,3,'ink'); r(4,13,10,1,'paper'); r(6,6,8,7,'ink'); r(7,7,6,5,'wood'); r(8,8,2,2,'cream'); r(11,9,2,2,'sky');
+    r(14,3,4,5,'ink'); r(15,4,2,3,'yellow');
+  } else if (id === 'lens') {
+    // A vaulted hall of prisms: pointed arches in stone, a focused beam leaving the roof.
+    r(2,27,28,4,'ink'); r(4,28,24,2,'shade');
+    r(4,12,24,15,'ink'); r(6,14,20,13,'wood');
+    for (let i = 0; i < 3; i++) { const x = 7+i*7; r(x,16,4,11,'ink'); r(x+1,17,2,10,'purple'); r(x+1,17,2,3,'sky'); }
+    r(6,10,20,3,'ink'); r(8,6,16,5,'ink'); r(12,2,8,5,'ink');
+    r(9,7,14,3,'purple'); r(13,3,6,3,'blue'); r(15,4,2,2,'cream');
+    const pulse = running && phase < .35;
+    r(15,0,2,3,pulse ? 'cream' : 'yellow'); if (pulse) { r(13,0,1,2,'yellow'); r(18,0,1,2,'yellow'); }
+    r(3,14,2,13,'shade'); r(27,14,2,13,'shade');
+  } else if (id === 'dyson') {
+    // A captured star inside a brass lantern shell; the core breathes between the lattice gaps.
+    r(13,27,6,4,'ink'); r(9,29,14,2,'ink'); r(14,3,4,3,'ink'); r(15,0,2,4,'yellow');
+    r(7,6,18,21,'ink');
+    r(9,8,14,17,'orange'); r(11,10,10,13,'yellow');
+    const glow = running ? Math.floor(phase*4)%2 : 1;
+    r(13,12,6,9,glow ? 'cream' : 'yellow'); r(14,14,4,5,'cream');
+    for (let y = 8; y < 25; y += 4) r(9,y,14,1,'wood');
+    for (let x = 11; x < 23; x += 5) r(x,8,1,17,'wood');
+    r(9,8,1,17,'shade'); r(22,8,1,17,'shade');
+    r(5,14,2,5,'ink'); r(25,14,2,5,'ink'); r(4,15,1,3,'yellow'); r(27,15,1,3,'yellow');
   }
   return shapes;
 }

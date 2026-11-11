@@ -226,8 +226,10 @@ bridge = createActivityBridge({
 });
 
 // Create stable buttons once: live numbers can update without stealing focus.
-const generatorEffect = (generator) => ({wormhole:'+4 base hit damage',foamer:'+20% hit damage',string:'+1% crit chance · +0.1× crit damage',satellite:'+6 LRC / sec · unlocks the Farm',mote:'0.5 automatic hits / sec',star:'+10% damage & LRC production',mouse:'2 auto-clicks / sec · mints LRC',laser:'20× hit damage · one shot / 5 sec',probe:'3× hit / 2 sec · +1.2K LRC / sec',gate:'100× hit / 10 sec · +10K LRC / sec'}[generator.id] || `+${generator.baseRate} base LRC / sec`);
-$('#generators').innerHTML = GENERATORS.map((generator) => `<div class="generator" id="generator-${generator.id}" data-category="${generator.category}"><span class="generator-symbol" aria-hidden="true">${generatorIcon(generator.id)}</span><div><div class="generator-name">${generator.name}<small id="owned-${generator.id}">×0</small></div><div class="generator-description">${generatorEffect(generator)}</div><small class="generator-unlock" id="unlock-${generator.id}" hidden></small></div><button data-buy-generator="${generator.id}" title="${generator.description}" disabled><span id="price-${generator.id}">${generator.baseCost}</span><small id="buy-label-${generator.id}">LRC · BUY 1</small></button></div>`).join('');
+const generatorEffect = (generator) => ({wormhole:'+4 base hit damage',foamer:'+20% hit damage',string:'+1% crit chance · +0.1× crit damage',satellite:'+90 LRC / sec',sail:'+2.6K LRC / sec',lens:'+24K LRC / sec',dyson:'+260K LRC / sec',mote:'0.5 automatic hits / sec',star:'+10% damage & LRC production',mouse:'2 auto-clicks / sec · mints LRC',laser:'20× hit damage · one shot / 5 sec',probe:'3× hit / 2 sec · +1.2K LRC / sec',gate:'100× hit / 10 sec · +10K LRC / sec'}[generator.id] || `+${generator.baseRate} base LRC / sec`);
+// Cards are listed by catalogue, cheapest first; the engine's array order is a save format, not a layout.
+const CATALOGUE_ORDER = {workshop:0,arsenal:1,click:2};
+$('#generators').innerHTML = [...GENERATORS].sort((a,b) => CATALOGUE_ORDER[a.category]-CATALOGUE_ORDER[b.category] || a.baseCost-b.baseCost).map((generator) => `<div class="generator" id="generator-${generator.id}" data-category="${generator.category}"><span class="generator-symbol" aria-hidden="true">${generatorIcon(generator.id)}</span><div><div class="generator-name">${generator.name}<small id="owned-${generator.id}">×0</small></div><div class="generator-description">${generatorEffect(generator)}</div><small class="generator-unlock" id="unlock-${generator.id}" hidden></small></div><button data-buy-generator="${generator.id}" title="${generator.description}" disabled><span id="price-${generator.id}">${generator.baseCost}</span><small id="buy-label-${generator.id}">LRC · BUY 1</small></button></div>`).join('');
 initializeResearch();
 
 function render(force = false) {
@@ -297,7 +299,7 @@ function render(force = false) {
   const ship = player && !orb.secret ? getShipStatus(player,state) : null;
   if (ship?.grounded) {
     $('#orb-reward').textContent = `Ship fuel ${fmt(Math.floor(ship.fuel))} / ${fmt(ship.target)} · jump point`;
-    if (playing) $('#core-hint').textContent = getFarmUnlocked(player) ? 'OUT OF FUEL · FEED BEAM IN THE FARM' : 'OUT OF FUEL · BUY AN ORB FARM TO GROW BEAM’S LUNCH';
+    if (playing) $('#core-hint').textContent = getFarmUnlocked(player) ? 'OUT OF FUEL · FEED BEAM IN THE FARM' : 'OUT OF FUEL · RESEARCH THE GARDEN LICENCE';
   }
   $('#core').classList.toggle('grounded',Boolean(ship?.grounded));
   // The arena banner: where the pilot is, and that the route only advances one core at a time.
@@ -384,7 +386,10 @@ function render(force = false) {
     button.title = availability.unlocked ? generator.description : `${generator.name}: ${availability.reason}`;
     button.setAttribute('aria-label', availability.unlocked ? `Buy ${quote.quantity} ${generator.name} for ${fmt(cost)} ${coop ? 'shared ' : ''}LRC; ${owned} owned` : `${generator.name} locked. ${availability.reason}`);
   }
-  $('#arsenal-unlocks').textContent = `${arsenalUnlocked} / 4`;
+  $('#arsenal-unlocks').textContent = player?.skills?.ki3 > 0 ? `${arsenalUnlocked} / 4` : 'LICENCE';
+  $('#click-unlocks').textContent = player?.skills?.ki2 > 0 ? '' : 'LICENCE';
+  $('[data-shop-catalog="arsenal"]').classList.toggle('is-locked', !(player?.skills?.ki3 > 0));
+  $('[data-shop-catalog="click"]').classList.toggle('is-locked', !(player?.skills?.ki2 > 0));
   if (['skills','prestige'].includes(tab)) renderResearch(player,state,usable && !won);
   const gain = player ? prestigeGain(player) : 0;
   $('#run-lrc').textContent = fmt(player?.runLrc);

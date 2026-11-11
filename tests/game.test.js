@@ -1,5 +1,5 @@
 import { FINAL_HP, FINAL_LEVEL, getSystemHpMultiplier, fuelTarget } from '../src/campaign.js';
-import { getFarmStats } from '../src/farm.js';
+import { getFarmStats, getFarmUnlocked } from '../src/farm.js';
 import test from 'node:test';
 import { compactGameState } from '../src/game.js';
 import assert from 'node:assert/strict';
@@ -558,13 +558,13 @@ test('refractometers multiply manual clicks, passive production, and automatic p
   const stats = getStats(a, state);
   assert.equal(stats.generatorMultiplier, 1.2);
   assert.equal(stats.clickPower, 2.4);
-  assert.equal(stats.passiveRate, 8.4);
+  assert.equal(stats.passiveRate, 109.2);// (1 base + 90 from the orb farm) × 1.2 from two refractometers
   assert.equal(stats.autoRate, 0.5);
-  assert.equal(stats.idleRate, 8.4);
+  assert.equal(stats.idleRate, 109.2);
   assert.equal(getStats(b, state).generatorMultiplier, 1);
   advance(state, 2);
   assert.equal(a.autoClicks, 1);
-  assert.equal(a.lrc, 16.8);
+  assert.equal(a.lrc, 218.4);// two seconds of (1 + 90) × 1.2
   assert.equal(getOrb(a, state).hp, 1997.6);
   assert.equal(b.lrc, 2);
 });
@@ -676,10 +676,13 @@ test('analytical multi-orb combat matches an iterative oracle for partial, boss 
 test('research has functional breadth and a proven multi-day completion floor', () => {
   const research = SKILLS.filter((skill) => skill.currency === 'skill');
   const prestige = SKILLS.filter((skill) => skill.currency === 'prestige');
-  assert.equal(research.length, 60); assert.equal(prestige.length, 16);
-  assert.equal(SKILL_BRANCHES.filter((branch) => branch.currency === 'skill').length, 10);
-  assert.equal(new Set(SKILLS.map((skill) => skill.id)).size, 76);
-  assert.equal(RESEARCH_TOTAL_RANKS, 390);
+  assert.equal(research.length, 63); assert.equal(prestige.length, 16);
+  assert.equal(SKILL_BRANCHES.filter((branch) => branch.currency === 'skill').length, 11);
+  assert.equal(new Set(SKILLS.map((skill) => skill.id)).size, 79);
+  assert.equal(RESEARCH_TOTAL_RANKS, 393);
+  // Outfitting licences are appended after the prestige lines so packed saves keep their positions.
+  assert.deepEqual(SKILLS.slice(-3).map((skill) => skill.id), ['ki1', 'ki2', 'ki3']);
+  assert.equal(SKILLS[59].currency, 'skill'); assert.equal(SKILLS[60].id, 'p01');
   const independentlySummedCost = research.reduce((total, skill) => total + Array.from({ length: skill.maxRank }, (_, i) => Math.ceil(skill.cost * skill.costGrowth ** i)).reduce((a, b) => a + b, 0), 0);
   assert.equal(RESEARCH_TOTAL_COST, independentlySummedCost);
   assert.ok(RESEARCH_TOTAL_COST / MAX_SKILL_POINTS_PER_ROUND / 1440 > 4);
@@ -689,6 +692,12 @@ test('research has functional breadth and a proven multi-day completion floor', 
   player.highestOrb = 200; player.combo = 10;
   for (const skill of SKILLS) {
     const full = player.skills[skill.id]; player.skills[skill.id] = 0;
+    if (skill.branch === 'kit') {
+      // A licence opens a feature instead of moving a number: each one must gate something.
+      const gate = { ki1: () => getFarmUnlocked({ ...player, farm: { ...player.farm, unlocked: false } }), ki2: () => generatorAvailability(player, 'wormhole', state).unlocked, ki3: () => generatorAvailability(player, 'mouse', state).unlocked }[skill.id];
+      assert.equal(gate(), false, `${skill.name} must lock its feature`); player.skills[skill.id] = 1; assert.equal(gate(), true, `${skill.name} must open its feature`);
+      player.skills[skill.id] = full; continue;
+    }
     const before = {orbit:getStats(player, state),garden:getFarmStats(player)}; player.skills[skill.id] = 1;
     assert.notDeepEqual({orbit:getStats(player, state),garden:getFarmStats(player)}, before, `${skill.name} must have a functional effect`);
     player.skills[skill.id] = full;
@@ -943,7 +952,9 @@ test('combat migration retains legacy damage fractions, rejects corrupt cores an
 
 test('all four Arsenal machines require their own milestones and research before the host permits a purchase', () => {
   assert.deepEqual(GENERATORS.filter((g) => g.category === 'arsenal').map((g) => g.id), ['mouse', 'laser', 'probe', 'gate']);
-  assert.equal(GENERATORS.filter((g) => g.category === 'workshop').length, 5);
+  assert.equal(GENERATORS.filter((g) => g.category === 'workshop').length, 8);
+  // Collection tiers are appended after the shipped machines so packed saves keep every position.
+  assert.deepEqual(GENERATORS.slice(-3).map((g) => g.id), ['sail', 'lens', 'dyson']);
   for (const generator of GENERATORS.filter((g) => g.category === 'arsenal')) {
     const state = setup(); start(state); const player = state.players[0]; fund(player, 1e10);
     const before = structuredClone(state);
@@ -975,7 +986,7 @@ test('all four Arsenal machines require their own milestones and research before
 test('Arsenal bulk purchases are atomic, spend the shared wallet, and never borrow another pilot research unlock', () => {
   const state = setup(2); applyAction(state, 'pilot-0', { type: 'setMode', mode: 'coop' }); start(state);
   const [a, b] = state.players;
-  a.highestOrb = 5; a.skills.au1 = 2;
+  a.highestOrb = 5; a.skills.au1 = 2; a.skills.ki3 = 1;
   state.sharedLrc = 1e6;
   assert.equal(generatorAvailability(b, 'mouse', state).unlocked, false);
   assert.equal(applyAction(state, b.id, { type: 'buyGenerator', id: 'mouse' }).ok, false);
@@ -1066,7 +1077,7 @@ test('Arsenal prestige, restore and handover retain lifetime shots but reset onl
   const state = setup(2); applyAction(state, 'pilot-0', { type: 'setMode', mode: 'coop' }); start(state);
   const [a, b] = state.players;
   a.generators = { mouse: 1, laser: 1, probe: 1, gate: 1 };
-  a.highestOrb = 60; a.completedRounds = 120; a.prestigeCount = 1; a.skills = { au1: 2, au2: 2, au3: 2, perpetuity: 1 };
+  a.highestOrb = 60; a.completedRounds = 120; a.prestigeCount = 1; a.skills = { ki3: 1, au1: 2, au2: 2, au3: 2, perpetuity: 1 };
   advance(state, 60);
   const shots = structuredClone(a.arsenalShots), count = a.autoClicks, shared = structuredClone(state.sharedOrb), bank = state.sharedLrc;
   const restored = migrateState(JSON.parse(JSON.stringify(state)));

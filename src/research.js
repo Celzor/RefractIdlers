@@ -7,7 +7,7 @@ const catalog = new Map(SKILLS.map(skill => [skill.id,skill]));
 const disciplines = SKILL_BRANCHES.filter(branch => branch.currency !== 'prestige');
 const research = SKILLS.filter(skill => skill.currency !== 'prestige');
 const legacy = SKILLS.filter(skill => skill.currency === 'prestige');
-const colors = ['#dfbf65','#94bc79','#7cbdb7','#c7909b','#8daccb','#e0ad69','#b4a0cd','#b8bc8b','#83bf88','#80cbd5'];
+const colors = ['#dfbf65','#94bc79','#7cbdb7','#c7909b','#8daccb','#e0ad69','#b4a0cd','#b8bc8b','#83bf88','#80cbd5','#d9a48c'];
 const count = value => value >= 1e15 ? value.toExponential(1).replace('+','') : new Intl.NumberFormat('en',{notation:value >= 1e6 ? 'compact' : 'standard',maximumFractionDigits:0}).format(value || 0);
 const branchColor = skill => colors[disciplines.findIndex(branch => branch.id === skill.branch)] || '#c3a3cb';
 let lastPlayer, lastState, lastUsable, lastSignature = '';
@@ -22,6 +22,8 @@ function glyph(skill) {
   const motifs = {
     chronos: `<path d="M3 1h10v3h-2v2H9v4h2v2h2v3H3v-3h2v-2h2V6H5V4H3z" fill="${ink}"/><path d="M5 3h6L8 6zm3 7 3 3H5z" fill="${pale}"/>`,
     farm: `<path d="M7 5H3V3H1V0h4v2h2v3h2V3h2V0h4v3h-2v2h-3v3h3v3h-2v3H7v2H5v-5H3V8h4z" fill="${ink}"/><path d="M5 9h6v2H9v2H7v-2H5z" fill="#e7a45f"/>`,
+    // A licence tag: a key head with a punched hole and two teeth.
+    kit: `<path d="M2 3h7v2h2v2h4v3h-2v2h-2v-2h-2v2H7v-2H2z" fill="${ink}"/><path d="M4 5h2v2H4zm5 2h2v1H9z" fill="${pale}"/>`,
     click: `<path d="M9 1H6v5H3v3h5v6h3V9h3V6H9z" fill="${ink}"/><path d="M9 3H7v4H5v1h4v5h1V8h2V7H9z" fill="${pale}"/>`,
     idle: `<path d="M7 7H3V5H1V2h4v2h2v3h2V5h2V2h4v3h-2v2h-3v6h3v2H4v-2h3z" fill="${ink}"/><path d="M2 3h2v1H2zm10 0h2v1h-2zM8 8h1v5H8z" fill="${pale}"/>`,
     team: `<path d="M1 5h3V2h3v3h2V2h3v3h3v6h-3v3H9v-3H7v3H4v-3H1z" fill="${ink}"/><path d="M3 7h3v2H3zm7 0h3v2h-3zM7 6h2v4H7z" fill="${pale}"/>`,
@@ -87,6 +89,13 @@ class SkillMap {
       if(control){const action=control.dataset.graphAction;if(action==='details')this.inspector.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});else if(action==='expand')this.expand();else if(action==='fit')this.fit(false);else this.zoom(this.scale*(action==='in'?1.25:.8));return;}
       const node=event.target.closest('[data-skill-node]');
       if(node && (!this.suppressClickUntil || performance.now()>this.suppressClickUntil || event.detail===0))this.select(node.dataset.skillNode);
+    });
+    // Double-clicking a node selects it and researches one rank, the same as pressing its inspector button.
+    this.root.addEventListener('dblclick',event=>{
+      const node=event.target.closest('[data-skill-node]');if(!node)return;event.preventDefault();
+      this.select(node.dataset.skillNode);
+      const buy=this.inspector.querySelector('[data-buy-skill]');
+      if(buy&&!buy.disabled&&buy.dataset.buySkill===node.dataset.skillNode)buy.click();
     });
     this.viewport.addEventListener('wheel',event=>{event.preventDefault();const rect=this.viewport.getBoundingClientRect();this.zoom(this.scale*Math.exp(-event.deltaY*.0015),event.clientX-rect.left,event.clientY-rect.top);},{passive:false});
     this.viewport.addEventListener('pointerdown',event=>this.pointerDown(event));
@@ -237,7 +246,7 @@ export function renderResearch(player,state,usable){
   $('#research-available').setAttribute('aria-pressed',String(availableOnly));
   const branch=disciplines.find(item=>item.id===selectedBranch);
   $('#research-branch-title').textContent=query?'Search the circuit':branch?.name||'Follow the light';
-  $('#research-branch-description').textContent=query?'Matching nodes are lit. Their connections stay visible.':branch?.description||'Choose a node to inspect its upgrades. Bright lines trace its prerequisites.';
+  $('#research-branch-description').textContent=query?'Matching nodes are lit. Their connections stay visible.':branch?.description||'Click a node to inspect it; double-click to research a rank. Bright lines trace its prerequisites.';
   const matches=mainMap.render(player,state,usable);legacyMap.render(player,state,usable);
   $('#research-branch-progress').textContent=query||availableOnly||branch?`${matches} highlighted`:`${disciplines.length} disciplines`;
   $('#research-empty').hidden=matches!==0;

@@ -151,25 +151,79 @@
 @keyframes garden-puff{from{transform:translate(0,0);opacity:.9}to{transform:translate(6px,-14px) scale(1.6);opacity:0}}
 .garden-tractor.is-working{animation:garden-pick .7s steps(2) 2!important}
 
-/* --- Beam's ship: meals are fuel; Beam heaves light into the tank ------------------------- */
+/* --- Beam's ship: meals are fuel. Beam eats, sits on the throne, and the rainbow runs down the pipe into the rocket. */
 .garden-ship{position:absolute;right:1%;top:3%;bottom:3%;width:13.5%;z-index:4;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;background:#2b2f3fd9;border:2px solid #3a2c24;box-shadow:3px 3px #3a2c2488;color:#f3e7bd;text-align:center}
 .garden-ship-label{font:5px/1.4 Pixel,monospace;letter-spacing:.5px;color:#ffe9a0}
 .garden-ship.is-grounded .garden-ship-label{color:#ff9a8a;animation:garden-blink 1s steps(2) infinite}
 .garden-ship.is-full .garden-ship-label{color:#9ef08e}
-.garden-beam-refuel{position:relative;width:100%;height:24%;min-height:40px;display:flex;justify-content:center}
-.garden-beam-sprite{width:auto;height:100%;max-height:56px;position:relative;z-index:2}
-.garden-rays{position:absolute;top:58%;left:50%;width:14px;height:110%;transform:translateX(-30%);opacity:0;z-index:1}
-.garden-beam-refuel.is-refuelling .garden-beam-sprite{animation:garden-heave .3s steps(2) 8}
-.garden-beam-refuel.is-refuelling .garden-rays{opacity:1;animation:garden-rays .25s steps(2) 10}
-@keyframes garden-heave{50%{transform:translateY(2px) scaleY(.92)}}
-@keyframes garden-rays{50%{filter:brightness(1.6);transform:translateX(-30%) scaleX(1.3)}}
-.garden-ship-body{position:relative;flex:1;min-height:0;width:100%;display:flex;justify-content:center;align-items:flex-end;gap:4px}
-.garden-rocket{height:100%;display:flex;align-items:flex-end}.garden-rocket svg{height:100%;max-height:150px;width:auto}
-.garden-fuel-gauge{position:relative;width:9px;height:86%;align-self:flex-end;background:#1b1d27;border:2px solid #f3e7bd}
-.garden-fuel-gauge i{position:absolute;left:0;right:0;bottom:0;background:repeating-linear-gradient(0deg,#ffd36e 0 3px,#ff8a8a 3px 4px,#9ef08e 4px 6px,#7fd8ff 6px 8px);transition:height .5s steps(8)}
-.garden-ship.is-full .garden-fuel-gauge i{animation:garden-blink 1.2s steps(2) infinite}
+.garden-throne{position:relative;width:100%;height:30%;min-height:56px;flex-shrink:0}
+.garden-throne .garden-toilet-art{position:absolute;left:50%;bottom:0;width:96%;height:auto;transform:translateX(-50%);z-index:1}
+.garden-throne .garden-beam-sprite{position:absolute;left:50%;bottom:18%;height:82%;width:auto;transform:translateX(-46%);z-index:2}
+.garden-throne use.beam-eyes-worried,.garden-throne use.beam-eyes-cheer{display:none}
+.garden-throne.is-eating .garden-beam-sprite{animation:garden-chew .22s steps(2) 3}
+@keyframes garden-chew{50%{transform:translateX(-52%) scaleY(.94) translateY(2px)}}
+.garden-chew{position:absolute;left:62%;top:34%;width:5px;height:5px;background:#ed9a50;box-shadow:-9px 2px #99c96c,4px -5px #dc735d;opacity:0;z-index:3}
+.garden-throne.is-eating .garden-chew{animation:garden-crumb-fall .6s steps(4) forwards}
+@keyframes garden-crumb-fall{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(16px)}}
+/* Digesting: a straining shake, then the rainbow appears under Beam and runs down the pipe. */
+.garden-throne.is-digesting use.beam-eyes{display:none}
+.garden-throne.is-digesting use.beam-eyes-worried{display:inline;animation:garden-eyes-worried 3.4s steps(1) forwards}
+.garden-throne.is-digesting use.beam-eyes-cheer{display:inline;animation:garden-eyes-cheer 3.4s steps(1) forwards}
+@keyframes garden-eyes-worried{0%,74%{opacity:1}75%,100%{opacity:0}}@keyframes garden-eyes-cheer{0%,74%{opacity:0}75%,100%{opacity:1}}
+.garden-throne.is-digesting .garden-beam-sprite{animation:garden-strain .24s steps(2) 9 .6s}
+@keyframes garden-strain{50%{transform:translateX(-50%) scaleY(.9) translateY(3px)}}
+.garden-strain{position:absolute;left:50%;bottom:8%;width:10px;height:14px;margin-left:-5px;z-index:1;opacity:0;background:repeating-linear-gradient(0deg,#ff8a8a 0 2px,#ffd36e 2px 4px,#9ef08e 4px 6px,#7fd8ff 6px 8px,#c49bff 8px 10px);box-shadow:0 0 6px #ffe9a0}
+.garden-throne.is-digesting .garden-strain{animation:garden-rainbow-out 2.2s steps(5) 1.2s both}
+@keyframes garden-rainbow-out{0%{opacity:0;transform:scaleY(.2)}25%,80%{opacity:1;transform:scaleY(1)}100%{opacity:0;transform:scaleY(1) translateY(8px)}}
+.garden-flush-pipe{position:relative;flex-shrink:0;width:10px;height:9%;min-height:16px;background:#dfe7e3;border:2px solid #3a2c24;box-shadow:2px 2px #3a2c2466;overflow:hidden}
+.garden-flush-pipe i{position:absolute;inset:0 1px;background:repeating-linear-gradient(0deg,#ff8a8a 0 3px,#ffd36e 3px 6px,#9ef08e 6px 9px,#7fd8ff 9px 12px,#c49bff 12px 15px);background-size:100% 30px;opacity:0}
+.garden-flush-pipe.is-digesting i{animation:garden-flush 1.8s steps(10) 1.5s both}
+@keyframes garden-flush{0%{background-position:0 -30px;opacity:1}85%{opacity:1}100%{background-position:0 60px;opacity:0}}
+.garden-ship-body{position:relative;flex:1;min-height:0;width:100%;display:flex;justify-content:center;align-items:flex-end}
+.garden-rocket{position:relative;display:block;height:100%;max-height:150px;aspect-ratio:24/40}.garden-rocket .garden-rocket-art{display:block;width:100%;height:100%}
+/* The hull is a cutaway: fuel is drawn over the body between the nose cone and the engine. */
+.garden-rocket-fuel{position:absolute;left:25%;right:25%;top:12.5%;bottom:27.5%;overflow:hidden;pointer-events:none}
+.garden-rocket-fuel i{position:absolute;left:0;right:0;bottom:0;height:0;opacity:.92;background:repeating-linear-gradient(0deg,#ffd36e 0 3px,#ff8a8a 3px 6px,#9ef08e 6px 9px,#7fd8ff 9px 12px,#c49bff 12px 15px);transition:height .9s steps(9)}
+.garden-rocket-fuel i::before{content:'';position:absolute;top:-2px;left:0;right:0;height:2px;background:repeating-linear-gradient(90deg,#fff1cb 0 3px,transparent 3px 6px);background-size:12px 2px}
+.garden-rocket-fuel i::after{content:'';position:absolute;left:30%;bottom:0;width:2px;height:2px;background:#ffffffcc;box-shadow:6px -9px #ffffffaa,-3px -17px #ffffff88;opacity:0}
+.garden-scene[data-active=true] .garden-rocket-fuel i::before{animation:garden-slosh .7s steps(2) infinite}
+@keyframes garden-slosh{50%{background-position:3px 0}}
+.garden-ship.is-digesting .garden-rocket-fuel i{transition-delay:2s}
+.garden-ship.is-digesting .garden-rocket-fuel i::after{animation:garden-fuel-bubbles 1.4s steps(7) 2s 2}
+@keyframes garden-fuel-bubbles{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-100%)}}
+.garden-ship.is-full .garden-rocket-fuel i{animation:garden-blink 1.2s steps(2) infinite}
 .garden-ship>strong{font:17px/1 Terminal,monospace;font-weight:400;color:#fff1cb}
 .garden-ship>small{font:13px/1 Terminal,monospace;color:#cfc6a4;max-width:100%}
+
+/* --- The kitchen: a chopping board over the greenhouse ------------------------------------ */
+.garden-kitchen{position:absolute;inset:0;z-index:20;display:grid;place-items:center;background:#1b161199}
+.garden-kitchen[hidden]{display:none}
+.garden-kitchen-card{width:min(320px,86%);padding:10px 12px 9px;background:#efe0b6;border:3px solid #3a2c24;box-shadow:4px 4px #3a2c24;text-align:center}
+.garden-kitchen-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;font:7px/1.5 Pixel,monospace;color:#4f3d2c}
+.garden-kitchen-cancel{width:26px;height:26px;padding:0;border:2px solid #3a2c24;background:#d8cba7;color:#3a2c24;font:18px/1 Terminal,monospace;box-shadow:2px 2px #3a2c24}
+.garden-kitchen-cancel:hover{background:#ffe9a0}
+.garden-board{position:relative;display:grid;place-items:center;width:100%;height:124px;padding:0;background:#a46c46;border:3px solid #6e4630;box-shadow:inset 0 -7px #80523b,inset 0 3px #c08a5a,3px 3px #3a2c24;cursor:pointer;overflow:hidden}
+.garden-board:not(:disabled):hover{filter:brightness(1.06)}.garden-board:disabled{cursor:default}
+.garden-slices{position:relative;width:72px;height:72px}
+.garden-slice{position:absolute;inset:0;transform:translateX(calc((var(--i) - (var(--n) - 1) / 2) * 6px))}
+.garden-slice svg{width:100%;height:100%;display:block;filter:drop-shadow(2px 3px 0 #3a2c2466)}
+.garden-knife{position:absolute;right:16%;top:10%;width:54px;transform:rotate(-72deg);transform-origin:92% 50%;pointer-events:none}
+.garden-knife svg{width:100%;height:auto;display:block;filter:drop-shadow(1px 2px 0 #3a2c2488)}
+.garden-board.is-chopping .garden-knife{animation:garden-chop .24s steps(3)}
+@keyframes garden-chop{45%{transform:rotate(-4deg) translate(-22px,38px)}}
+.garden-board.is-chopping .garden-slices{animation:garden-thud .24s steps(2)}
+@keyframes garden-thud{50%{transform:translateY(3px)}}
+.garden-crumbs{position:absolute;left:50%;top:58%;width:0;height:0;pointer-events:none}
+.garden-crumbs i{position:absolute;width:3px;height:3px;background:#ffe9a0;opacity:0}
+.garden-board.is-chopping .garden-crumbs i{animation:garden-crumb .5s steps(5) .08s forwards}
+.garden-crumbs i:nth-child(1){--dx:-22px}.garden-crumbs i:nth-child(2){--dx:-9px;background:#ed9a50}.garden-crumbs i:nth-child(3){--dx:10px}.garden-crumbs i:nth-child(4){--dx:24px;background:#ed9a50}
+@keyframes garden-crumb{0%{opacity:1;transform:translate(0,0)}50%{transform:translate(var(--dx),-16px)}100%{opacity:0;transform:translate(var(--dx),6px)}}
+.garden-kitchen.is-serving .garden-slices{animation:garden-serve .55s steps(6) forwards}
+@keyframes garden-serve{to{transform:translate(170px,-90px) scale(.4);opacity:0}}
+.garden-kitchen-pips{display:flex;justify-content:center;gap:6px;margin:9px 0 5px}
+.garden-kitchen-pips i{width:11px;height:11px;background:#d8cba7;border:2px solid #3a2c24}.garden-kitchen-pips i.is-done{background:#9ef08e}
+.garden-kitchen-note{margin:0;font:15px/1.1 Terminal,monospace;color:#6f5a3e}
+@media(prefers-reduced-motion:reduce){.garden-board.is-chopping .garden-knife,.garden-board.is-chopping .garden-slices,.garden-board.is-chopping .garden-crumbs i,.garden-kitchen.is-serving .garden-slices,.garden-throne.is-eating .garden-beam-sprite,.garden-throne.is-digesting .garden-beam-sprite,.garden-rocket-fuel i::before{animation:none}.garden-rocket-fuel i{transition:none}.garden-ship.is-digesting .garden-rocket-fuel i{transition-delay:0s}}
 
 /* --- Readout, pantry and shed ------------------------------------------------------------- */
 .garden-readout{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#d5c599;border:2px solid #3d4534;border-top:0;padding:4px 9px;font-size:16px;color:#535c3d;white-space:nowrap;overflow:hidden}

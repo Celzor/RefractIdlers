@@ -295,6 +295,21 @@ export const rocketSprite = () => memo('rocket',() => {
   g.rect(18,14,3,2,C.metalDark).rect(21,13,2,4,C.yellow);
   return g.outline().svg('garden-rocket-art');
 });
+/** Beam's throne: a porcelain bowl and seat, a cistern with a brass lever, and a flush outlet underneath. */
+export const toiletSprite = () => memo('toilet',() => {
+  const g = canvas(30,24);
+  g.rect(1,2,9,13,C.cream).rect(1,2,9,2,C.metalLight).rect(2,5,2,8,'#ffffff').rect(9,6,3,2,C.metalDark).rect(11,5,2,2,C.yellow);
+  g.oval(8,11,21,9,C.cream).oval(10,12,17,6,'#d8e6ea').oval(12,13,13,4,C.water).rect(9,10,20,2,C.paper).rect(10,9,18,1,'#ffffff');
+  g.rect(14,19,10,3,C.metalLight).rect(13,21,12,2,C.metalDark).rect(17,22,4,2,C.metal);
+  return g.outline().svg('garden-toilet-art');
+});
+/** The kitchen knife: a steel blade with a bright edge and a riveted wooden handle. */
+export const knifeSprite = () => memo('knife',() => {
+  const g = canvas(22,8);
+  g.rect(1,2,13,4,C.metalLight).rect(1,5,13,1,'#ffffff').rect(0,3,2,2,C.metalLight).rect(2,2,11,1,C.metal);
+  g.rect(14,1,7,6,C.wood).rect(14,1,7,1,'#c08a5a').px(16,4,C.yellow).px(19,4,C.yellow);
+  return g.outline().svg('garden-knife-art');
+});
 /** A drifting cloud and a pixel sun for the greenhouse sky. */
 export const cloudSprite = () => memo('cloud',() => canvas(22,8).oval(0,3,10,5,'#f4f1dc').oval(5,0,10,8,'#f4f1dc').oval(12,2,10,6,'#f4f1dc').rect(2,6,18,1,'#dcdcc3').svg('garden-cloud-art'));
 export const sunSprite = () => memo('sun',() => {

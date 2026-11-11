@@ -95,10 +95,15 @@ Beam's meals fuel the ship. `isJumpPoint(level)` marks cores 20, 40, …, 200; `
 | Machine | Initial price | Effect per unit |
 | --- | ---: | --- |
 | Auto clicker | 25 | One automated orb strike every two seconds |
-| Refract orb farm | 14,000 | 6 base continuous LRC/second and access to Beam's Garden |
 | Light array | 800 | 32 base continuous LRC/second |
+| Refract orb farm | 3,000 | 90 base continuous LRC/second |
 | Refractometer | 4,500 | +10% personal damage and all LRC production |
 | Pocket star | 12,000 | 300 base continuous LRC/second |
+| Solar sail | 150,000 | 2,600 base continuous LRC/second; unlocks at orb 15 |
+| Lens cathedral | 1,800,000 | 24,000 base continuous LRC/second; orb 40 and 20 rounds |
+| Dyson lantern | 25,000,000 | 260,000 base continuous LRC/second; orb 80 and one prestige |
+
+The three deepest tiers are appended after every shipped machine in `GENERATORS`, because packed saves store machine counts by array position. The Click tech catalogue requires the `ki2` Outfitting licence and every Arsenal machine additionally requires `ki3`.
 
 The Workshop keeps these five machines. The Arsenal adds four purchasable devices with permanent-progress unlocks:
 
@@ -125,7 +130,7 @@ Automatic strikes are actual pulses. The original clicker and Clockwork core sha
 
 ## Beam's Garden
 
-The first `satellite` purchase, starting at 14,000 LRCs, permanently unlocks the Farm tab. [`src/farm.js`](../src/farm.js) owns the catalogues and farm rules; [`src/farm-view.js`](../src/farm-view.js) renders the greenhouse from the pixel sprites in [`src/farm-sprites.js`](../src/farm-sprites.js). Each player's named `farm` state contains `unlocked`, `plots`, `crops`, `inventory`, `upgrades`, `fedSeconds`, `cookedSeconds`, lifetime `meals`, and the automation clocks `tractorClock` and `pickerClock`. A fresh farm has one empty bed and the carrot variety unlocked. Each plot is `{crop,progress,water,fertilised}`: `crop:null` is an empty bed with zero progress and water and `fertilised:false`; `progress` and `water` run from 0 to 1.
+The `ki1` Garden licence (Outfitting research, one rank, 2 SP, available after one completed round) sets `farm.unlocked`; defeating Haze at the secret star grants it too. Buying `satellite` machines no longer opens the garden. [`src/farm.js`](../src/farm.js) owns the catalogues and farm rules; [`src/farm-view.js`](../src/farm-view.js) renders the greenhouse from the pixel sprites in [`src/farm-sprites.js`](../src/farm-sprites.js). Each player's named `farm` state contains `unlocked`, `plots`, `crops`, `inventory`, `upgrades`, `fedSeconds`, `cookedSeconds`, lifetime `meals`, and the automation clocks `tractorClock` and `pickerClock`. A fresh farm has one empty bed and the carrot variety unlocked. Each plot is `{crop,progress,water,fertilised}`: `crop:null` is an empty bed with zero progress and water and `fertilised:false`; `progress` and `water` run from 0 to 1.
 
 | Crop | Variety unlock LRCs | Seeds per planting LRCs | Base growth seconds | Base meal seconds |
 | --- | ---: | ---: | ---: | ---: |
@@ -161,7 +166,7 @@ The scene draws every purchased bed with three plants rendered from exact progre
 
 ## Persistent research
 
-There are **60 regular research nodes in ten branches**, plus **16 permanent prestige disciplines**. All research ranks survive prestige. The full regular tree has **390 ranks**.
+There are **63 regular research nodes in eleven branches** (60 tuning nodes plus the three one-rank Outfitting licences, stored after the prestige lines so packed saves keep their positions), plus **16 permanent prestige disciplines**. Double-clicking a node researches one rank. All research ranks survive prestige. The full regular tree has **390 ranks**.
 
 | Branch | Main systems |
 | --- | --- |
@@ -175,6 +180,7 @@ There are **60 regular research nodes in ten branches**, plus **16 permanent pre
 | Long horizon | Research insight and long-term cross-discipline bonuses |
 | Beam's garden | Vegetable growth, meal duration and strength, harvest yield, garden purchase discounts |
 | Spacetime | Extend future rounds from 60 to 180 seconds |
+| Outfitting | One-rank licences: Garden (`ki1`), Click tech (`ki2`), Arsenal (`ki3`) |
 
 Each branch has six tiers:
 
@@ -195,7 +201,7 @@ Spacetime follows Clock stretch → Orbital intervals → Time prism → Chronal
 
 Event horizon grants +1 SP once any rank is owned. Deep research, Chrono archive, Universal theory, Keeper's insight, and Infinite library add fractional **research insight**. Every whole accumulated insight gives +1 SP per completed round. Maximum regular insight is 4.2 and permanent insight is 2; with the base award, milestone, and Event horizon, the hard maximum is 10 SP.
 
-The entire regular tree costs **74,770 SP**. Even granting the maximum 10 SP from the first round, ignoring every milestone gate and intermission, completion requires at least **7,477 rounds**. At the shortest 60-second duration that is **124.62 active hours, or 5.19 days**. Spacetime research extends rounds, early rounds grant fewer points, and intermissions require decisions, so actual completion is slower. This is a mathematical lower bound, not an unattended completion estimate. The balance audit in `scripts/balance.mjs` follows legal machine and research policies without gardening or meals, uses actual variable round durations, and stops on campaign victory.
+The entire regular tree costs **74,779 SP**. Even granting the maximum 10 SP from the first round, ignoring every milestone gate and intermission, completion requires at least **7,477 rounds**. At the shortest 60-second duration that is **124.62 active hours, or 5.19 days**. Spacetime research extends rounds, early rounds grant fewer points, and intermissions require decisions, so actual completion is slower. This is a mathematical lower bound, not an unattended completion estimate. The balance audit in `scripts/balance.mjs` follows legal machine and research policies without gardening or meals, uses actual variable round durations, and stops on campaign victory.
 
 ## Prestige and permanent disciplines
 

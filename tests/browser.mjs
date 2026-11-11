@@ -247,7 +247,7 @@ async function eightPlayerSidebars(){
     await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
     await evaluate(`(()=>{const frame=document.querySelector('iframe[data-participant-id="101"]');Object.assign(frame.style,{position:'fixed',inset:'0',width:'100vw',height:'100vh',zIndex:'9999',border:'0',background:'#302a25'});document.body.style.overflow='hidden';})()`);
     const doc=frameDoc(101);
-    await desktopFrame(`Eight-player ${mode} ${width}x${height}`,['#core','.arena-stage','.generator:not([hidden]) [data-buy-generator]','#beam-companion'],doc);
+    await desktopFrame(`Eight-player ${mode} ${width}x${height}`,['#core','.arena-stage','.generator:nth-child(1 of :not([hidden])) [data-buy-generator]','#beam-companion'],doc);
     await shopFrame(doc);
     if(mode==='scoreboard'){
       await desktopFrame('Scorebook launcher',['#scoreboard-toggle'],doc);
@@ -342,7 +342,7 @@ async function fleetChecks(){
     await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
     for(const category of ['workshop','arsenal','click']){
       await click(`[data-shop-catalog="${category}"]`);
-      await desktopFrame(`Endgame ${category} ${width}x${height}`,['#core','.arena-stage','[data-shop-catalog]','.generator:not([hidden]) [data-buy-generator]']);
+      await desktopFrame(`Endgame ${category} ${width}x${height}`,['#core','.arena-stage','[data-shop-catalog]','.generator:nth-child(1 of :not([hidden])) [data-buy-generator]']);
       await capture(`desktop-${width}-endgame-${category}`);
     }
   }
@@ -528,7 +528,7 @@ async function secretChecks() {
     await pointerClick('[data-select-crop="weed"]');
     assert.equal(await evaluate(`document.querySelector('[data-select-crop="weed"]').getAttribute('aria-pressed')`),'true');
     if(width===1366){
-      await pointerClick('[data-feed-crop="weed"]');await waitFor(`${readSolo}.players[0].farm.cookedSeconds===260`);
+      await pointerClick('[data-feed-crop="weed"]');for(let chop=0;chop<4;chop++)await pointerClick('[data-chop]');await waitFor(`${readSolo}.players[0].farm.cookedSeconds===260`);
       assert.equal(await evaluate(`document.querySelector('#beam-companion').dataset.cooked`),'true');
       assert.equal(await evaluate(`document.querySelector('#beam-companion').dataset.toking`),'true','Feeding starts the smoking animation');
       assert.equal(await evaluate(`getComputedStyle(document.querySelector('#beam-companion .beam-eyes-baked')).display`),'block','Beam has baked eyes immediately after feeding');
@@ -709,7 +709,7 @@ try {
     assert.equal(await evaluate(`Boolean(document.querySelector('#beam-companion img, #beam-companion svg, #beam-companion canvas'))`),true,'Beam has a visible pixel-art representation');
     await capture(`desktop-${width}-lobby`);
     await seed(bossFixture);
-    await desktopFrame(`Desktop ${width}x${height} orbit`,['#core','#orb-health','.arena-stage','[data-buy-quantity]','.generator:not([hidden]) [data-buy-generator]','#beam-companion']);
+    await desktopFrame(`Desktop ${width}x${height} orbit`,['#core','#orb-health','.arena-stage','[data-buy-quantity]','.generator:nth-child(1 of :not([hidden])) [data-buy-generator]','#beam-companion']);
     assert.equal(await evaluate(`document.querySelector('#round-overlay').hidden`),true,'The round overlay is hidden during active play');
     await shopFrame();
     await containedContent('.stat > div',{overlap:false});
@@ -930,7 +930,7 @@ try {
   const echoStrike=await showResearch('echo-strike');
   assert.equal(await evaluate(`document.querySelector('[data-buy-skill="${echoStrike}"]').disabled`),true,'Cross-branch research is locked without the other discipline');
   assert.match(await evaluate(`document.querySelector('#research-inspector').textContent`),/Orbital array/,'The missing cross-branch prerequisite is named');
-  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),60,'All fifty-four normal nodes remain in the graph');
+  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),63,'All sixty-three normal nodes remain in the graph');
   assert.ok(await evaluate(`document.querySelectorAll('#research-map [data-edge-from][data-edge-to]').length > 40`),'The atlas draws prerequisite connections');
   assert.ok(await evaluate(`document.querySelectorAll('#research-map [data-edge-from].is-path').length > 0`),'Selected ancestry is highlighted on the graph');
   await click(`#research-inspector [data-focus-skill="orbital-array"]`);
@@ -960,20 +960,20 @@ try {
   assert.equal(await evaluate(`document.querySelector('#skill-tree').classList.contains('graph-expanded')`),false,'Changing views closes the expanded map');
   await click('[data-tab="skills"]');
   await evaluate(`(()=>{const input=document.querySelector('#research-search');input.value='orb';input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
-  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),60,'Search preserves the complete graph context');
+  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),63,'Search preserves the complete graph context');
   const searchCounts=await evaluate(`({dim:document.querySelectorAll('#research-map [data-skill-node].is-dim').length,bright:document.querySelectorAll('#research-map [data-skill-node]:not(.is-dim)').length})`);
   assert.ok(searchCounts.dim>0&&searchCounts.bright>0,'Search highlights matches while dimming other nodes');
   await evaluate(`(()=>{const input=document.querySelector('#research-search');input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
   await click('#research-available');
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('#research-map [data-skill-node]:not(.is-dim)')).every(node=>node.dataset.state==='ready')`),true,'Available filter highlights purchasable nodes');
-  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),60,'Available filter retains graph context');
+  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),63,'Available filter retains graph context');
   await click('#research-available');
   await click('[data-research-branch="all"]');
   const beforeBranch=await evaluate(graphTransform('#research-map'));
   await click('[data-research-branch="orbs"]');
   assert.equal(await evaluate(`document.querySelector('[data-research-branch="orbs"]').getAttribute('aria-pressed')`),'true','Branch selection is announced');
   assert.notEqual(await evaluate(graphTransform('#research-map')),beforeBranch,'Branch selection focuses its nodes on the map');
-  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),60,'Branch focus keeps the connected atlas intact');
+  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),63,'Branch focus keeps the connected atlas intact');
   await click('[data-tab="prestige"]');
   assert.equal(await evaluate(`document.querySelectorAll('#legacy-map [data-skill-node]').length`),16,'Permanent graph exposes sixteen research nodes');
   await showResearch('eternal-spark');

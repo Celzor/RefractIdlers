@@ -23,20 +23,25 @@ const baseReward = (level,scale=1) => power(BASE_REWARD*(boss(level)?5:1)*scale,
 const freshOrb = () => ({level:1,hp:BASE_HP});
 export const GENERATORS = Object.freeze([
   {id:'mote',name:'Auto clicker',category:'workshop',kind:'auto',description:'Strikes the orb automatically every two seconds. Scales with your damage.',baseCost:25,baseRate:0,autoRate:0.5,attackMultiplier:1,icon:'✧'},
-  {id:'satellite',name:'Refract orb farm',category:'workshop',kind:'passive',description:'Grow luminous Refract orbs for 6 base LRC per second. Unlocks Beam’s Garden.',baseCost:14000,baseRate:6,icon:'◎'},
+  {id:'satellite',name:'Refract orb farm',category:'workshop',kind:'passive',description:'Grow luminous Refract orbs for 90 base LRC per second.',baseCost:3000,baseRate:90,icon:'◎'},
   {id:'prism',name:'Light array',category:'workshop',kind:'passive',description:'Harvest a broad spectrum of light for 32 base LRC per second.',baseCost:800,baseRate:32,icon:'◈'},
   {id:'star',name:'Refractometer',category:'workshop',kind:'multiplier',description:'+10% to your damage and all LRC production per unit.',baseCost:4500,baseRate:0,multiplier:0.1,icon:'◇'},
   {id:'nova',name:'Pocket star',category:'workshop',kind:'passive',description:'Your own miniature sun produces 300 base LRC per second.',baseCost:12000,baseRate:300,icon:'☀'},
-  {id:'mouse',name:'AI Mouse',category:'arsenal',kind:'auto',description:'An autonomous cursor clicks twice per second, dealing automatic damage and minting your guaranteed click income.',baseCost:2400,baseRate:0,autoRate:2,attackMultiplier:1,unlock:{orb:5,skills:{au1:2}},icon:'↖'},
-  {id:'laser',name:'Lazer cannon',category:'arsenal',kind:'auto',description:'Charges for five seconds, then fires a beam dealing 20 automatic hits of damage.',flavor:'Immah firin mah lazor BWAAAH',baseCost:35000,baseRate:0,autoRate:0.2,attackMultiplier:20,unlock:{orb:15,skills:{au2:2}},icon:'⌁'},
-  {id:'probe',name:'Starlink probe',category:'arsenal',kind:'hybrid',description:'Fires a 3× strength pulse every two seconds and relays 1,200 base LRC per second.',baseCost:250000,baseRate:1200,autoRate:0.5,attackMultiplier:3,unlock:{orb:30,skills:{perpetuity:1}},icon:'⌖'},
-  {id:'gate',name:'Star gate',category:'arsenal',kind:'hybrid',description:'Opens every ten seconds for a 100× strength strike and channels 10,000 base LRC per second.',baseCost:5000000,baseRate:10000,autoRate:0.1,attackMultiplier:100,unlock:{orb:60,rounds:120,prestiges:1,skills:{au3:2}},icon:'◉'},
-  {id:'wormhole',name:'Wormhole generator',category:'click',kind:'click',description:'+4 base damage to every manual and automatic hit.',baseCost:600,baseRate:0,damageFlat:4,icon:'◎'},
-  {id:'foamer',name:'Quantum foamer',category:'click',kind:'click',description:'+20% damage to every manual and automatic hit.',baseCost:3500,baseRate:0,damagePct:.2,icon:'◌'},
-  {id:'string',name:'String detheory',category:'click',kind:'click',description:'+1% critical chance and +0.1 critical damage multiplier.',baseCost:18000,baseRate:0,criticalChance:.01,criticalMultiplier:.1,icon:'≈'},
+  {id:'mouse',name:'AI Mouse',category:'arsenal',kind:'auto',description:'An autonomous cursor clicks twice per second, dealing automatic damage and minting your guaranteed click income.',baseCost:2400,baseRate:0,autoRate:2,attackMultiplier:1,unlock:{orb:5,skills:{ki3:1,au1:2}},icon:'↖'},
+  {id:'laser',name:'Lazer cannon',category:'arsenal',kind:'auto',description:'Charges for five seconds, then fires a beam dealing 20 automatic hits of damage.',flavor:'Immah firin mah lazor BWAAAH',baseCost:35000,baseRate:0,autoRate:0.2,attackMultiplier:20,unlock:{orb:15,skills:{ki3:1,au2:2}},icon:'⌁'},
+  {id:'probe',name:'Starlink probe',category:'arsenal',kind:'hybrid',description:'Fires a 3× strength pulse every two seconds and relays 1,200 base LRC per second.',baseCost:250000,baseRate:1200,autoRate:0.5,attackMultiplier:3,unlock:{orb:30,skills:{ki3:1,perpetuity:1}},icon:'⌖'},
+  {id:'gate',name:'Star gate',category:'arsenal',kind:'hybrid',description:'Opens every ten seconds for a 100× strength strike and channels 10,000 base LRC per second.',baseCost:5000000,baseRate:10000,autoRate:0.1,attackMultiplier:100,unlock:{orb:60,rounds:120,prestiges:1,skills:{ki3:1,au3:2}},icon:'◉'},
+  {id:'wormhole',name:'Wormhole generator',category:'click',kind:'click',description:'+4 base damage to every manual and automatic hit.',baseCost:600,baseRate:0,damageFlat:4,unlock:{skills:{ki2:1}},icon:'◎'},
+  {id:'foamer',name:'Quantum foamer',category:'click',kind:'click',description:'+20% damage to every manual and automatic hit.',baseCost:3500,baseRate:0,damagePct:.2,unlock:{skills:{ki2:1}},icon:'◌'},
+  {id:'string',name:'String detheory',category:'click',kind:'click',description:'+1% critical chance and +0.1 critical damage multiplier.',baseCost:18000,baseRate:0,criticalChance:.01,criticalMultiplier:.1,unlock:{skills:{ki2:1}},icon:'≈'},
+  {id:'sail',name:'Solar sail',category:'workshop',kind:'passive',description:'A kilometre of mirror film catches starlight for 2,600 base LRC per second.',baseCost:150000,baseRate:2600,unlock:{orb:15},icon:'⛵'},
+  {id:'lens',name:'Lens cathedral',category:'workshop',kind:'passive',description:'A vaulted hall of prisms focuses a whole system’s light: 24,000 base LRC per second.',baseCost:1800000,baseRate:24000,unlock:{orb:40,rounds:20},icon:'◭'},
+  {id:'dyson',name:'Dyson lantern',category:'workshop',kind:'passive',description:'A lantern shell around a captured star: 260,000 base LRC per second.',baseCost:25000000,baseRate:260000,unlock:{orb:80,prestiges:1},icon:'✺'},
 ]);
 const skillById = new Map(SKILLS.map(s=>[s.id,s]));
 const generatorById = new Map(GENERATORS.map(g=>[g.id,g]));
+/** Collection machines beyond the pocket star: plain base rates, no dedicated research line yet. */
+const DEEP_IDS=['sail','lens','dyson'];
 
 export function createGame({seed=0x5eed,mode='scoreboard'}={}) {
   return {version:1,combatVersion:COMBAT_VERSION,campaignVersion:CAMPAIGN_VERSION,victory:null,mode:mode==='coop'?'coop':'scoreboard',sharedLrc:0,sharedFuel:0,sharedOrb:freshOrb(),phase:'lobby',round:0,
@@ -97,10 +102,11 @@ export function getStats(p,state) {
   const comboCap=Math.floor(10+(e.comboCap||0)),combo=!state||state.now<p.comboAt+2?Math.min(comboCap,p.combo):0;
   const clickDamage=cap((2+(e.damageFlat||0)+(p.generators.wormhole||0)*4)*(1+(e.damagePct||0)+(p.generators.foamer||0)*.2)*multiplier*(1+combo*(e.comboPower||0))*(surge?2:1));
   const clickIncome=cap((0.25+(e.mintFlat||0))*(1+(e.mintPct||0))*(1+machines*(e.mintSynergy||0))*multiplier*(surge?1+(e.surgeMintPct||0):1)*scoreMultiplier);
-  const farms=(p.generators.satellite||0)*6*(1+(e.farmPct||0))*(1+(p.generators.prism||0)*(e.farmSynergy||0));
+  const farms=(p.generators.satellite||0)*generatorById.get('satellite').baseRate*(1+(e.farmPct||0))*(1+(p.generators.prism||0)*(e.farmSynergy||0));
+  const deep=DEEP_IDS.reduce((total,id)=>total+(p.generators[id]||0)*generatorById.get(id).baseRate,0);
   const arrays=(p.generators.prism||0)*32*(1+(e.arrayPct||0)),stars=(p.generators.nova||0)*300*(1+(e.starPct||0));
   const arsenalRate=ARSENAL_IDS.reduce((total,id)=>total+(p.generators[id]||0)*generatorById.get(id).baseRate,0);
-  const machineRate=(farms+arrays+stars+arsenalRate)*(1+(e.generatorPct||0))*(1+machines*(e.generatorSynergy||0));
+  const machineRate=(farms+arrays+stars+deep+arsenalRate)*(1+(e.generatorPct||0))*(1+machines*(e.generatorSynergy||0));
   const passiveRate=cap((1+(e.passiveFlat||0)+machineRate)*(1+(e.passivePct||0))*multiplier*scoreMultiplier);
   const autoDamage=cap(clickDamage*(1+(e.autoDamagePct||0))),autoMint=cap(clickIncome*(e.autoMint||0));
   const autoSpeed=1+(e.autoPct||0)+crewAuto,arsenalShots=p.arsenalShots||[0,0,0,0];
@@ -147,7 +153,7 @@ export function skillAvailability(p,id,state){
   if(rank(p,id)>=s.maxRank)return {available:false,reason:'Fully researched.'};
   for(const required of s.requires){const needed=s.requiredRanks[required]||1;if(rank(p,required)<needed)return {available:false,reason:`Requires ${skillById.get(required)?.name||required} rank ${needed}.`};}
   const g=s.gates;
-  if(g.farm&&!getFarmUnlocked(p))return {available:false,reason:'Buy a Refract orb farm to unlock garden research.'};
+  if(g.farm&&!getFarmUnlocked(p))return {available:false,reason:'Research the Garden licence to unlock garden research.'};
   if(p.highestOrb<g.orb)return {available:false,reason:`Reach orb ${g.orb} (best: ${p.highestOrb}).`};
   if(p.completedRounds<g.rounds)return {available:false,reason:`Complete ${g.rounds} rounds (${p.completedRounds} completed).`};
   if(p.prestigeCount<g.prestiges)return {available:false,reason:`Prestige ${g.prestiges} times (${p.prestigeCount} completed).`};
@@ -294,10 +300,10 @@ export function applyAction(state,playerId,action){
     const availability=generatorAvailability(p,action.id,state);if(!availability.available)return fail(availability.reason);
     const quantity=action.quantity===undefined?1:action.quantity;if(![1,10,'max'].includes(quantity))return fail('Choose Buy 1, Buy 10, or Buy Max.');
     const quote=generatorQuote(p,action.id,quantity,state);if(!quote.quantity)return fail('No affordable capacity remains for this purchase.');if(getBalance(p,state)<quote.cost)return fail('Collect more LRCs to buy that whole bundle.');
-    if(state.mode==='coop')state.sharedLrc-=quote.cost;else p.lrc-=quote.cost;p.generators[action.id]=(p.generators[action.id]||0)+quote.quantity;if(action.id==='satellite')p.farm.unlocked=true;return {ok:true,...quote};}
+    if(state.mode==='coop')state.sharedLrc-=quote.cost;else p.lrc-=quote.cost;p.generators[action.id]=(p.generators[action.id]||0)+quote.quantity;return {ok:true,...quote};}
   if(action.type==='buySkill'){
     const availability=skillAvailability(p,action.id,state);if(!availability.available)return fail(availability.reason);const s=skillById.get(action.id),cost=skillCost(p,action.id);
-    if(s.currency==='prestige')p.prestigePoints-=cost;else p.skillPoints-=cost;p.skills[s.id]=rank(p,s.id)+1;p.ready=false;return {ok:true};}
+    if(s.currency==='prestige')p.prestigePoints-=cost;else p.skillPoints-=cost;p.skills[s.id]=rank(p,s.id)+1;if(s.effects.garden)p.farm.unlocked=true;p.ready=false;return {ok:true};}
   if(action.type==='prestige'){
     if(state.phase!=='intermission')return fail('Refract your core between rounds.');const gain=prestigeGain(p);if(gain<1)return fail('Earn 2,500 LRCs in your own run to prestige.');
     p.prestigePoints=count(p.prestigePoints+gain);p.totalPrestige=count(p.totalPrestige+gain);p.prestigeCount=count(p.prestigeCount+1);

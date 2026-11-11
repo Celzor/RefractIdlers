@@ -1,7 +1,7 @@
 import { CROPS, FARM_UPGRADES, MAX_PLOTS, WATER_SECONDS, COOKED_SECONDS, COOKED_SCORE_MULTIPLIER, getFarmStats, plotSecondsLeft, farmPlotCost, farmCropCost, farmSeedCost, farmUpgradeCost, getFarmUnlocked } from './farm.js';
 import { getBalance, getShipStatus } from './game.js';
 import { SYSTEMS } from './campaign.js';
-import { plantSprite, plantFrame, produceIcon, lampSprite, tankSprite, tractorSprite, pickerSprite, wateringCanSprite, fertiliserSprite, rocketSprite, cloudSprite, sunSprite, sparkleSprite, droplet, equipmentIcon } from './farm-sprites.js';
+import { plantSprite, plantFrame, produceIcon, lampSprite, tankSprite, tractorSprite, pickerSprite, wateringCanSprite, fertiliserSprite, rocketSprite, toiletSprite, knifeSprite, cloudSprite, sunSprite, sparkleSprite, droplet, equipmentIcon } from './farm-sprites.js';
 
 const safe = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const number = value => new Intl.NumberFormat('en', { notation:value >= 10000 ? 'compact' : 'standard', maximumFractionDigits:1 }).format(value || 0);
@@ -9,9 +9,11 @@ const cropById = new Map(CROPS.map(crop => [crop.id,crop]));
 const setText = (node,value) => { if(node.textContent !== String(value))node.textContent=value; };
 const setData = (node,key,value) => { value=String(value); if(node.dataset[key] !== value)node.dataset[key]=value; };
 const BEAM_SPRITE = new URL('../assets/beam-pixel.svg', import.meta.url).href;
-const beamLayer = name => `<use href="${BEAM_SPRITE}#${name}"/>`;
+const beamLayer = name => `<use class="${name}" href="${BEAM_SPRITE}#${name}"/>`;
 /** Each bed shows three plants; slightly staggered so a bed reads as a living patch, not clones. */
 const PLANT_PACE = [.95,1,.9];
+/** Every vegetable is chopped this many times on the board before Beam gets it. */
+export const CHOPS = 4;
 
 /** Pixel greenhouse backdrop: glass, sky, a wooden knee wall and a flagstone floor. Stretches to the scene. */
 function backdrop() {
@@ -36,10 +38,20 @@ function backdrop() {
   }
   return `<svg class="garden-backdrop" viewBox="0 0 160 100" preserveAspectRatio="none" aria-hidden="true" shape-rendering="crispEdges">${art}</svg>`;
 }
-/** Beam, in his usual pixels, heaving bright light into the fuel intake. */
-function beamRefuel() {
-  const rays = ['#ff8a8a','#ffd36e','#9ef08e','#7fd8ff','#c49bff'].map((color,index) => `<rect class="garden-ray" x="${8+index*3}" y="0" width="3" height="40" fill="${color}"/>`).join('');
-  return `<div class="garden-beam-refuel" aria-hidden="true"><svg class="garden-beam-sprite" viewBox="0 0 64 64" shape-rendering="crispEdges">${['beam-body','beam-head','beam-eyes-worried','beam-hand-left','beam-hand-right','beam-feet'].map(beamLayer).join('')}</svg><svg class="garden-rays" viewBox="0 0 31 40" preserveAspectRatio="none" shape-rendering="crispEdges">${rays}</svg></div>`;
+/** Beam on his throne. Meals go in; a rainbow runs down the flush pipe into the ship's tank. */
+function beamThrone() {
+  return `<div class="garden-throne" aria-hidden="true">${toiletSprite()}<svg class="garden-beam-sprite" viewBox="0 0 64 64" shape-rendering="crispEdges">${['beam-body','beam-head','beam-eyes','beam-eyes-worried','beam-eyes-cheer','beam-hand-left','beam-hand-right','beam-feet'].map(beamLayer).join('')}</svg><span class="garden-strain"></span><span class="garden-chew"></span></div>`;
+}
+/** The chopping board overlay: one vegetable, one knife, four chops, then it is served. */
+function kitchen() {
+  return `<div class="garden-kitchen" data-kitchen hidden role="group" aria-label="Chop a vegetable for Beam">
+    <div class="garden-kitchen-card">
+      <div class="garden-kitchen-heading"><span data-kitchen-title>Chop the carrot</span><button type="button" class="garden-kitchen-cancel" data-kitchen-cancel aria-label="Put the vegetable back">×</button></div>
+      <button type="button" class="garden-board" data-chop aria-label="Chop"><span class="garden-slices" data-slices></span><span class="garden-knife">${knifeSprite()}</span><span class="garden-crumbs"><i></i><i></i><i></i><i></i></span></button>
+      <div class="garden-kitchen-pips" data-chop-pips aria-hidden="true"></div>
+      <p class="garden-kitchen-note" data-kitchen-note></p>
+    </div>
+  </div>`;
 }
 
 export class FarmView {
@@ -63,10 +75,12 @@ export class FarmView {
           <div class="garden-lane" data-farm-equipment="tractor" aria-label="Tractors"></div>
           <aside class="garden-ship" data-ship aria-label="Beam’s ship fuel">
             <span class="garden-ship-label">SHIP FUEL</span>
-            ${beamRefuel()}
-            <div class="garden-ship-body"><span class="garden-rocket">${rocketSprite()}</span><span class="garden-fuel-gauge" aria-hidden="true"><i data-fuel-fill></i></span></div>
+            ${beamThrone()}
+            <span class="garden-flush-pipe" aria-hidden="true"><i></i></span>
+            <div class="garden-ship-body"><span class="garden-rocket">${rocketSprite()}<span class="garden-rocket-fuel" aria-hidden="true"><i data-fuel-fill></i></span></span></div>
             <strong data-fuel-text>0 / 120</strong><small data-fuel-note>Feed Beam to fuel the ship.</small>
           </aside>
+          ${kitchen()}
         </div>
         <div class="garden-readout"><span data-farm-stats></span><button type="button" class="garden-link" data-farm-research>Farm research ↗</button></div>
         <section class="garden-pantry" aria-label="Harvest basket and feeding Beam"><div class="garden-pantry-heading"><h3>Harvest basket</h3><span data-farm-meal>No active meal</span></div><div class="garden-foods">${CROPS.map(crop=>`<div class="garden-food" data-food="${crop.id}"><span class="garden-food-icon">${produceIcon(crop.id)}</span><div><span class="garden-food-name">${safe(crop.name)}</span><strong data-stock="${crop.id}">0</strong></div><button type="button" data-feed-crop="${crop.id}">Feed</button></div>`).join('')}</div><p class="garden-feed-note">Meals boost your income &amp; damage and fuel the ship. A full Beam sends food straight to the tank.</p></section>
@@ -78,8 +92,9 @@ export class FarmView {
         <div class="garden-round"><span data-garden-round-note>Plants grow during rounds.</span><button type="button" class="primary-button" data-garden-ready hidden>Ready for next round</button></div>
       </section>
     </div>`;
-    this.scene=root.querySelector('.garden-scene');
+    this.scene=root.querySelector('.garden-scene');this.kitchen=null;this.reduced=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches??false;
     this.slots=[...root.querySelectorAll('[data-bed-slot]')];this.plots=[...root.querySelectorAll('[data-farm-plot]')];
+    root.addEventListener('keydown',event=>{if(event.key==='Escape'&&this.kitchen){event.preventDefault();this.closeKitchen();}});
     this.artSignatures=new Map();this.equipmentSignature='';
     for(const crop of CROPS.filter(crop=>crop.secret))for(const selector of [`[data-select-crop="${crop.id}"]`,`[data-food="${crop.id}"]`])root.querySelector(selector).hidden=true;
     root.addEventListener('click',event=>{
@@ -88,7 +103,9 @@ export class FarmView {
       if(button.hasAttribute('data-garden-ready')){this.send({type:'ready'});return;}
       if(button.hasAttribute('data-buy-farm-plot')){this.send({type:'buyFarmPlot'});return;}
       if(button.dataset.farmUpgrade){this.send({type:'buyFarmUpgrade',id:button.dataset.farmUpgrade});return;}
-      if(button.dataset.feedCrop){this.send({type:'feedBeam',crop:button.dataset.feedCrop});return;}
+      if(button.hasAttribute('data-kitchen-cancel')){this.closeKitchen();return;}
+      if(button.hasAttribute('data-chop')){this.chop();return;}
+      if(button.dataset.feedCrop){this.openKitchen(button.dataset.feedCrop,button);return;}
       if(button.dataset.waterPlot){this.tend(Number(button.dataset.waterPlot),'waterCrop');return;}
       if(button.dataset.fertilisePlot){this.tend(Number(button.dataset.fertilisePlot),'fertiliseCrop');return;}
       if(button.dataset.selectCrop){const id=button.dataset.selectCrop;if(!this.player.farm.crops[id])this.send({type:'unlockCrop',id});else{this.selectedCrop=id;this.render(this.player,this.state,this.usable);}return;}
@@ -101,6 +118,50 @@ export class FarmView {
         else if(!bed.fertilised)this.tend(plot,'fertiliseCrop');
       }
     });
+  }
+
+  /** The board opens with a whole vegetable; it is served only after every chop lands. */
+  openKitchen(crop,origin) {
+    if(!this.player?.farm?.inventory?.[crop])return;
+    this.kitchen={crop,cuts:0,origin};clearTimeout(this.serveTimer);
+    const panel=this.root.querySelector('[data-kitchen]');panel.hidden=false;panel.classList.remove('is-serving');
+    this.root.querySelector('[data-chop]').disabled=false;
+    setText(this.root.querySelector('[data-kitchen-title]'),`Chop the ${cropById.get(crop)?.name.toLowerCase()||'vegetable'}`);
+    this.renderKitchen();this.root.querySelector('[data-chop]').focus({preventScroll:true});
+  }
+  chop() {
+    if(!this.kitchen||this.kitchen.cuts>=CHOPS)return;
+    this.kitchen.cuts++;
+    const board=this.root.querySelector('[data-chop]');board.classList.remove('is-chopping');void board.offsetWidth;board.classList.add('is-chopping');
+    this.renderKitchen();
+    if(this.kitchen.cuts>=CHOPS)this.serve();
+  }
+  renderKitchen() {
+    const {crop,cuts}=this.kitchen,pieces=cuts+1;
+    // Each chop splits the vegetable into one more vertical slice; slices drift apart on the board.
+    this.root.querySelector('[data-slices]').innerHTML=Array.from({length:pieces},(_,index)=>`<span class="garden-slice" style="--i:${index};--n:${pieces};clip-path:inset(0 ${(100-(index+1)*100/pieces).toFixed(2)}% 0 ${(index*100/pieces).toFixed(2)}%)">${produceIcon(crop)}</span>`).join('');
+    this.root.querySelector('[data-chop-pips]').innerHTML=Array.from({length:CHOPS},(_,index)=>`<i class="${index<cuts?'is-done':''}"></i>`).join('');
+    const left=CHOPS-cuts;setText(this.root.querySelector('[data-kitchen-note]'),left?`Click the board or press Space · ${left} ${left===1?'chop':'chops'} to go`:'Served! Beam is eating.');
+    this.root.querySelector('[data-chop]').setAttribute('aria-label',left?`Chop, ${left} to go`:'Served');
+  }
+  serve() {
+    const {crop}=this.kitchen,panel=this.root.querySelector('[data-kitchen]');
+    this.root.querySelector('[data-chop]').disabled=true;panel.classList.add('is-serving');
+    const throne=this.root.querySelector('.garden-throne');throne.classList.remove('is-eating');void throne.offsetWidth;throne.classList.add('is-eating');
+    this.send({type:'feedBeam',crop});
+    clearTimeout(this.serveTimer);this.serveTimer=setTimeout(()=>this.closeKitchen(),this.reduced?0:650);
+  }
+  closeKitchen() {
+    const origin=this.kitchen?.origin;this.kitchen=null;clearTimeout(this.serveTimer);
+    const panel=this.root.querySelector('[data-kitchen]');panel.hidden=true;panel.classList.remove('is-serving');
+    this.root.querySelector('[data-chop]').disabled=false;
+    if(origin?.isConnected)origin.focus({preventScroll:true});
+  }
+  /** Fuel went up: Beam strains on the throne, the rainbow runs down the pipe, and the tank fills last. */
+  digest() {
+    const nodes=['.garden-throne','.garden-flush-pipe','[data-ship]'].map(selector=>this.root.querySelector(selector));
+    for(const node of nodes){node.classList.remove('is-digesting');void node.offsetWidth;node.classList.add('is-digesting');}
+    clearTimeout(this.digestTimer);this.digestTimer=setTimeout(()=>{for(const node of nodes)node.classList.remove('is-digesting');},this.reduced?400:3600);
   }
 
   /** Chores give instant feedback; the host still decides whether they happened. */
@@ -128,10 +189,7 @@ export class FarmView {
         if(picked&&!recent(`harvest:${index}`)){this.pickerTargets.push(index);this.burst(index,'pick',before.crop);this.onEvent?.('autoHarvest');}
         if(plot.crop&&plot.fertilised&&!(before.crop===plot.crop&&before.fertilised)&&!recent(`fertiliseCrop:${index}`)&&plot.progress>0){this.tractorTargets.push(index);this.burst(index,'fertilise');}
       });
-      if(ship.fuel>previous.fuel+1e-9){
-        const refuel=this.root.querySelector('.garden-beam-refuel');refuel.classList.remove('is-refuelling');void refuel.offsetWidth;refuel.classList.add('is-refuelling');
-        clearTimeout(this.refuelTimer);this.refuelTimer=setTimeout(()=>refuel.classList.remove('is-refuelling'),2600);
-      }
+      if(ship.fuel>previous.fuel+1e-9)this.digest();
     }
     this.previous={playerId:this.player.id,fuel:ship.fuel,plots:farm.plots.map(plot=>({crop:plot.crop,progress:plot.progress,fertilised:plot.fertilised}))};
     // Machines head for the bed they just worked on.

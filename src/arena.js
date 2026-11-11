@@ -13,7 +13,11 @@ const compact = (amount) => amount >= 1e12 ? `${(amount / 1e12).toFixed(1)}t`
       : amount >= 1000 ? `${(amount / 1000).toFixed(1)}k` : String(Number(amount.toFixed(1)));
 
 const ATTACK_IDS = ['mote','mouse','laser','probe','gate'];
-const FLEET_COLORS = {mote:P.yellow,satellite:P.sky,prism:P.cream,star:P.purple,nova:P.yellow,mouse:P.paper,laser:P.red,probe:P.sky,gate:P.purple,wormhole:P.purple,foamer:P.sky,string:P.yellow};
+const FLEET_COLORS = {mote:P.yellow,satellite:P.sky,prism:P.cream,star:P.purple,nova:P.yellow,mouse:P.paper,laser:P.red,probe:P.sky,gate:P.purple,wormhole:P.purple,foamer:P.sky,string:P.yellow,sail:P.cream,lens:P.purple,dyson:P.orange};
+/** Machines that gather light release a glowing mote each cycle; floating machines bob gently. */
+const COLLECTOR_IDS = ['satellite','prism','nova','probe','gate','sail','lens','dyson'];
+const FLOATING_IDS = new Set(['probe','gate','sail','dyson','nova']);
+const MOTE_LIMIT = 48, MOTE_SECONDS = .9;
 const SHOT_DURATION = {mote:.38,mouse:.62,laser:.48,probe:.58,gate:.72};
 const SHOT_IMPACT_DURATION = .24;
 const FLEET_LIMIT = 256, OVERFLOW_LIMIT = 512, SHOT_LIMIT = 96;
@@ -93,6 +97,8 @@ export class OrbitArena {
     this.fireTimes = new Map();
     this.shots = [];
     this.completedShots = [];
+    this.motes = [];
+    this.motePhase = new Map();
     this.shatters = [];
     this.purchaseBursts = [];
     this.lastSoundAt = -Infinity;
@@ -461,9 +467,17 @@ export class OrbitArena {
     for(const unit of this.fleet.units){
       const phase=running?(this.instrumentTime/(unit.id==='satellite'?5:3)+noise(unit.index*37+GENERATOR_IDS.indexOf(unit.id)))%1:.6;
       const rotation=['laser','probe'].includes(unit.id)?Math.atan2(this.height*.49-unit.y,this.width/2-unit.x):0;
+      const bob=running&&!unit.tiny&&FLOATING_IDS.has(unit.id)?Math.round(Math.sin(this.instrumentTime*1.7+unit.index*1.3)):0;
       if(!unit.tiny)this.pixel(unit.x-7,unit.y+7,'#392923',15,3);
-      drawGeneratorSprite(this.ctx,unit.id,unit.x-unit.size/2,unit.y-unit.size/2,{phase,running,scale:unit.size/32,rotation});
+      drawGeneratorSprite(this.ctx,unit.id,unit.x-unit.size/2,unit.y-unit.size/2+bob,{phase,running,scale:unit.size/32,rotation});
+      // Each collection cycle ends with a mote of gathered light leaving the machine.
+      if(running&&!unit.tiny&&COLLECTOR_IDS.includes(unit.id)){
+        const last=this.motePhase.get(unit.key);
+        if(last!==undefined&&phase<last&&this.motes.length<MOTE_LIMIT)this.motes.push({x:unit.x+(noise(unit.index*5+phase)-.5)*8,y:unit.y-unit.size/2+bob,born:this.instrumentTime,color:FLEET_COLORS[unit.id]});
+        this.motePhase.set(unit.key,phase);
+      }
     }
+    this.drawMotes();
     for(const purchase of this.purchaseBursts){
       const age=nowMs-purchase.at;
       if(age>1100)continue;
@@ -476,6 +490,19 @@ export class OrbitArena {
     this.observeFire(state,selfId,nowMs,running);
     if(this.reducedMotion)this.shots=[];
     else this.drawShots();
+  }
+
+  /** Gathered-light motes rise and fade; bounded in count and lifetime, cleared under reduced motion. */
+  drawMotes(){
+    if(this.reducedMotion){this.motes=[];return;}
+    const c=this.ctx;
+    this.motes=this.motes.filter(mote=>this.instrumentTime-mote.born<MOTE_SECONDS);
+    for(const mote of this.motes){
+      const t=(this.instrumentTime-mote.born)/MOTE_SECONDS,y=mote.y-t*16,size=t<.5?2:1;
+      c.globalAlpha=.9*(1-t);this.pixel(mote.x,y,mote.color,size,size);
+      if(t<.3){c.globalAlpha=.5*(1-t);this.pixel(mote.x-1,y+1,P.cream,1,1);}
+    }
+    c.globalAlpha=1;
   }
 
   observeFire(state,selfId,nowMs,running){

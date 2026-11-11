@@ -41,7 +41,8 @@ const plantPlot = (plot,crop) => Object.assign(plot,{crop,progress:0,water:1,fer
 export function createFarm() {
   return {unlocked:false,plots:[emptyPlot()],crops:{carrot:true},inventory:{},upgrades:{},fedSeconds:0,cookedSeconds:0,meals:0,tractorClock:0,pickerClock:0};
 }
-export const getFarmUnlocked = player => Boolean(player?.farm?.unlocked || player?.generators?.satellite > 0);
+/** The Garden licence (Outfitting research) opens the garden; the secret star's reward also grants it. */
+export const getFarmUnlocked = player => Boolean(player?.farm?.unlocked || player?.skills?.ki1 > 0);
 function farmEffects(player) {
   const effects = {};
   for (const [id,rank] of Object.entries(player?.skills || {})) {
@@ -149,7 +150,7 @@ const fuelRoomOf = context => Number.isFinite(context?.fuelRoom) ? context.fuelR
  * `context.fuelRoom` is the space left in the ship's tank; a meal's `fuel` result is what the game should add.
  */
 export function applyFarmAction(player,action,balance,spend,context={}) {
-  if (!getFarmUnlocked(player)) return fail('Buy a Refract orb farm to open Beam’s Garden.');
+  if (!getFarmUnlocked(player)) return fail('Research the Garden licence to open Beam’s Garden.');
   const farm = player.farm;
   const purchase = (cost,commit) => {
     if (!Number.isFinite(cost)) return fail('This garden upgrade is fully built.');

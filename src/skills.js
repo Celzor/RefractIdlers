@@ -10,6 +10,7 @@ export const SKILL_BRANCHES = Object.freeze([
   { id: 'mastery', name: 'Long horizon', description: 'Long-term research income and cross-discipline growth.', currency: 'skill' },
   { id: 'farm', name: 'Beam’s garden', description: 'Faster vegetables, richer harvests and stronger meals for Beam.', currency: 'skill' },
   { id: 'chronos', name: 'Spacetime', description: 'Stretch active rounds from one minute to three. The longest researched duration leads the crew.', currency: 'skill' },
+  { id: 'kit', name: 'Outfitting', description: 'One-rank licences that open Beam’s Garden, click technology and the Arsenal.', currency: 'skill' },
   { id: 'ascension', name: 'Eternal light', description: 'Spend prestige points on permanent disciplines.', currency: 'prestige' },
 ]);
 
@@ -148,17 +149,27 @@ const prestige = eternalLines.flatMap((line, lineIndex) => line.map(([id, name, 
   gates: { orb: [0, 30, 80, 150][tier], rounds: [0, 30, 180, 720][tier], prestiges: 1, prestige: [1, 5, 20, 100][tier], ...(lineIndex === 3 ? {farm:true} : {}) }, icon: '✧',
 })));
 
+/** Outfitting: independent one-rank licences. Each opens a whole feature rather than tuning a number. */
+const kitLines = [
+  ['garden-licence', 'Garden licence', 'Opens Beam’s Garden: grow vegetables, feed Beam and fuel the ship.', { garden: 1 }, 2, { orb: 0, rounds: 1 }],
+  ['click-licence', 'Click tech licence', 'Opens the Click technology catalogue: wormholes, quantum foam and string theory.', { clickTech: 1 }, 3, { orb: 5, rounds: 2 }],
+  ['arsenal-licence', 'Arsenal licence', 'Opens the Arsenal catalogue: autonomous weapons that strike and mint on their own.', { arsenal: 1 }, 4, { orb: 10, rounds: 4 }],
+];
+const kit = kitLines.map(([id, name, description, effects, cost, gates], tier) => ({ id, name, branch: 'kit', description, effects, cost, costGrowth: 1,
+  maxRank: 1, requires: [], requiredRanks: {}, currency: 'skill', tier: tier + 1, gates: { ...gates, prestiges: 0, prestige: 0 }, icon: '⚿' }));
+
 // Compact new IDs keep eight completed builds inside Refract's relay envelope.
 // Original shipped IDs remain unchanged; readable keys stay in catalog metadata.
+// Packed saves index this array by position, so new disciplines are appended after the prestige lines.
 const legacy = new Set(['tap-tuning', 'lucky-photon', 'singularity', 'solar-cells', 'orbital-array', 'perpetuity', 'shared-frequency', 'resonance', 'unity']);
-const raw = [...research, ...prestige];
+const raw = [...research, ...prestige, ...kit];
 const ids = new Map(raw.map((skill, index) => [skill.id, legacy.has(skill.id) ? skill.id
   : skill.currency === 'prestige' ? `p${String(index - research.length + 1).padStart(2, '0')}` : `${skill.branch.slice(0, 2)}${skill.tier}`]));
 export const SKILLS = Object.freeze(raw.map((skill) => ({ ...skill, key: skill.id, id: ids.get(skill.id),
   requires: skill.requires.map((id) => ids.get(id)),
   requiredRanks: Object.fromEntries(Object.entries(skill.requiredRanks).map(([id, value]) => [ids.get(id), value])),
 })));
-export const RESEARCH_TOTAL_RANKS = research.reduce((sum, skill) => sum + skill.maxRank, 0);
-export const RESEARCH_TOTAL_COST = research.reduce((sum, skill) => sum + Array.from({ length: skill.maxRank }, (_, rank) => Math.ceil(skill.cost * skill.costGrowth ** rank)).reduce((a, b) => a + b, 0), 0);
+export const RESEARCH_TOTAL_RANKS = [...research, ...kit].reduce((sum, skill) => sum + skill.maxRank, 0);
+export const RESEARCH_TOTAL_COST = [...research, ...kit].reduce((sum, skill) => sum + Array.from({ length: skill.maxRank }, (_, rank) => Math.ceil(skill.cost * skill.costGrowth ** rank)).reduce((a, b) => a + b, 0), 0);
 // 2 base + 1 milestone + 1 Event horizon + floor(4.2 research + 2 prestige insight).
 export const MAX_SKILL_POINTS_PER_ROUND = 10;

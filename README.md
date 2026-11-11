@@ -107,12 +107,15 @@ In Co-op, one pilot can buy a generator using LRCs earned by the others. The gen
 | Upgrade | First purchase | Effect per owned unit |
 | --- | ---: | ---: |
 | Auto clicker | 25 LRCs | One automatic core click every 2 seconds |
-| Refract orb farm | 14,000 LRCs | 6 passive LRC/s and access to Beam's Garden |
 | Light array | 800 LRCs | 32 passive LRC/s |
+| Refract orb farm | 3,000 LRCs | 90 passive LRC/s |
 | Refractometer | 4,500 LRCs | +10% to your production |
 | Pocket star | 12,000 LRCs | 300 passive LRC/s |
+| Solar sail | 150,000 LRCs | 2,600 passive LRC/s (from orb 15) |
+| Lens cathedral | 1,800,000 LRCs | 24,000 passive LRC/s (orb 40, 20 rounds) |
+| Dyson lantern | 25,000,000 LRCs | 260,000 passive LRC/s (orb 80, one prestige) |
 
-The shop's **Machinery** tab contains these five machines. **Arsenal** adds four research-gated machines:
+The shop's **Machinery** tab contains these eight machines, cheapest first. The **Click tech** and **Arsenal** catalogues each open with a one-rank **Outfitting** licence in the skill tree. **Arsenal** adds four research-gated machines:
 
 | Upgrade | First purchase | Base effect per unit | Unlock requirements |
 | --- | ---: | --- | --- |
@@ -149,7 +152,7 @@ Total critical chance caps at 80%. Automatic attacks still do not roll critical 
 
 ### Beam's Garden
 
-Buying your first **14,000-LRC Refract orb farm** opens the **Farm** tab with one planting bed and the carrot variety unlocked. Choose a vegetable, pay for seeds each time you plant an empty bed, tend it while it grows, then harvest it when ready. Each harvest produces one vegetable before fertiliser and research bonuses. Unlocking a variety allows repeat purchases of its seeds.
+Researching the **Garden licence** (Outfitting, 2 SP, after your first round) opens the **Farm** tab with one planting bed and the carrot variety unlocked. Choose a vegetable, pay for seeds each time you plant an empty bed, tend it while it grows, then harvest it when ready. Each harvest produces one vegetable before fertiliser and research bonuses. Unlocking a variety allows repeat purchases of its seeds.
 
 The greenhouse is drawn in the same ink-outlined pixel style as the orbit. Every crop is redrawn from its exact growth progress, so plants visibly sprout, leaf out and fruit pixel by pixel, sway while lamps are on, and wilt when dry.
 
