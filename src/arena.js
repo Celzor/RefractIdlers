@@ -15,6 +15,7 @@ const compact = (amount) => amount >= 1e12 ? `${(amount / 1e12).toFixed(1)}t`
 const ATTACK_IDS = ['mote','mouse','laser','probe','gate'];
 const FLEET_COLORS = {mote:P.yellow,satellite:P.sky,prism:P.cream,star:P.purple,nova:P.yellow,mouse:P.paper,laser:P.red,probe:P.sky,gate:P.purple,wormhole:P.purple,foamer:P.sky,string:P.yellow};
 const SHOT_DURATION = {mote:.38,mouse:.62,laser:.48,probe:.58,gate:.72};
+const SHOT_IMPACT_DURATION = .24;
 const FLEET_LIMIT = 256, OVERFLOW_LIMIT = 512, SHOT_LIMIT = 96;
 
 /** Only active session members contribute; competitive fleets are personal. */
@@ -239,7 +240,9 @@ export class OrbitArena {
     const active = state.phase === 'round' && !globalThis.document?.hidden;
     const orb = this.currentOrb(state, selfId);
     this.observeOrb(orb, nowMs);
-    if (active && !this.reducedMotion) this.instrumentTime += dt;
+    // Production pauses at intermission, but a projectile already on its way
+    // still lands. Keep its presentation clock running until the impact fades.
+    if (!this.reducedMotion && !globalThis.document?.hidden && (active || this.shots.length)) this.instrumentTime += dt;
     const visualTime = this.reducedMotion ? 3 : nowMs / 1000;
     const w = this.width, h = this.height;
     c.imageSmoothingEnabled = false;
@@ -435,7 +438,7 @@ export class OrbitArena {
     }
     this.purchaseBursts=this.purchaseBursts.filter(p=>nowMs-p.at<1100);
     this.observeFire(state,selfId,nowMs,running);
-    if(!active||this.reducedMotion)this.shots=[];
+    if(this.reducedMotion)this.shots=[];
     else this.drawShots();
   }
 
@@ -509,17 +512,27 @@ export class OrbitArena {
       const arrives=shot.id==='laser'?progress>=.5:progress>=1;
       if(arrives){
         const target=geometry.target;
-        pixel(target.x-3,target.y,P.cream,7,1);pixel(target.x,target.y-3,color,1,7);
+        if(!shot.reached){
+          shot.reached=true;shot.arrivedAt=this.instrumentTime;
+          this.impactUntil=(this.lastFrame??0)+SHOT_IMPACT_DURATION*1000;
+          this.completedShots.push({id:shot.id,source:{...geometry.source},target:{...target},point:{...target},reached:true});
+        }
+        // Hold a distinct hit over the orb for a full 240ms after arrival, even
+        // when a slow frame jumped past the projectile's original travel time.
+        const impactAge=this.instrumentTime-shot.arrivedAt;
+        const spread=3+Math.floor(clamp(impactAge/SHOT_IMPACT_DURATION,0,1)*3);
+        c.globalAlpha=.25;pixel(target.x-4,target.y-4,color,9,9);c.globalAlpha=1;
+        pixel(target.x-spread,target.y,P.cream,spread*2+1,1);pixel(target.x,target.y-spread,color,1,spread*2+1);
+        pixel(target.x-1,target.y-1,P.cream,3,3);
         // Surface sparks sit above the native core image, at the entry point.
         const dx=geometry.source.x-target.x,dy=geometry.source.y-target.y,length=Math.hypot(dx,dy)||1;
         const surface={x:target.x+dx/length*19,y:target.y+dy/length*19};
         pixel(surface.x-2,surface.y,P.cream,5,1);pixel(surface.x,surface.y-2,color,1,5);
-        if(!shot.reached){shot.reached=true;this.completedShots.push({id:shot.id,source:{...geometry.source},target:{...target},point:{...target},reached:true});}
       }
     }
     c.restore();
     // Never discard a shot before drawing its exact endpoint at least once.
-    this.shots=this.shots.filter(shot=>!shot.reached||this.instrumentTime-shot.started<shot.duration+.12);
+    this.shots=this.shots.filter(shot=>!shot.reached||this.instrumentTime-shot.arrivedAt<SHOT_IMPACT_DURATION);
     this.completedShots=this.completedShots.slice(-32);
   }
 

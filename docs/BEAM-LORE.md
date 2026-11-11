@@ -1,6 +1,6 @@
 # Beam: source notes and the Idlers adaptation
 
-Beam is Refract's small crystal companion and **Chief Vibe Officer**. Idlers gives him a pixel costume and a seat beside the game. His appearance, gentle habits and knowingly unscientific confidence come from the existing Refract project; the game dialogue and reactions are new.
+Beam is Refract's small crystal companion and **Chief Vibe Officer**. Idlers gives him a pixel costume and a seat at the top of the active shop. His appearance, gentle habits and knowingly unscientific confidence come from the existing Refract project; the game dialogue and reactions are new.
 
 This research used the author-provided `refract/oasis-core` checkout on 10 November 2026. Source paths below are relative to that checkout. The source repository was read without modification.
 

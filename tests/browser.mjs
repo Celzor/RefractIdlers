@@ -116,6 +116,16 @@ async function desktopFrame(label,selectors=[],documentExpression='document') {
   for(const {selector,rect}of layout.controls)assert.ok(rect.width>0&&rect.height>0&&rect.left>=-1&&rect.top>=-1&&rect.right<=layout.width+1&&rect.bottom<=layout.height+1,`${label}: ${selector} is fully visible (${JSON.stringify(rect)})`);
   log(`${label}: controls fit with no page scrolling`);
 }
+async function shopFrame(documentExpression='document') {
+  const geometry=await evaluate(`(()=>{
+    const doc=${documentExpression},bounds=selector=>doc.querySelector(selector).getBoundingClientRect().toJSON();
+    return {main:bounds('main'),view:bounds('#orbit-view'),scene:bounds('.orbit-panel'),shop:bounds('.generator-panel'),beam:bounds('#beam-companion'),heading:bounds('.generator-panel>.section-heading'),beamInShop:doc.querySelector('#orbit-shop-companion').contains(doc.querySelector('#beam-companion'))};
+  })()`);
+  assert.equal(geometry.beamInShop,true,'Beam sits inside the orbit shop');
+  assert.ok(geometry.beam.width>0&&geometry.beam.height>0&&geometry.beam.left>=geometry.shop.left&&geometry.beam.right<=geometry.shop.right&&geometry.beam.top>=geometry.shop.top&&geometry.beam.bottom<=geometry.heading.top+1,'Beam is visible above the shop heading');
+  assert.ok(Math.abs(geometry.view.left-geometry.main.left)<=1&&Math.abs(geometry.view.right-geometry.main.right)<=1,'The orbit fills the main frame with no unused sidebar');
+  assert.ok(Math.abs(geometry.scene.left-geometry.view.left)<=1&&Math.abs(geometry.shop.right-geometry.view.right)<=1&&geometry.shop.left>geometry.scene.right&&geometry.shop.left-geometry.scene.right<=20,'Scene and shop span the full available width');
+}
 async function containedContent(selector,{overlap=true,documentExpression='document'}={}) {
   const problems=await evaluate(`(() => {const issues=[];for(const root of ${documentExpression}.querySelectorAll(${JSON.stringify(selector)})){
     const bounds=root.getBoundingClientRect();if(!bounds.width||!bounds.height)continue;
@@ -225,13 +235,15 @@ async function eightPlayerSidebars(){
     await waitFor(`${session(101)}?.players?.length===8 && ${session(202)}?.players?.length===8`);
     await click('#round-action',frameDoc(101));
     await waitFor(`${session(101)}?.phase==='round'`);
-    await send('Emulation.setDeviceMetricsOverride',{width:1366,height:768,deviceScaleFactor:1,mobile:false});
+    for(const [width,height]of [[1366,768],[1920,1080]]){
+    await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
     await evaluate(`(()=>{const frame=document.querySelector('iframe[data-participant-id="101"]');Object.assign(frame.style,{position:'fixed',inset:'0',width:'100vw',height:'100vh',zIndex:'9999',border:'0',background:'#302a25'});document.body.style.overflow='hidden';})()`);
     const doc=frameDoc(101);
-    await desktopFrame(`Eight-player ${mode} 1366x768`,['#core','#round-action','.generator:not([hidden]) [data-buy-generator]','#beam-companion'],doc);
+    await desktopFrame(`Eight-player ${mode} ${width}x${height}`,['#core','#round-action','.generator:not([hidden]) [data-buy-generator]','#beam-companion'],doc);
+    await shopFrame(doc);
     if(mode==='scoreboard'){
       await desktopFrame('Scorebook launcher',['#scoreboard-toggle'],doc);
-      await capture('desktop-1366-eight-player-orbit');
+      await capture(`desktop-${width}-eight-player-orbit`);
       await pointerClick('#scoreboard-toggle',doc);
       await waitFor(`${doc}.querySelector('#scoreboard-dialog').open`,'Scorebook opens as a dialog');
       assert.equal(await evaluate(`${doc}.querySelectorAll('#scoreboard-list .scoreboard-row').length`),8,'All eight scoreboard entries are rendered');
@@ -246,7 +258,7 @@ async function eightPlayerSidebars(){
       assert.equal(await evaluate(`${doc}.querySelector('#scoreboard-dialog').open`),true,'Space leaves the scorebook open');
       assert.equal(await evaluate(`${doc}.querySelector('#orb-health-fill').style.width`),behindDialogHealth,'Space cannot damage the core behind the scorebook');
       assert.equal((await evaluate(session(101))).players.find(player=>player.id==='101').clicks,behindDialogClicks,'Space behind the dialog creates no gameplay action');
-      await capture('desktop-1366-eight-player-scoreboard');
+      await capture(`desktop-${width}-eight-player-scoreboard`);
       await click('#scoreboard-close',doc);
       assert.equal(await evaluate(`${doc}.querySelector('#scoreboard-dialog').open`),false,'Close button dismisses the scorebook');
       assert.equal(await evaluate(`${doc}.activeElement.id`),'scoreboard-toggle','Closing the scorebook restores focus to its launcher');
@@ -256,11 +268,18 @@ async function eightPlayerSidebars(){
       await waitFor(`!${doc}.querySelector('#scoreboard-dialog').open`,'Escape closes the scorebook');
       assert.equal(await evaluate(`${doc}.activeElement.id`),'scoreboard-toggle','Escape restores focus to the scorebook launcher');
     }else{
+      assert.equal(await evaluate(`${doc}.querySelector('#scoreboard-toggle').textContent.trim()`),'Crew','Co-op has a Crew dialog launcher');
+      await pointerClick('#scoreboard-toggle',doc);
+      await waitFor(`${doc}.querySelector('#scoreboard-dialog').open`,'Crew opens as a dialog');
       assert.equal(await evaluate(`${doc}.querySelectorAll('#crew .crew-member').length`),8,'All eight co-op crew entries are rendered');
-      await desktopFrame('Eight-player co-op roster',['#crew'],doc);
+      await desktopFrame(`Eight-player co-op dialog ${width}x${height}`,['#scoreboard-dialog','#scoreboard-close','#coop-panel','#crew-panel','#crew'],doc);
       await containedContent('#crew',{documentExpression:doc});
       await containedElements('#crew-panel','.crew-member',doc);
-      await capture('desktop-1366-eight-player-coop');
+      assert.equal(await evaluate(`(()=>{const dialog=${doc}.querySelector('#scoreboard-dialog');return dialog.scrollHeight<=dialog.clientHeight+1;})()`),true,'The eight-player Crew dialog needs no internal scrollbar');
+      await capture(`desktop-${width}-eight-player-coop`);
+      await click('#scoreboard-close',doc);
+      assert.equal(await evaluate(`${doc}.activeElement.id`),'scoreboard-toggle','Closing Crew restores focus to its launcher');
+    }
     }
   }
 }
@@ -309,6 +328,7 @@ try {
     await capture(`desktop-${width}-lobby`);
     await seed(bossFixture);
     await desktopFrame(`Desktop ${width}x${height} orbit`,['#core','#orb-health','#round-action','[data-buy-quantity]','.generator:not([hidden]) [data-buy-generator]','#beam-companion']);
+    await shopFrame();
     await containedContent('.stat > div',{overlap:false});
     await containedElements('.stat','small');
     await capture(`desktop-${width}-frame-orbit`);

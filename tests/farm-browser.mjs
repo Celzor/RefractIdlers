@@ -74,9 +74,19 @@ async function capture(name) {
   const shot = await send('Page.captureScreenshot', {format:'png', captureBeyondViewport:false});
   await writeFile(path.join(output, `${name}.png`), Buffer.from(shot.data,'base64'));
 }
+async function assertShopLayout(view) {
+  const geometry=await evaluate(`(()=>{
+    const farm=${view==='farm'},bounds=selector=>document.querySelector(selector).getBoundingClientRect().toJSON();
+    return {main:bounds('main'),view:bounds(farm?'#farm-view':'#orbit-view'),scene:bounds(farm?'.garden-main':'.orbit-panel'),shop:bounds(farm?'.garden-workshop':'.generator-panel'),beam:bounds('#beam-companion'),heading:bounds(farm?'.garden-workshop>header':'.generator-panel>.section-heading'),beamInShop:document.querySelector(farm?'#farm-shop-companion':'#orbit-shop-companion').contains(document.querySelector('#beam-companion'))};
+  })()`);
+  assert.equal(geometry.beamInShop,true,`Beam sits inside the ${view} shop`);
+  assert.ok(geometry.beam.width>0&&geometry.beam.height>0&&geometry.beam.left>=geometry.shop.left&&geometry.beam.right<=geometry.shop.right&&geometry.beam.top>=geometry.shop.top&&geometry.beam.bottom<=geometry.heading.top+1,`Beam is visible above the ${view} shop heading`);
+  assert.ok(Math.abs(geometry.view.left-geometry.main.left)<=1&&Math.abs(geometry.view.right-geometry.main.right)<=1,`${view} fills the main frame with no unused sidebar`);
+  assert.ok(Math.abs(geometry.scene.left-geometry.view.left)<=1&&Math.abs(geometry.shop.right-geometry.view.right)<=1&&geometry.shop.left>geometry.scene.right&&geometry.shop.left-geometry.scene.right<=20,`${view} scene and shop span the full available width`);
+}
 async function assertFrame(width, height) {
   const result = await evaluate(`(()=>{
-    const selectors=['[data-tab="farm"]','#farm-view','[data-buy-farm-plot]','[data-farm-upgrade]','[data-farm-plot]','[data-select-crop]','[data-feed-crop]'];
+    const selectors=['[data-tab="farm"]','#farm-view','#beam-companion','[data-buy-farm-plot]','[data-farm-upgrade]','[data-farm-plot]','[data-select-crop]','[data-feed-crop]'];
     const problems=[];
     for(const selector of selectors){const nodes=[...document.querySelectorAll(selector)];if(!nodes.length)problems.push('Missing '+selector);
       for(const node of nodes){const r=node.getBoundingClientRect();if(r.width<=0||r.height<=0||r.left<0||r.top<0||r.right>innerWidth+1||r.bottom>innerHeight+1)problems.push('Outside viewport '+selector);
@@ -84,11 +94,19 @@ async function assertFrame(width, height) {
         if(node.matches('button')&&(text.scrollWidth>text.clientWidth+2||text.scrollHeight>text.clientHeight+2))problems.push('Clipped control '+selector+' '+text.textContent);
       }
     }
+    for(const node of document.querySelectorAll('.garden-upgrades,.garden-upgrade,.garden-round')){
+      if(node.scrollHeight>node.clientHeight+2)problems.push('Shop content escapes '+node.className);
+    }
+    const upgrades=document.querySelector('.garden-upgrades').getBoundingClientRect(),round=document.querySelector('.garden-round').getBoundingClientRect();
+    for(const node of document.querySelectorAll('.garden-upgrade p')){
+      const r=node.getBoundingClientRect();if(r.bottom>upgrades.bottom+1||r.bottom>round.top+1)problems.push('Upgrade description overlaps round controls');
+    }
     return {problems,width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,scrollHeight:document.documentElement.scrollHeight};
   })()`);
   assert.equal(result.width,width); assert.equal(result.height,height);
   assert.ok(result.scrollWidth <= width + 1 && result.scrollHeight <= height + 1, `Garden fits the desktop frame: ${JSON.stringify(result)}`);
   assert.deepEqual(result.problems,[],`Garden controls fit at ${width}x${height}`);
+  await assertShopLayout('farm');
 }
 const frameDocument = id => `document.querySelector('iframe[data-participant-id="${id}"]').contentDocument`;
 const frameWindow = id => `document.querySelector('iframe[data-participant-id="${id}"]').contentWindow`;
@@ -268,6 +286,7 @@ try {
     const layout=await evaluate(`(()=>{const ids=['wormhole','foamer','string'];return {width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight,cards:ids.map(id=>document.querySelector('#generator-'+id).getBoundingClientRect().toJSON())};})()`);
     assert.ok(layout.width<=width+1&&layout.height<=height+1,'Click technology fits the desktop frame');
     for(const card of layout.cards)assert.ok(card.width>0&&card.height>0&&card.top>=0&&card.bottom<=height&&card.right<=width,'Click technology purchase card is visible');
+    await assertShopLayout('orbit');
     await capture(`click-tech-${width}-first-units`);
   }
   console.log('PASS all three click technology purchases, effects, and desktop scenes');

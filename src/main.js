@@ -217,6 +217,8 @@ function render(force = false) {
   const shopping = state.phase === 'intermission';
   const usable = initialized && synchronized && !!player;
   const farmUnlocked = getFarmUnlocked(player);
+  const companionMount = $(tab === 'farm' ? '#farm-shop-companion' : '#orbit-shop-companion');
+  if (beam.root.parentElement !== companionMount) companionMount.append(beam.root);
   $('[data-tab="farm"]').hidden = !farmUnlocked;
   if (tab === 'farm' && !farmUnlocked) { showTab('orbit'); return; }
   if (tab === 'farm') farmView.render(player,state,usable);
@@ -347,8 +349,9 @@ function render(force = false) {
   $('#crew-count').textContent = `${state.players.length} / 8`;
   $('#crew-mode').textContent = bridge?.mode === 'refract' ? 'Shared Refract activity' : 'Invite your people through Refract';
   $('#scoreboard-panel').hidden = coop;
-  $('#scoreboard-toggle').hidden = coop;
-  if (coop && $('#scoreboard-dialog').open) $('#scoreboard-dialog').close();
+  $('#scoreboard-toggle').textContent = coop ? 'Crew' : 'Scoreboard';
+  $('#scoreboard-dialog').setAttribute('aria-label',coop ? 'Co-op crew and shared production' : 'Scoreboard');
+  $('.session-desk').hidden = !coop;
   $('#coop-panel').hidden = !coop;
   $('#crew-panel').hidden = !coop;
   $('#coop-contribution').textContent = fmt(player?.roundLrc);

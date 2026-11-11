@@ -2,7 +2,7 @@
 
 A multiplayer incremental game for Refract: damage the orb in the middle of the orbit, collect its LRC drops, build passive production, and research lasting upgrades between rounds. The host chooses Scoreboard or Co-op for the session. Prestige your production build while keeping your research.
 
-The interface is built for desktop play, with a fixed game frame verified at **1366×768** and **1920×1080**. The core, workshop and Beam share the screen without page scrolling. Controls sit beside the view tabs; the Scoreboard button opens a closable standings dialog. Research uses its own pan-and-zoom map.
+The interface is built for desktop play, with a fixed game frame verified at **1366×768** and **1920×1080**. The core and workshop fill the frame, with Beam at the top of the active shop. Controls sit beside the view tabs; Scoreboard opens the standings dialog and Co-op uses the Crew button for shared production and the roster. Research uses its own pan-and-zoom map.
 
 Built on the activity approach from [Refract Tic-tac-toe](https://github.com/Celzor/refract-tack-toe), with assets, audio, orbital rendering, and multiplayer bridge code reused or adapted from [RogueRefract](https://github.com/Celzor/RogueRefract).
 
@@ -12,7 +12,7 @@ The game uses a warm retro tabletop: chunky pixel borders, paper labels, a felt 
 
 The visual direction takes inspiration from the tactile incremental-game feel of [Gamblers Table](https://store.steampowered.com/app/3618390/Gamblers_Table/), [Scritchy Scratchy](https://store.steampowered.com/app/3948120/Scritchy_Scratchy/), and [Rusty's Retirement](https://store.steampowered.com/app/2666510/Rustys_Retirement/). The tabletop artwork and pixel-machine sprites were created for Refract Idlers; no sprites, sound recordings, or game assets from those titles are included. Refract branding and companion-project provenance remain listed in [CREDITS.md](CREDITS.md).
 
-**Beam, Refract's Chief Vibe Officer**, keeps a small pixel-art desk beside your orbit. He reacts to new machines, research, bosses, the solar surge, round breaks, garden meals and prestige. His crystal appearance, playful confidence, daytime boat and nighttime armchair come from the existing Refract companion. The dialogue, garden and game reactions are new adaptations; [Beam's source notes](docs/BEAM-LORE.md) separate established characterization from this game's additions. Greeting or minimizing his portrait is cosmetic. Feeding him vegetables through the Farm grants an income and damage bonus. Beam is never the orb you attack.
+**Beam, Refract's Chief Vibe Officer**, keeps a small pixel-art desk at the top of the workshop or garden shed. He reacts to new machines, research, bosses, the solar surge, round breaks, garden meals and prestige. His crystal appearance, playful confidence, daytime boat and nighttime armchair come from the existing Refract companion. The dialogue, garden and game reactions are new adaptations; [Beam's source notes](docs/BEAM-LORE.md) separate established characterization from this game's additions. Greeting or minimizing his portrait is cosmetic. Feeding him vegetables through the Farm grants an income and damage bonus. Beam is never the orb you attack.
 
 ## Run locally
 
