@@ -25,6 +25,7 @@ const report = {
     campaign: 'Planet HP increases across ten systems. A final victory freezes the simulation and ends the audit; it never automatically starts another journey. Final-core lattice time counts active rounds only.',
     precision: 'Zero-click simulation advances in 10-second segments; 2-click/sec uses 0.5-second steps. Milestone timing is accurate to the corresponding step, except eligibility may be recorded within the current round before prestige becomes selectable.',
     deepPush: `After 10,000 rounds, extended mode holds prestige for up to ${pushHours} additional active hours while continuing the same legal investment, research and clicking policy.`,
+    hazards: 'The two-click policy keeps clicking during system boss attempts, so boss light rays can destroy its machines; it buys no hull research on purpose beyond the cheapest-first rule. Comets are rolled per round and the policies never time their clicks to them. The flight between systems is a client mini-game, so the audit never jumps: a cleared jump point stays in transit.',
   },
   research: {
     nodes: normalResearch.length,
@@ -69,7 +70,7 @@ function snapshot(state,player) {
     highestResearchTier:Math.max(0,...research.map(s=>s.tier)),
     permanentRanks:game.SKILLS.filter(s=>s.currency==='prestige').reduce((sum,s)=>sum+(player.skills[s.id]||0),0),
     skillPoints:player.skillPoints,totalPrestige:player.totalPrestige,prestiges:player.prestigeCount,
-    lifetimeLrc:player.lifetimeLrc,steadyLrcPerSecond:stats.idleRate,automaticDamagePerSecond:stats.autoDps,
+    lifetimeLrc:player.lifetimeLrc,steadyLrcPerSecond:stats.idleRate,automaticDamagePerSecond:stats.autoDps,machinesLostToLightRays:player.machinesLost,inTransit:Boolean(player.transit),
     generatorCounts:{...player.generators},
   };
 }

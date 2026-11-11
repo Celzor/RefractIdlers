@@ -1,4 +1,4 @@
-import { createGame, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, getRoundDuration, getOrb, getShipStatus, migrateState, compactGameState, GENERATORS, generatorQuote, generatorAvailability, prestigeGain, prestigeNextThreshold } from './game.js';
+import { createGame, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, getRoundDuration, getOrb, getShipStatus, cometWindow, migrateState, compactGameState, GENERATORS, generatorQuote, generatorAvailability, prestigeGain, prestigeNextThreshold } from './game.js';
 import { createActivityBridge } from './activity.js';
 import { OrbitArena } from './arena.js';
 import { GameAudio } from './audio.js';
@@ -9,6 +9,7 @@ import { FarmView } from './farm-view.js';
 import { getFarmUnlocked } from './farm.js';
 import { GalaxyView } from './galaxy-view.js';
 import { FinaleScene } from './finale.js';
+import { FlightGame } from './flight.js';
 import { getCampaignLocation, SYSTEMS, FINAL_LEVEL, VICTORY_PRESTIGE_REWARD, SECRET_DURATION } from './campaign.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -28,6 +29,18 @@ const farmView = new FarmView($('#farm-view'), {send, onEvent: (type) => { if (t
 }});
 const galaxyView = new GalaxyView($('#galaxy-view'), {onOrbit:()=>showTab('orbit'),onReplay:async()=>{await audio.unlock();playVictory(true);},onNewJourney:()=>send({type:'newJourney'}),onSecretChallenge:()=>{send({type:'startSecretChallenge'});showTab('orbit');},onLeaveSecret:()=>send({type:'leaveSecretChallenge'})});
 const finale = new FinaleScene($('#finale-root'), {audio,onContinue:()=>{syncSoundButton();showTab('galaxy');}});
+// The jump flight is played here and reported to the host; only a fuelled ship at a cleared jump point can launch.
+const flight = new FlightGame($('#flight-root'), {audio,
+  onLaunch: () => {
+    const player = myPlayer(); if (!player) return;
+    const ship = getShipStatus(player,state); if (!ship.launchReady || ship.flyer !== selfId) return;
+    const level = getOrb(player,state).level, from = getCampaignLocation(level), to = SYSTEMS[from.index + 1];
+    void audio.unlock(); audio.play('start'); beam.react('launch');
+    flight.start({from:from.system.name,to:to?.name ?? 'home',systemIndex:from.index,seed:Math.floor(state.now) + level});
+  },
+  onResult: (arrived) => send({type:'completeJump',arrived}),
+});
+let lastComet = '';
 let seenVictory = '';
 let state = createGame();
 let selfId = 'you';
@@ -147,6 +160,14 @@ function execute(fromId, action) {
     if (action.type === 'click' && state.phase !== 'victory') {
       arena.burst({...result,color:myPlayer()?.color});
       audio.play(result.critical ? 'critical' : 'hit');
+      if (result.flare?.hit) {
+        arena.flare(result.flare); audio.play('error',{intensity:.65}); beam.react('flare');
+        const lost = GENERATORS.find((generator) => generator.id === result.flare.id);
+        toast(`Light ray! One ${lost?.name || 'machine'} destroyed${result.flare.refund > 0 ? ` · ${fmt(result.flare.refund)} LRC salvaged` : ''}.`);
+      } else if (result.flare?.blocked) {
+        arena.flare({blocked:true}); audio.play('collision',{intensity:.5});
+        if (result.flare.shield === 0) beam.react('shielded');
+      }
     } else if (action.type === 'buySkill') audio.play('purchase');
     else if (['buyFarmPlot','buyFarmUpgrade','unlockCrop','plantCrop'].includes(action.type)) audio.play('purchase');
     else if (action.type === 'waterCrop') audio.play('water');
@@ -154,6 +175,10 @@ function execute(fromId, action) {
     else if (action.type === 'harvestCrop') audio.play('collect');
     else if (action.type === 'feedBeam') { audio.play('boost'); if(action.crop==='weed')toast('Beam is cooked! 4.20× earned scores for 4m 20s.'); }
     else if (action.type === 'prestige') { audio.play('levelup'); toast(`Fresh start. +${result.amount} permanent prestige points.`); }
+    else if (action.type === 'completeJump') {
+      if (result.arrived) { audio.play('levelup'); toast(`Jump complete. Welcome to ${getCampaignLocation(result.level).system.name}.`); }
+      else { audio.play('error'); beam.react('crash'); toast('Three meteorite hits. The ship turned back and lost half its fuel. Feed Beam, then launch again.'); }
+    }
     else if (action.type === 'resetProgress') { audio.play('start'); toast('Your pilot starts fresh. The session carries on.'); }
   }
   onStateChange();
@@ -226,7 +251,7 @@ bridge = createActivityBridge({
 });
 
 // Create stable buttons once: live numbers can update without stealing focus.
-const generatorEffect = (generator) => ({wormhole:'+4 base hit damage',foamer:'+20% hit damage',string:'+1% crit chance · +0.1× crit damage',satellite:'+90 LRC / sec',sail:'+2.6K LRC / sec',lens:'+24K LRC / sec',dyson:'+260K LRC / sec',mote:'0.5 automatic hits / sec',star:'+10% damage & LRC production',mouse:'2 auto-clicks / sec · mints LRC',laser:'20× hit damage · one shot / 5 sec',probe:'3× hit / 2 sec · +1.2K LRC / sec',gate:'100× hit / 10 sec · +10K LRC / sec'}[generator.id] || `+${generator.baseRate} base LRC / sec`);
+const generatorEffect = (generator) => ({wormhole:'+4 base hit damage',foamer:'+20% hit damage',string:'+1% crit chance · +0.1× crit damage',satellite:'+90 LRC / sec',sail:'+2.6K LRC / sec',lens:'+24K LRC / sec',dyson:'+260K LRC / sec',flywheel:'+1 combo cap · +0.1% dmg per stack',forge:'+3.2M LRC / sec',mote:'0.5 automatic hits / sec',star:'+10% damage & LRC production',mouse:'2 auto-clicks / sec · mints LRC',laser:'20× hit damage · one shot / 5 sec',probe:'3× hit / 2 sec · +1.2K LRC / sec',gate:'100× hit / 10 sec · +10K LRC / sec'}[generator.id] || `+${generator.baseRate} base LRC / sec`);
 // Cards are listed by catalogue, cheapest first; the engine's array order is a save format, not a layout.
 const CATALOGUE_ORDER = {workshop:0,arsenal:1,click:2};
 $('#generators').innerHTML = [...GENERATORS].sort((a,b) => CATALOGUE_ORDER[a.category]-CATALOGUE_ORDER[b.category] || a.baseCost-b.baseCost).map((generator) => `<div class="generator" id="generator-${generator.id}" data-category="${generator.category}"><span class="generator-symbol" aria-hidden="true">${generatorIcon(generator.id)}</span><div><div class="generator-name">${generator.name}<small id="owned-${generator.id}">×0</small></div><div class="generator-description">${generatorEffect(generator)}</div><small class="generator-unlock" id="unlock-${generator.id}" hidden></small></div><button data-buy-generator="${generator.id}" title="${generator.description}" disabled><span id="price-${generator.id}">${generator.baseCost}</span><small id="buy-label-${generator.id}">LRC · BUY 1</small></button></div>`).join('');
@@ -285,7 +310,7 @@ function render(force = false) {
   $('#idle-rate').textContent = fmt(coop ? teamStats.idleRate : stats.idleRate,1);
   $('#click-power').textContent = fmt(stats.clickPower,1);
   $('#prestige-points').textContent = fmt(player?.prestigePoints);
-  $('#prestige-bonus').textContent = player?.totalPrestige ? `+${fmt(player.totalPrestige * 10)}% permanent production` : '+0% permanent production';
+  $('#prestige-bonus').textContent = player?.totalPrestige ? `+${fmt(player.totalPrestige * (stats.prestigeBonusPerPoint || .1) * 100)}% permanent production` : '+0% permanent production';
   $('#sp-badge').textContent = fmt(player?.skillPoints);
   $('#skill-points').textContent = fmt(player?.skillPoints);
   $('#timer').textContent = shopping || won ? '—' : String(Math.ceil(state.remaining)).padStart(2,'0');
@@ -302,14 +327,27 @@ function render(force = false) {
     if (playing) $('#core-hint').textContent = getFarmUnlocked(player) ? 'OUT OF FUEL · FEED BEAM IN THE FARM' : 'OUT OF FUEL · RESEARCH THE GARDEN LICENCE';
   }
   $('#core').classList.toggle('grounded',Boolean(ship?.grounded));
+  // A cleared jump point waits for the flight. The flyer launches from the overlay; everyone else watches the tank fill.
+  const inTransit = Boolean(ship?.transit);
+  if (inTransit) {
+    const from = getCampaignLocation(orb.level), to = SYSTEMS[from.index + 1], flyer = state.players.find((member) => member.id === ship.flyer);
+    $('#core').disabled = true;
+    $('#orb-name').textContent = `${from.system.name.toUpperCase()} / JUMP POINT CLEARED`;
+    $('#orb-reward').textContent = `Ship fuel ${fmt(Math.floor(ship.fuel))} / ${fmt(ship.target)} · launch to ${to?.name ?? 'home'}`;
+    $('#core-hint').textContent = ship.flyer === selfId ? (ship.launchReady ? 'LAUNCH WHEN READY' : 'FEED BEAM TO REFUEL') : 'SHIP IN TRANSIT';
+    flight.show({from:from.system.name,to:to?.name ?? 'home',fuel:ship.fuel,target:ship.target,isFlyer:ship.flyer === selfId && usable && !won,flyerName:flyer?.name || '',canLaunch:ship.launchReady && (playing || shopping)});
+  } else flight.hide();
   // The arena banner: where the pilot is, and that the route only advances one core at a time.
   const nextSystem = SYSTEMS[location.index + 1], nextPlanet = orb.level < FINAL_LEVEL ? getCampaignLocation(orb.level + 1).planetName : null;
   $('#arena-system').textContent = orb.secret ? 'THE GREEN STAR' : `SYSTEM ${String(location.index + 1).padStart(2,'0')} · ${location.system.name.toUpperCase()}`;
   $('#arena-planet').textContent = orb.secret ? 'Haze · optional challenge' : won ? 'Expedition complete' : `${location.planetName} · ${orb.final ? 'final core' : orb.systemBoss ? 'system boss' : 'planet'} ${location.planetIndex + 1} / 20`;
-  $('#arena-next').textContent = orb.secret || won ? '' : orb.final ? 'The last core. Break it to finish the expedition.' : ship?.grounded ? `Fuel the ship to reach ${location.planetName}` : orb.systemBoss ? `Defeat it to jump to ${nextSystem?.name ?? 'home'}` : `Break this core to reach ${nextPlanet}`;
+  $('#arena-next').textContent = orb.secret || won ? '' : inTransit ? `In transit to ${nextSystem?.name ?? 'home'} · launch from the jump point` : orb.final ? 'The last core. Break it to finish the expedition.' : ship?.grounded ? `Fuel the ship to reach ${location.planetName}` : orb.systemBoss ? `Defeat it to jump to ${nextSystem?.name ?? 'home'}` : `Break this core to reach ${nextPlanet}`;
   $('#shell-condition').textContent = ['SHELL INTACT','FIRST FRACTURE','SHELL SPLITTING','CORE EXPOSED'][orb.fractureStage || 0];
   $('#core-difficulty').textContent = orb.secret ? 'Secret planet · personal challenge' : orb.final ? `Crystal lattice: ${Math.ceil(orb.finalRemaining/60)} active min remaining` : `System ${location.index+1} / 10 \u00b7 ${location.system.name}${coop ? ` \u00b7 ${orb.crewSize} crew` : ''}`;
-  $('#boss-check').hidden=!(orb.systemBoss||orb.secret);
+  $('#boss-check').hidden=!(orb.systemBoss||orb.secret)||inTransit;
+  $('#boss-shield').textContent = stats.shieldCapacity > 0 ? `SHIELD ${stats.shield} / ${stats.shieldCapacity} LRI` : 'NO SHIELD · RAYS DESTROY MACHINES';
+  $('#boss-shield').dataset.charged = String(stats.shield > 0);
+  arena.setShield(stats.shield, stats.shieldCapacity, playing && !inTransit && (orb.secret || (orb.systemBoss && orb.bossActive)));
   $('#boss-title').textContent=orb.secret?'HAZE · DPS CHECK':'SYSTEM BOSS';
   $('#boss-timer').textContent=`${Math.max(0,orb.bossRemaining||0).toFixed(1)}s${shopping?' · PAUSED':!orb.bossActive?' · READY':''}`;
   $('#boss-required').textContent=`Required ${fmt(orb.requiredDps,1)} DPS · Auto ${fmt(orb.bossDps,1)} DPS`;
@@ -338,6 +376,12 @@ function render(force = false) {
   }
   previousOrb = {level:orb.level,mode:state.mode,secret:orb.secret};
   $('#surge-label').hidden = !stats.surge;
+  const comet = cometWindow(state);
+  $('#comet-label').hidden = !(playing && comet?.active && !orb.secret && !inTransit);
+  if (comet?.active) $('#comet-label').textContent = `☄ COMET · ${fmt(stats.cometDamage || 3,1)}× DAMAGE · ${fmt(stats.cometMint || 5,1)}× MINT · ${Math.ceil(comet.remaining)}s`;
+  const cometKey = comet?.active ? `${state.round}:${comet.at}` : '';
+  if (cometKey && cometKey !== lastComet && player && playing) { toast('A comet is passing! Click the core for bonus damage and mint.'); audio.play('surge',{intensity:.5}); beam.react('comet'); }
+  if (cometKey) lastComet = cometKey;
   $('#goal-label').textContent = coop ? '◎ SHARED ROUND GOAL' : '◎ YOUR ROUND GOAL';
   $('#team-lrc').textContent = fmt(progress);
   $('#team-target').textContent = fmt(target);
@@ -397,6 +441,8 @@ function render(force = false) {
   $('#prestige-next').textContent = `Next point at ${fmt(player ? prestigeNextThreshold(player) : 2500)} LRC`;
   $('#prestige-action').disabled = !usable || !shopping || gain < 1;
   $('#prestige-condition').textContent = gain >= 1 ? shopping ? `Ready to earn +${fmt(gain)} PP and +${fmt(gain*10)}% permanent production.` : 'Finish this round to refract your orbit.' : player?.totalPrestige >= Number.MAX_SAFE_INTEGER ? 'Maximum lifetime prestige reached. Keep building your research.' : 'Available between rounds once you earn 2,500 LRC.';
+  const kitText = Object.entries(stats.startingKit || {}).map(([id,units]) => `${units} × ${GENERATORS.find((generator) => generator.id === id)?.name}`).join(', ');
+  $('#prestige-keeps').textContent = `Research, seeds, farm access, unspent SP and lifetime records stay.${kitText ? ` Launch kit after the reset: ${kitText}.` : ''}${stats.clickTechRetention > 0 ? ` ${Math.round(stats.clickTechRetention * 100)}% of each Click tech device survives.` : ''}`;
   $('.prestige-rules p:first-child span').textContent = coop ? 'Machines, garden equipment, crops and meals reset. The shared orb and pool stay.' : 'Wallet, machines, orb, garden equipment, crops and meals reset.';
   const localRun = bridge?.mode === 'solo';
   $('#reset-progress').textContent = localRun ? 'Reset all progress' : 'Reset my pilot';
@@ -431,7 +477,7 @@ function render(force = false) {
       for (const generator of GENERATORS) if ((player.generators[generator.id] || 0) > (previousVisualPlayer.generators[generator.id] || 0)) {
         const card = $(`#generator-${generator.id}`);
         card.classList.remove('purchased'); void card.offsetWidth; card.classList.add('purchased');
-        audio.play({mote:'purchase',satellite:'collect',prism:'levelup',star:'boost',wormhole:'boost',foamer:'collect',string:'levelup',nova:'surge',mouse:'mouse',laser:'laser',probe:'probe',gate:'gate'}[generator.id],{intensity:.55});
+        audio.play({mote:'purchase',satellite:'collect',prism:'levelup',star:'boost',wormhole:'boost',foamer:'collect',string:'levelup',nova:'surge',mouse:'mouse',laser:'laser',probe:'probe',gate:'gate',sail:'collect',lens:'levelup',dyson:'surge',flywheel:'boost',forge:'surge'}[generator.id] || 'purchase',{intensity:.55});
       }
     }
     previousVisualPlayer = {id:player.id,generators:{...player.generators},autoClicks:player.autoClicks || 0,farmUnlocked:getFarmUnlocked(player),weedUnlocked:Boolean(player.farm?.crops?.weed),secretStart:player.secretOrb?.startedAt??null};
@@ -476,7 +522,7 @@ $('#round-action').addEventListener('click', () => send({type:state.phase === 'l
 $('#research-ready').addEventListener('click', () => send({type:state.phase === 'lobby' ? 'start' : 'ready'}));
 $('#lobby-start').addEventListener('click', () => send({type:'start'}));
 document.addEventListener('keydown', (event) => {
-  if (event.code !== 'Space' || event.repeat || document.querySelector('dialog[open]') || /INPUT|TEXTAREA|SELECT|BUTTON|A/.test(event.target.tagName) || event.target.isContentEditable || tab !== 'orbit' || $('#core').disabled) return;
+  if (event.code !== 'Space' || event.repeat || flight.active || document.querySelector('dialog[open]') || /INPUT|TEXTAREA|SELECT|BUTTON|A/.test(event.target.tagName) || event.target.isContentEditable || tab !== 'orbit' || $('#core').disabled) return;
   event.preventDefault(); send({type:'click'});
 });
 for (const button of document.querySelectorAll('[data-buy-quantity]')) button.addEventListener('click', () => {

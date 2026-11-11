@@ -290,7 +290,7 @@ test('Beam’s meals fuel the ship: every jump-point core is unreachable until t
   for(const mode of ['scoreboard','coop']){
     const state=setup(mode),p=state.players[0];fund(state);unlock(state);
     const orb=mode==='coop'?state.sharedOrb:p.orb;orb.level=20;orb.hp=1;p.highestOrb=20;
-    assert.deepEqual(getShipStatus(p,state),{fuel:0,target:FUEL_TARGETS[0],full:false,jumpPoint:true,grounded:true,systemIndex:0});
+    assert.deepEqual(getShipStatus(p,state),{fuel:0,target:FUEL_TARGETS[0],full:false,jumpPoint:true,grounded:true,systemIndex:0,transit:false,flyer:null,launchReady:false});
     p.clickTokens=3;const grounded=action(state,{type:'click'});
     assert.equal(grounded.kills,0);assert.equal(orb.level,20);assert.equal(orb.hp,1,'An unfuelled ship cannot reach the boss planet');
     assert.equal(Object.hasOwn(orb,'bossStartedAt'),false,'The boss timer does not start while grounded');
@@ -301,7 +301,16 @@ test('Beam’s meals fuel the ship: every jump-point core is unreachable until t
     p.farm.inventory.carrot=1;const before=p.farm.fedSeconds;action(state,{type:'feedBeam',crop:'carrot'});
     assert.equal(getFuel(p,state),120,'A full tank holds no more');assert.equal(p.farm.fedSeconds,before+30,'Food still feeds Beam');
     p.clickTokens=3;const jump=action(state,{type:'click'});
-    assert.equal(jump.kills,1);assert.equal(orb.level,21);assert.equal(getFuel(p,state),0,'Jumping to the next system burns the whole tank');
+    assert.equal(jump.kills,1);assert.equal(jump.transit,true);assert.equal(orb.level,20,'The shattered jump point becomes a launch pad');
+    assert.equal(getFuel(p,state),120,'Launching, not shattering, spends the tank');assert.equal(getShipStatus(p,state).launchReady,true);
+    const crash=action(state,{type:'completeJump',arrived:false});
+    assert.equal(crash.arrived,false);assert.equal(getFuel(p,state),60,'Three meteorite hits cost half the tank');assert.equal(orb.level,20);
+    assert.equal(getShipStatus(p,state).launchReady,false);assert.equal(getShipStatus(p,state).grounded,true);
+    rejected(state,{type:'completeJump',arrived:true});
+    p.farm.inventory.carrot=2;for(let i=0;i<2;i++)action(state,{type:'feedBeam',crop:'carrot'});
+    assert.equal(getFuel(p,state),120,'Feeding Beam refuels for another attempt');
+    assert.equal(action(state,{type:'completeJump',arrived:true}).arrived,true);
+    assert.equal(orb.level,21);assert.equal(getFuel(p,state),0,'Arriving in the next system burns the whole tank');
     assert.equal(getShipStatus(p,state).target,FUEL_TARGETS[1]);assert.equal(validateState(state),true);
   }
 });

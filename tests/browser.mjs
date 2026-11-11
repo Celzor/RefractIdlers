@@ -14,6 +14,7 @@ const includeMobile = process.argv.includes('--mobile');
 const sidebarOnly = process.argv.includes('--sidebar-only');
 const fleetOnly = process.argv.includes('--fleet-only');
 const fleetNetworkOnly = process.argv.includes('--fleet-network-only');
+const hazardsOnly = process.argv.includes('--hazards-only');
 const executable = process.env.BROWSER_EXECUTABLE || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const output = path.resolve('test-results');
 await mkdir(output, { recursive: true });
@@ -92,7 +93,7 @@ const readSolo = `JSON.parse(localStorage.getItem(${JSON.stringify(soloKey)}))`;
 const bossFixture = `game.applyAction(state,'you',{type:'start'});const player=state.players[0];player.orb.level=20;player.orb.hp=game.getOrb(player,state).maxHp;player.highestOrb=20;player.fuel=120;player.orbsDestroyed=19;player.lrc=1e40;player.runLrc=1e40;player.lifetimeLrc=1e40;player.generators={mote:5,satellite:4,prism:3,star:2,nova:1};`;
 const arsenalFixture=`game.applyAction(state,'you',{type:'start'});game.advance(state,60);const p=state.players[0];state.round=800;p.completedRounds=800;p.highestOrb=180;p.orbsDestroyed=179;p.prestigeCount=3;p.totalPrestige=100;p.prestigePoints=100;p.skillPoints=100000;p.lrc=p.runLrc=p.lifetimeLrc=1e12;
   function acquire(id,target){const skill=game.SKILLS.find(s=>s.id===id);for(const required of skill.requires)acquire(required,skill.requiredRanks[required]||1);while((p.skills[id]||0)<target){const result=game.applyAction(state,'you',{type:'buySkill',id});if(!result.ok)throw Error(result.reason);}}
-  for(const generator of game.GENERATORS.filter(g=>g.category==='arsenal'))for(const [id,target]of Object.entries(generator.unlock.skills||{}))acquire(id,target);`;
+  for(const generator of game.GENERATORS.filter(g=>g.category!=='workshop'))for(const [id,target]of Object.entries(generator.unlock.skills||{}))acquire(id,target);`;
 async function solo() { return evaluate(readSolo); }
 const orbFor = (state,id=state.players[0]?.id) => engine.getOrb(state.players.find(player=>player.id===id),state);
 async function seed(code) {
@@ -336,8 +337,8 @@ async function fleetChecks(){
   await pointerClick('#core');
   await waitFor(`${readSolo}?.players?.[0]?.clicks===${manualBefore+1}`,'Core remains clickable through effects');
   log('Arsenal unlocks, purchases, Buy10/Max fleet growth, automatic attacks and reload pass');
-  await seed(`${arsenalFixture}p.lrc=p.runLrc=p.lifetimeLrc=1e100;for(const g of game.GENERATORS){if(!game.applyAction(state,'you',{type:'buyGenerator',id:g.id,quantity:'max'}).ok)throw Error('Endgame buy failed');}p.orb.level=500;p.highestOrb=500;p.orbsDestroyed=499;p.orb.hp=game.getOrb(p,state).maxHp;game.applyAction(state,'you',{type:'ready'});`);
-  await waitFor(`document.querySelector('#orbit-canvas').dataset.fleetOwned==='12000' && document.querySelector('#orbit-canvas').dataset.fleetRendered==='768' && document.querySelector('#orbit-canvas').dataset.fleetAggregated==='11232'`);
+  await seed(`${arsenalFixture}p.lrc=p.runLrc=p.lifetimeLrc=1e100;for(const g of game.GENERATORS){if(!game.applyAction(state,'you',{type:'buyGenerator',id:g.id,quantity:'max'}).ok)throw Error('Endgame buy failed');}p.orb.level=199;p.highestOrb=199;p.orbsDestroyed=198;p.orb.hp=game.getOrb(p,state).maxHp;game.applyAction(state,'you',{type:'ready'});`);
+  await waitFor(`document.querySelector('#orbit-canvas').dataset.fleetOwned==='17000' && document.querySelector('#orbit-canvas').dataset.fleetRendered==='768' && document.querySelector('#orbit-canvas').dataset.fleetAggregated==='16232'`);
   for(const [width,height]of [[1366,768],[1920,1080]]){
     await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
     for(const category of ['workshop','arsenal','click']){
@@ -469,6 +470,54 @@ async function roundOverlayChecks() {
     await waitFor(`${session(101)}?.round===2&&${session(202)}?.round===2&&${frameDoc(101)}.querySelector('#round-overlay').hidden&&${frameDoc(202)}.querySelector('#round-overlay').hidden`);
     log(`${mode} ready/unready overlay waits for everyone and clears on both clients`);
   }
+}
+
+/** Boss light rays with a shield, the passing comet, and the jump flight from a cleared gate. */
+async function hazardChecks() {
+  await send('Emulation.setDeviceMetricsOverride',{width:1366,height:768,deviceScaleFactor:1,mobile:false});
+  const bossWithShield=`game.applyAction(state,'you',{type:'start'});const p=state.players[0];p.orb.level=20;p.orb.hp=game.getOrb(p,state).maxHp;p.highestOrb=20;p.fuel=120;p.orbsDestroyed=19;p.generators={mote:12,prism:6};p.skills.hu1=3;p.lrc=p.runLrc=p.lifetimeLrc=1e6;`;
+  await seed(bossWithShield);
+  assert.equal(await evaluate(`document.querySelector('#boss-shield').textContent`),'SHIELD 0 / 3 LRI','Charges wait for the first hit of the attempt');
+  await pointerClick('#core');
+  await waitFor(`${readSolo}?.players?.[0]?.orb?.bossStartedAt!==undefined`,'The first hit starts the boss attempt');
+  assert.match(await evaluate(`document.querySelector('#boss-shield').textContent`),/SHIELD [23] \/ 3 LRI/,'The attempt charges the shield');
+  await desktopFrame('Boss shield readout',['#boss-check','#boss-shield','#core']);
+  await capture('hazards-boss-shield-1366');
+  // Two hundred accepted clicks at ten per second: the host RNG is seeded, so the ray count is reproducible.
+  for(let i=0;i<200;i++){await evaluate(`document.querySelector('#core').click()`);await pause(100);}
+  const fought=(await solo()).players[0];
+  assert.ok(fought.shield<3||fought.machinesLost>0,'Boss clicks provoke light rays that the shield absorbs or machines pay for');
+  assert.equal(fought.machinesLost,18-Object.values(fought.generators).reduce((a,b)=>a+b,0),'Every unblocked ray removed exactly one machine');
+  await capture('hazards-light-rays-1366');
+  log('Boss light rays, shield charges and machine losses are reflected in the saved state and the readout');
+  await seed(`game.applyAction(state,'you',{type:'start'});state.comet={at:8};game.advance(state,8.5);`);
+  await waitFor(`!document.querySelector('#comet-label').hidden`,'The comet label shows during its window');
+  assert.match(await evaluate(`document.querySelector('#comet-label').textContent`),/COMET .* 3× DAMAGE .* 5× MINT/);
+  await capture('hazards-comet-1366');
+  log('A passing comet is announced over the orbit');
+  const transit=(fuel)=>`game.applyAction(state,'you',{type:'start'});const p=state.players[0];p.orb.level=20;p.orb.hp=game.getOrb(p,state).maxHp;p.highestOrb=20;p.orbsDestroyed=20;p.fuel=${fuel};p.transit={pilot:'you'};p.generators={mote:3};`;
+  await seed(transit(50));
+  await waitFor(`!document.querySelector('#flight-root').hidden`,'A transit shows the launch panel');
+  assert.equal(await evaluate(`document.querySelector('[data-flight-launch-button]').disabled`),true,'An unfuelled ship cannot launch');
+  assert.match(await evaluate(`document.querySelector('[data-flight-status]').textContent`),/Fuel 50 \/ 120/);
+  assert.equal(await evaluate(`document.querySelector('#core').disabled`),true,'The cleared gate cannot be clicked');
+  await seed(transit(120));
+  await waitFor(`!document.querySelector('#flight-root').hidden && !document.querySelector('[data-flight-launch-button]').disabled`,'A full tank enables the launch');
+  await desktopFrame('Jump launch panel',['#flight-root','[data-flight-launch-button]']);
+  await capture('flight-launch-1366');
+  await evaluate(`document.querySelector('[data-flight-launch-button]').click()`);
+  await waitFor(`!document.querySelector('[data-flight-stage]').hidden`,'Launching opens the flight stage');
+  for(const code of ['ArrowLeft','KeyD','ArrowUp']){await send('Input.dispatchKeyEvent',{type:'keyDown',code,key:code.replace('Key','').replace('Arrow','Arrow')});await pause(250);await send('Input.dispatchKeyEvent',{type:'keyUp',code,key:code});}
+  await pause(400);
+  await capture('flight-in-progress-1366');
+  const flightStart=Date.now();
+  while(Date.now()-flightStart<25000){const saved=await solo();const p=saved.players[0];if(p.transit===null||p.fuel===60)break;await pause(250);}
+  const flown=(await solo()).players[0];
+  assert.ok(flown.transit===null||flown.fuel===60,'The flight ends in an arrival (transit cleared) or a crash (half the tank)');
+  if(flown.transit===null){assert.equal(flown.orb.level,21,'Arrival opens the next system');assert.equal(flown.fuel,0,'Arrival burns the tank');}
+  else assert.equal(flown.orb.level,20,'A crash keeps the ship at the jump point');
+  await capture('flight-result-1366');
+  log(`The jump flight ${flown.transit===null?'arrived in the next system':'crashed and halved the tank'} and the host applied the result`);
 }
 
 async function secretChecks() {
@@ -701,7 +750,7 @@ try {
   const loadedFonts = await evaluate(`[...document.fonts].filter(face=>face.status==='loaded').map(face=>face.family.replaceAll('"','').replaceAll("'",''))`);
   assert.ok(loadedFonts.includes('Pixel') && loadedFonts.includes('Terminal'), `Local retro fonts loaded: ${loadedFonts.join(', ')}`);
   log('Local Pixel and Terminal fonts loaded without fallback');
-  if(secretOnly)await secretChecks();else if(roundOverlayOnly)await roundOverlayChecks();else if(resetOnly)await resetChecks();else if(sidebarOnly)await eightPlayerSidebars();else if(fleetNetworkOnly)await arsenalNetworkChecks();else if(fleetOnly)await fleetChecks();else{
+  if(secretOnly)await secretChecks();else if(hazardsOnly)await hazardChecks();else if(roundOverlayOnly)await roundOverlayChecks();else if(resetOnly)await resetChecks();else if(sidebarOnly)await eightPlayerSidebars();else if(fleetNetworkOnly)await arsenalNetworkChecks();else if(fleetOnly)await fleetChecks();else{
   for(const [width,height]of [[1366,768],[1920,1080]]){
     await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
     await seed('');
@@ -930,7 +979,7 @@ try {
   const echoStrike=await showResearch('echo-strike');
   assert.equal(await evaluate(`document.querySelector('[data-buy-skill="${echoStrike}"]').disabled`),true,'Cross-branch research is locked without the other discipline');
   assert.match(await evaluate(`document.querySelector('#research-inspector').textContent`),/Orbital array/,'The missing cross-branch prerequisite is named');
-  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),63,'All sixty-three normal nodes remain in the graph');
+  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),87,'All eighty-seven normal nodes remain in the graph');
   assert.ok(await evaluate(`document.querySelectorAll('#research-map [data-edge-from][data-edge-to]').length > 40`),'The atlas draws prerequisite connections');
   assert.ok(await evaluate(`document.querySelectorAll('#research-map [data-edge-from].is-path').length > 0`),'Selected ancestry is highlighted on the graph');
   await click(`#research-inspector [data-focus-skill="orbital-array"]`);
@@ -960,22 +1009,22 @@ try {
   assert.equal(await evaluate(`document.querySelector('#skill-tree').classList.contains('graph-expanded')`),false,'Changing views closes the expanded map');
   await click('[data-tab="skills"]');
   await evaluate(`(()=>{const input=document.querySelector('#research-search');input.value='orb';input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
-  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),63,'Search preserves the complete graph context');
+  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),87,'Search preserves the complete graph context');
   const searchCounts=await evaluate(`({dim:document.querySelectorAll('#research-map [data-skill-node].is-dim').length,bright:document.querySelectorAll('#research-map [data-skill-node]:not(.is-dim)').length})`);
   assert.ok(searchCounts.dim>0&&searchCounts.bright>0,'Search highlights matches while dimming other nodes');
   await evaluate(`(()=>{const input=document.querySelector('#research-search');input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
   await click('#research-available');
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('#research-map [data-skill-node]:not(.is-dim)')).every(node=>node.dataset.state==='ready')`),true,'Available filter highlights purchasable nodes');
-  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),63,'Available filter retains graph context');
+  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),87,'Available filter retains graph context');
   await click('#research-available');
   await click('[data-research-branch="all"]');
   const beforeBranch=await evaluate(graphTransform('#research-map'));
   await click('[data-research-branch="orbs"]');
   assert.equal(await evaluate(`document.querySelector('[data-research-branch="orbs"]').getAttribute('aria-pressed')`),'true','Branch selection is announced');
   assert.notEqual(await evaluate(graphTransform('#research-map')),beforeBranch,'Branch selection focuses its nodes on the map');
-  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),63,'Branch focus keeps the connected atlas intact');
+  assert.equal(await evaluate(`document.querySelectorAll('#research-map [data-skill-node]').length`),87,'Branch focus keeps the connected atlas intact');
   await click('[data-tab="prestige"]');
-  assert.equal(await evaluate(`document.querySelectorAll('#legacy-map [data-skill-node]').length`),16,'Permanent graph exposes sixteen research nodes');
+  assert.equal(await evaluate(`document.querySelectorAll('#legacy-map [data-skill-node]').length`),24,'Permanent graph exposes twenty-four research nodes');
   await showResearch('eternal-spark');
   await exerciseGraph('#legacy-map');
   await evaluate(`document.querySelector('#legacy-map').scrollIntoView({block:'start'})`);

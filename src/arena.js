@@ -13,10 +13,12 @@ const compact = (amount) => amount >= 1e12 ? `${(amount / 1e12).toFixed(1)}t`
       : amount >= 1000 ? `${(amount / 1000).toFixed(1)}k` : String(Number(amount.toFixed(1)));
 
 const ATTACK_IDS = ['mote','mouse','laser','probe','gate'];
-const FLEET_COLORS = {mote:P.yellow,satellite:P.sky,prism:P.cream,star:P.purple,nova:P.yellow,mouse:P.paper,laser:P.red,probe:P.sky,gate:P.purple,wormhole:P.purple,foamer:P.sky,string:P.yellow,sail:P.cream,lens:P.purple,dyson:P.orange};
+const FLEET_COLORS = {mote:P.yellow,satellite:P.sky,prism:P.cream,star:P.purple,nova:P.yellow,mouse:P.paper,laser:P.red,probe:P.sky,gate:P.purple,wormhole:P.purple,foamer:P.sky,string:P.yellow,sail:P.cream,lens:P.purple,dyson:P.orange,flywheel:P.yellow,forge:P.purple};
 /** Machines that gather light release a glowing mote each cycle; floating machines bob gently. */
-const COLLECTOR_IDS = ['satellite','prism','nova','probe','gate','sail','lens','dyson'];
-const FLOATING_IDS = new Set(['probe','gate','sail','dyson','nova']);
+const COLLECTOR_IDS = ['satellite','prism','nova','probe','gate','sail','lens','dyson','forge'];
+const FLOATING_IDS = new Set(['probe','gate','sail','dyson','nova','forge']);
+/** Boss light rays leave the core and reach a machine (or the shield) in this many seconds, then linger as an impact. */
+const RAY_SECONDS = .55, RAY_LINGER = .5;
 const MOTE_LIMIT = 48, MOTE_SECONDS = .9;
 const SHOT_DURATION = {mote:.38,mouse:.62,laser:.48,probe:.58,gate:.72};
 const SHOT_IMPACT_DURATION = .24;
@@ -100,6 +102,8 @@ export class OrbitArena {
     this.motes = [];
     this.motePhase = new Map();
     this.shatters = [];
+    this.rays = [];
+    this.shield = {charges:0,capacity:0,active:false};
     this.purchaseBursts = [];
     this.lastSoundAt = -Infinity;
     this.onFire = null;
@@ -196,6 +200,77 @@ export class OrbitArena {
     this.floats = this.floats.slice(-8);
   }
 
+  /** A boss light ray: it flies from the core to a machine berth and destroys it, or breaks against the shield ring. */
+  flare({ id = null, index = 0, blocked = false } = {}) {
+    if (this.destroyed) return;
+    const now = globalThis.performance?.now?.() ?? Date.now();
+    const angle = blocked ? Math.random() * TAU : null;
+    this.rays.push({ id, index, blocked, angle, at: now });
+    this.rays = this.rays.slice(-12);
+    if (!blocked && id) {
+      const x = this.width / 2, y = this.height * 0.49;
+      this.floats.push({ x, y: y - 56, life: 1.3, color: P.red, text: 'LIGHT RAY!' });
+      this.floats = this.floats.slice(-8);
+    }
+  }
+
+  /** Live shield charges for the viewer; the ring is only drawn during a boss attempt. */
+  setShield(charges = 0, capacity = 0, active = false) {
+    this.shield = { charges: clamp(Math.floor(charges) || 0, 0, 99), capacity: clamp(Math.floor(capacity) || 0, 0, 99), active: Boolean(active) };
+  }
+
+  drawShieldRing(cx, cy, visualTime) {
+    const { charges, capacity, active } = this.shield;
+    if (!active || capacity <= 0) return;
+    const c = this.effectsContext || this.ctx;
+    const pixel = (x, y, color, w = 1, h = w) => { c.fillStyle = color; c.fillRect(Math.round(x), Math.round(y), w, h); };
+    const radius = 46, pips = Math.max(capacity, 1);
+    for (let i = 0; i < pips; i++) {
+      const angle = -Math.PI / 2 + i * TAU / pips + (this.reducedMotion ? 0 : visualTime * 0.6);
+      const x = cx + Math.cos(angle) * radius, y = cy + Math.sin(angle) * radius * 0.82;
+      const lit = i < charges;
+      pixel(x - 1, y - 1, lit ? P.sky : P.shade, 3, 3);
+      if (lit) pixel(x, y, P.cream, 1, 1);
+    }
+  }
+
+  drawRays(nowMs) {
+    if (!this.rays.length) return;
+    const c = this.effectsContext || this.ctx;
+    c.save(); c.imageSmoothingEnabled = false;
+    const cx = this.width / 2, cy = this.height * 0.49;
+    const pixel = (x, y, color, w = 1, h = w) => { c.fillStyle = color; c.fillRect(Math.round(x), Math.round(y), w, h); };
+    const line = (a, b, color, width = 1, alpha = 1) => { c.globalAlpha = alpha; c.strokeStyle = color; c.lineWidth = width; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); c.globalAlpha = 1; };
+    for (const ray of this.rays) {
+      const age = (nowMs - ray.at) / 1000;
+      if (age > RAY_SECONDS + RAY_LINGER) continue;
+      const target = ray.blocked ? { x: cx + Math.cos(ray.angle) * 46, y: cy + Math.sin(ray.angle) * 46 * 0.82 } : fleetPosition(ray.id, ray.index, this.width, this.height);
+      const progress = this.reducedMotion ? 1 : clamp(age / RAY_SECONDS, 0, 1);
+      const tip = { x: cx + (target.x - cx) * progress, y: cy + (target.y - cy) * progress };
+      const fade = age > RAY_SECONDS ? 1 - (age - RAY_SECONDS) / RAY_LINGER : 1;
+      line({ x: cx, y: cy }, tip, P.red, 4, .5 * fade); line({ x: cx, y: cy }, tip, P.yellow, 2, .9 * fade); line({ x: cx, y: cy }, tip, P.cream, 1, fade);
+      if (progress >= 1) {
+        c.globalAlpha = fade;
+        if (ray.blocked) { pixel(target.x - 3, target.y - 1, P.sky, 7, 3); pixel(target.x - 1, target.y - 3, P.sky, 3, 7); pixel(target.x - 1, target.y - 1, P.cream, 3, 3); }
+        else { const spread = 3 + Math.floor((1 - fade) * 5); pixel(target.x - spread, target.y, P.red, spread * 2 + 1, 1); pixel(target.x, target.y - spread, P.yellow, 1, spread * 2 + 1); pixel(target.x - 1, target.y - 1, P.cream, 3, 3); }
+        c.globalAlpha = 1;
+      }
+    }
+    this.rays = this.rays.filter((ray) => (nowMs - ray.at) / 1000 <= RAY_SECONDS + RAY_LINGER);
+    c.restore();
+  }
+
+  /** A passing comet crosses the sky during its shared window; its tail points back along the path. */
+  drawComet(state, visualTime) {
+    const window = typeof Game.cometWindow === 'function' ? Game.cometWindow(state) : null;
+    if (!window?.active) return;
+    const progress = clamp(1 - window.remaining / window.seconds, 0, 1);
+    const x = 6 + (this.width - 12) * progress, y = 8 + Math.round(progress * this.height * 0.14);
+    const flicker = this.reducedMotion ? 0 : Math.floor(visualTime * 8) % 2;
+    for (let i = 1; i <= 7; i++) this.pixel(x - i * 4, y - i * 1.1 + (i % 2 ? flicker : 0), i < 3 ? P.cream : i < 5 ? P.sky : '#4d718b', i < 4 ? 2 : 1, 1);
+    this.pixel(x - 2, y - 2, P.ink, 6, 6); this.pixel(x - 1, y - 1, P.sky, 4, 4); this.pixel(x, y, P.cream, 2, 2);
+  }
+
   shatter(kills, nowMs, announce = true) {
     if(this.destroyed||!Number.isFinite(kills)||kills<=0)return;
     this.lastShatterAt = nowMs;
@@ -278,7 +353,9 @@ export class OrbitArena {
     }
 
     const cx = Math.round(w / 2), cy = Math.round(h * 0.49);
+    this.drawComet(state, visualTime);
     if (orb) this.drawOrbFrame(orb, nowMs);
+    this.drawShieldRing(cx, cy, visualTime);
     if (active && state.remaining <= 10) {
       const phase = this.reducedMotion ? 0 : Math.floor(visualTime * 2) % 2;
       this.spark(cx - 34, cy - 15 + phase, P.yellow, 3);
@@ -490,6 +567,7 @@ export class OrbitArena {
     this.observeFire(state,selfId,nowMs,running);
     if(this.reducedMotion)this.shots=[];
     else this.drawShots();
+    this.drawRays(nowMs);
   }
 
   /** Gathered-light motes rise and fade; bounded in count and lifetime, cleared under reduced motion. */

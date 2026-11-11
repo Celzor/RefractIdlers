@@ -84,7 +84,13 @@ A final kill sets global `phase: 'victory'`, remaining time to zero, and a persi
 
 ### Ship fuel and jump points
 
-Beam's meals fuel the ship. `isJumpPoint(level)` marks cores 20, 40, …, 200; `fuelTarget(level)` returns the current system's `FUEL_TARGETS` entry (120, 200, 350, 600, 1,000, 1,700, 2,900, 4,900, 8,400, 14,000). Fuel lives in `player.fuel` (Scoreboard) or `state.sharedFuel` (Co-op); `getFuel` and `getShipStatus(player,state)` read the right tank. While a jump-point core's tank is short of its target, `damageOrb` returns `{kills:0,amount:0,grounded:true}` before any boss clock starts, and `encounterStep` skips the core so automatic fleets cannot split time into microscopic steps waiting for a first hit. Breaking a jump-point core empties the tank. Validation bounds each tank by the current core's target and keeps the unused tank at zero. Prestige empties a personal tank, a Co-op crew tank survives personal prestige, and `newJourney` empties every tank. Missing fields migrate to empty tanks.
+Beam's meals fuel the ship. `isJumpPoint(level)` marks cores 20, 40, …, 200; `fuelTarget(level)` returns the current system's `FUEL_TARGETS` entry (120, 200, 350, 600, 1,000, 1,700, 2,900, 4,900, 8,400, 14,000). Fuel lives in `player.fuel` (Scoreboard) or `state.sharedFuel` (Co-op); `getFuel` and `getShipStatus(player,state)` read the right tank. While a jump-point core's tank is short of its target, `damageOrb` returns `{kills:0,amount:0,grounded:true}` before any boss clock starts, and `encounterStep` skips the core so automatic fleets cannot split time into microscopic steps waiting for a first hit. Validation bounds each tank by the current core's target and keeps the unused tank at zero. Prestige empties a personal tank, a Co-op crew tank survives personal prestige, and `newJourney` empties every tank. Missing fields migrate to empty tanks.
+
+### Transit and the jump flight
+
+Shattering a jump-point core below the final crystal no longer advances the core. `damageOrb` pays the kill, restores the core to full health, clears any attempt clock and records a **transit**: `player.transit = {pilot}` in Scoreboard or `state.sharedTransit` in Co-op (`getTransit`, `getFlyer`, and `getShipStatus().transit/flyer/launchReady`). While a transit exists, `damageOrb` returns `{kills:0,amount:0,transit:true}` and `encounterStep` skips the core, so nothing on either side can change it. The flyer is the pilot named in the transit, or the host once that pilot has left the roster.
+
+The flight itself is `src/flight.js`, a twelve-second top-to-bottom meteorite dodge (WASD, arrows or pointer; three hits or Escape is a crash) played only on the flyer's client. It reports `completeJump {arrived}`. The host accepts the action only during a round or intermission, from the flyer, with a boolean result and a full tank. Arrival empties the tank, clears the transit, advances the core to the next system's first planet at full health and raises every affected pilot's highest-orb milestone. A crash keeps the transit and halves the tank (`CRASH_FUEL_FRACTION`), so Beam must be fed before another launch. Validation accepts a transit only on an intact, inactive jump-point boss below the final core, with the pilot matching in Scoreboard; Scoreboard snapshots must carry a null shared transit and Co-op pilots a null personal one. Prestige clears a personal transit, Co-op prestige preserves the shared one, and `newJourney` clears all of them.
 
 `feedBeam` receives `context.fuelRoom` and returns `fuel = min(fuelRoom, meal seconds)` (weed counts as 260); `applyAction` adds it to the tank. When Beam's meal or Cooked timer is already full, a meal is still accepted while the tank has room, turning the food entirely into fuel. With both full, feeding is rejected and spends nothing.
 
@@ -102,8 +108,12 @@ Beam's meals fuel the ship. `isJumpPoint(level)` marks cores 20, 40, …, 200; `
 | Solar sail | 150,000 | 2,600 base continuous LRC/second; unlocks at orb 15 |
 | Lens cathedral | 1,800,000 | 24,000 base continuous LRC/second; orb 40 and 20 rounds |
 | Dyson lantern | 25,000,000 | 260,000 base continuous LRC/second; orb 80 and one prestige |
+| Singularity forge | 400,000,000 | 3,200,000 base continuous LRC/second; orb 120 and three prestiges |
+| Momentum flywheel (Click tech) | 90,000 | +1 combo capacity and +0.001 combo power per unit; capacity caps at 250 |
 
-The three deepest tiers are appended after every shipped machine in `GENERATORS`, because packed saves store machine counts by array position. The Click tech catalogue requires the `ki2` Outfitting licence and every Arsenal machine additionally requires `ki3`.
+The three deepest collection tiers, then the flywheel and the forge, are appended after every shipped machine in `GENERATORS`, because packed saves store machine counts by array position. The Click tech catalogue requires the `ki2` Outfitting licence and every Arsenal machine additionally requires `ki3`.
+
+Every unit price is `ceil(base × 1.17^owned × (1 − discount))`, where the discount is the sum of the permanent Quartermaster effect and the catalogue's own research (Bulk contracts for the Workshop, Fleet doctrine for the Arsenal, Flywheel gearing for Click tech), capped at 50%. `generatorCost` and `generatorQuote` share `unitPrice`, so bundles stay exact.
 
 The Workshop keeps these five machines. The Arsenal adds four purchasable devices with permanent-progress unlocks:
 
@@ -166,7 +176,7 @@ The scene draws every purchased bed with three plants rendered from exact progre
 
 ## Persistent research
 
-There are **63 regular research nodes in eleven branches** (60 tuning nodes plus the three one-rank Outfitting licences, stored after the prestige lines so packed saves keep their positions), plus **16 permanent prestige disciplines**. Double-clicking a node researches one rank. All research ranks survive prestige. The full regular tree has **390 ranks**.
+There are **87 regular research nodes in fifteen branches** (84 tuning nodes plus the three one-rank Outfitting licences), plus **24 permanent prestige disciplines**. Catalog order is a save format: the sixty shipped tuning nodes, the first sixteen prestige nodes and the three licences keep their positions, and every later discipline (Arsenal doctrine, Deep industry, Click engineering, Hull integrity, then the Hangar and Hull prestige chains) is appended after them. Double-clicking a node researches one rank. All research ranks survive prestige. The full regular tree has **534 ranks**.
 
 | Branch | Main systems |
 | --- | --- |
@@ -181,6 +191,10 @@ There are **63 regular research nodes in eleven branches** (60 tuning nodes plus
 | Beam's garden | Vegetable growth, meal duration and strength, harvest yield, garden purchase discounts |
 | Spacetime | Extend future rounds from 60 to 180 seconds |
 | Outfitting | One-rank licences: Garden (`ki1`), Click tech (`ki2`), Arsenal (`ki3`) |
+| Arsenal doctrine | Arsenal damage, Mouse rate, Lazer and gate strike hits, relay income, Arsenal speed and discounts; tier 1 requires `ki3` |
+| Deep industry | Sail, cathedral and lantern yield, Refractometer strength, Workshop discounts, deep-machine yield and machine synergy |
+| Click engineering | Per-unit wormhole, foamer and string strength, combo window and capacity, Click tech discounts, surge damage; tier 1 requires `ki2` |
+| Hull integrity | Shield charges, light-ray chance, salvage refunds, reflected rays, comet damage and mint (rank caps 3, 5, 4, 4, 5, 3) |
 
 Each branch has six tiers:
 
@@ -201,7 +215,7 @@ Spacetime follows Clock stretch → Orbital intervals → Time prism → Chronal
 
 Event horizon grants +1 SP once any rank is owned. Deep research, Chrono archive, Universal theory, Keeper's insight, and Infinite library add fractional **research insight**. Every whole accumulated insight gives +1 SP per completed round. Maximum regular insight is 4.2 and permanent insight is 2; with the base award, milestone, and Event horizon, the hard maximum is 10 SP.
 
-The entire regular tree costs **74,779 SP**. Even granting the maximum 10 SP from the first round, ignoring every milestone gate and intermission, completion requires at least **7,477 rounds**. At the shortest 60-second duration that is **124.62 active hours, or 5.19 days**. Spacetime research extends rounds, early rounds grant fewer points, and intermissions require decisions, so actual completion is slower. This is a mathematical lower bound, not an unattended completion estimate. The balance audit in `scripts/balance.mjs` follows legal machine and research policies without gardening or meals, uses actual variable round durations, and stops on campaign victory.
+The entire regular tree costs **102,181 SP**. Even granting the maximum 10 SP from the first round, ignoring every milestone gate and intermission, completion requires at least **10,219 rounds**. At the shortest 60-second duration that is **170.32 active hours, or 7.10 days**. Spacetime research extends rounds, early rounds grant fewer points, and intermissions require decisions, so actual completion is slower. This is a mathematical lower bound, not an unattended completion estimate. The balance audit in `scripts/balance.mjs` follows legal machine and research policies without gardening or meals, uses actual variable round durations, and stops on campaign victory.
 
 ## Prestige and permanent disciplines
 
@@ -228,12 +242,16 @@ Garden access, unlocked seeds and lifetime meal counts also survive. The choosin
 
 `resetProgress` is the opposite of prestige: a complete personal wipe. The acting pilot is replaced by a newly created player that keeps only its identity, avatar, colour and roster position (so a resetting host stays host). Every balance, record, rank, machine, garden field, prestige total and victory count returns to zero, the personal core returns to level 1, and the pilot is no longer ready. It is accepted in the lobby, during a round and in intermission, and rejected during a frozen victory like every other action. In co-op the fresh pilot inherits the shared orb level as its highest-orb milestone, and the shared bank, shared orb and crew round total are untouched. The standalone client does not send this action: it discards the device save, creates a new game and returns to the first lobby. Both paths require an explicit acknowledgement in the interface and cannot be undone.
 
-The sixteen prestige disciplines form four chains:
+The twenty-four prestige disciplines form six chains:
 
 - Eternal spark → Crown of rays → Stellar heart → Source of light
 - Enduring orbit → Timeless machinery → Recursive light → Everlight
 - Prism memory → Keeper's insight → Eternal record → Infinite library
 - Evergreen roots → Heirloom harvest → Endless lunch → Beam's bounty
+- Launch kit → Standing orders → Hangar lease → Quartermaster (the Hangar: starting machines after a reset, retained Click tech, machine discounts)
+- Hull plating → Salvage rights → Comet charts → Brighter legacy (the Hull: permanent shield charges, light-ray refunds, comet multipliers, +1% production per lifetime PP per rank)
+
+Prestige applies hangar research while resetting: `floor(owned × retention)` of each Click tech device survives, then the launch kit (`startMotes` Auto clickers, `startArrays` Light arrays and orb farms) is placed in the empty orbit. `getStats().startingKit` and `clickTechRetention` expose the same numbers for the Prestige tab.
 
 Each has five ranks. The four tiers start at 1, 3, 8, and 20 PP, with costs growing by `1.65^current rank`. Later nodes require two ranks in the prior discipline and higher orb, completed-round, and lifetime-PP milestones. The top tier requires orb 150, 720 completed rounds, and 100 lifetime PP. Effects improve damage, production, automation, drops, research insight, and co-op frequency. The fourth chain requires garden access and adds permanent crop speed, harvest yield, meal duration and meal strength respectively.
 
@@ -242,14 +260,17 @@ Each has five ranks. The four tiers start at 1, 3, 8, and 20 PP, with costs grow
 The shared frequency sum includes only the owner in scoreboard and all active pilots in co-op. Refractometers belong to the owner. Research effects within each named term add; separate terms multiply.
 
 ```text
-power multiplier = (1 + 0.10 × lifetime PP)
+power multiplier = (1 + (0.10 + Brighter legacy) × lifetime PP)
   × (1 + frequency) × (1 + personal-power research)
-  × (1 + 0.10 × refractometers) × (1 + active Beam meal bonus)
+  × (1 + (0.10 + Calibrated optics) × refractometers) × (1 + active Beam meal bonus)
 
-hit damage = (2 + flat-damage research + 4 × wormhole generators)
-  × (1 + damage research + 0.20 × quantum foamers)
-  × power multiplier × (1 + combo stacks × combo research)
-  × (2 during surge, otherwise 1)
+hit damage = (2 + flat-damage research + (4 + Wormhole tuning) × wormhole generators)
+  × (1 + damage research + (0.20 + Foam density) × quantum foamers)
+  × power multiplier × (1 + combo stacks × (combo research + 0.001 × flywheels))
+  × (2 + Surge engine during surge, otherwise 1)
+  × (comet damage, manual hits only, while a comet passes)
+
+combo capacity = min(250, 10 + combo research + flywheels); a combo survives 2 + Combo memory seconds
 
 manual mint = (0.25 + flat-mint research) × (1 + mint research)
   × (1 + owned-machine count × mint dividends)
@@ -258,9 +279,17 @@ manual mint = (0.25 + flat-mint research) × (1 + mint research)
 
 Farm, array, and star output use their separate research multipliers. Farm horticulture adds yield based on owned arrays; Dyson crown adds machine yield based on total machine count. Their sum is enhanced by machine-production research, then added to the baseline 1 LRC/second and flat passive research before the general passive and power multipliers apply.
 
-The original automatic rate is `(0.5 × auto clickers + flat automatic research) × (1 + automatic-speed research + shared automation)`. Each Arsenal type adds `owned × catalog rate × the same speed factor`. Each strike uses hit damage times its automatic-damage modifier and the device's attack multiplier. Autonomous mint pays a fraction of manual-mint income per non-Mouse strike; Mouse strikes earn the full guaranteed manual-mint income. Projected idle income is continuous production plus the sum of every type's rate times its own mint amount. Total automated DPS is the sum of every type's rate times its hit damage.
+The original automatic rate is `(0.5 × auto clickers + flat automatic research) × (1 + automatic-speed research + shared automation)`. Each Arsenal type adds `owned × catalog rate × the same speed factor × (1 + Arsenal speed research)`, and the Mouse also gains `(1 + Overclocked mice)`. Each strike uses hit damage times its automatic-damage modifier and the device's attack multiplier; Arsenal strikes also take `(1 + Arsenal damage research)`, the Lazer beam deals `20 + Lazor capacitors` hits and the gate `100 + Gate resonance`. Probe and gate income takes `(1 + Relay uplink)`; sails, cathedrals, lanterns and forges take `(1 + Stellar foundry + their own research)`. Autonomous mint pays a fraction of manual-mint income per non-Mouse strike; Mouse strikes earn the full guaranteed manual-mint income. Projected idle income is continuous production plus the sum of every type's rate times its own mint amount. Total automated DPS is the sum of every type's rate times its hit damage.
 
 Orb drops combine the geometric base reward, boss reward modifiers, flat drop research, the power multiplier, drop research, and highest-orb research. Automatic-only drop research applies to automatic kills. Long catch-up batches use the stats at the start of each segment; orb-level scaling updates for subsequent segments. Normal simulation advances on short timer ticks.
+
+## Space hazards
+
+**Light rays.** Inside the `click` action, after the hit resolves, the host rolls one more `random(state)` when the pilot is in a boss fight (`inBossFight`: a live secret challenge, or a system boss with `bossStartedAt`) and the hit neither killed the core nor bounced off a grounded or transit core. With probability `FLARE_CHANCE × (1 − min(0.75, Flare dampers))` a light ray fires. If the pilot owns no machines the ray is harmless. Otherwise a shield charge (`player.shield`) absorbs it, reflecting `Ablative lattice × automatic damage` into the boss when researched; with no charge left, one unit of a **uniformly random owned machine type** is removed, `machinesLost` increments, and `salvage × replacement price` is refunded. Refunds enter the Co-op bank directly; a personal refund is capped at `runLrc − lrc` so a wallet can never exceed its run total. The click result carries `flare: {hit, blocked, id, index, refund, shield, reflected}` for the interface. Automatic attacks never roll rays.
+
+Shield charges equal `floor(shield research)` (Prism shield, Aegis of light, permanent Hull plating), capped at `SHIELD_LIMIT`. They refill at round start, when a secret challenge begins, and when a boss attempt starts (`rechargeShields`: the whole non-secret crew in Co-op, the pilot alone in Scoreboard). Prestige and `newJourney` zero them; validation bounds them.
+
+**Comets.** `startRound` rolls `state.comet` from the round number and current host RNG without advancing it (`rollComet`): three rounds in five get `{at}`, with `8 ≤ at` and `at + 6 ≤ duration − 10`, so a comet never overlaps the surge. `cometWindow(state)` reports the live window; `getStats().comet` is true inside it and manual hits multiply damage by `cometDamage = 3 + research` and mint by `cometMint = 5 + research`. Passive production and automatic attacks ignore comets, so `advance` needs no extra split. The intermission clears the comet; validation accepts `null` or an object with exactly one integer `at` within the round duration.
 
 ## Authority, saves and finite limits
 
@@ -275,6 +304,7 @@ The original nine skill IDs remain stable; compact IDs for newer nodes keep larg
 The simulation and local/session-storage saves keep named fields. `compactGameState(state)` creates the relay representation without mutating the live state and strips avatar URLs, which come from the roster. Compact fields are:
 
 - `player.skills` and `player.generators`: rank arrays in `SKILLS` and `GENERATORS` catalog order, with trailing zeros trimmed. Each entry is validated against its catalog maximum. The older comma-separated `id:rank` strings still decode.
+- `player.shield`, `player.machinesLost`, `player.transit`, `state.comet` and `state.sharedTransit` travel as plain fields; saves without them migrate to zero charges, no losses, no transit and no comet.
 - `sharedOrb` and `player.orb`: `[level, hp]`, or `[level, hp, finalElapsed]` for the final crystal. Numeric precision is retained.
 - `state.sharedFuel` and `player.fuel`: plain numbers, bounded by the current core's fuel target.
 - `player.farm`: `packFarm` returns `[unlockedFlag, seedMask, plots, inventory, upgrades, fedSeconds, meals, tractorClock, pickerClock, cookedSeconds]`. `unlockedFlag` is 0 or 1. The seed bitmask and inventory slots follow `CROPS` order. An empty bed packs as `[0]`; a planted bed as `[cropNumber, progress, water, fertilisedFlag]` with the one-based crop index. The four upgrade slots follow `FARM_UPGRADES`: grow lights, hydroponics, tractor, picker. A null inventory or upgrade slot represents an absent named property. Older seven-field farms (two-field `[crop, progress]` beds, three upgrade slots ending in fertiliser) and nine-field farms still decode: their beds start watered and unfertilised, and each fertiliser level becomes a tractor level.

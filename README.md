@@ -45,6 +45,8 @@ Use `npm run test:browser -- --fleet-only` for Arsenal unlocks, bulk-fleet growt
 
 Use `npm run test:browser -- --secret-only` to verify the secret star, boss challenge, weed unlock and Cooked Beam bonus.
 
+Use `npm run test:browser -- --hazards-only` for boss light rays and the shield readout, the comet banner, and the jump flight from a cleared gate through to the host applying its result.
+
 Use `npm run test:browser -- --reset-only` for reset confirmation, cancellation, complete score removal, reloads and multiplayer synchronization.
 
 With the development server running, `node tests/farm-browser.mjs` checks garden purchases, visible equipment, planting, harvesting, feeding, save reloads and prestige at both desktop sizes.
@@ -67,7 +69,9 @@ Clicking starts at **2 damage** plus a small **0.25 LRC** mint reward, with a **
 
 The Galaxy map follows **200 planetary cores**, twenty per system: Solace, Verdant Reach, Cinderwake, Azure Drift, Gilded Spiral, Violet Expanse, Hollow Crown, Chronos Veil, Infinite Prism, and Crystal. Each successive system multiplies the ordinary HP curve by another three. Crystal is Beam's home, where the cores are described as the hardest substance across every parallel universe; this setting is new Idlers lore.
 
-**Ship fuel.** Every twentieth core (20, 40, …, 180, and Refract at 200) is a **jump point**. The ship cannot reach it until the fuel tank holds that system's target; until then hits and machines do no damage there, and the boss timer does not start. Breaking a jump-point core burns the whole tank and carries you to the next system. Beam introduces the idea in Solace, the first system.
+**Ship fuel.** Every twentieth core (20, 40, …, 180, and Refract at 200) is a **jump point**. The ship cannot reach it until the fuel tank holds that system's target; until then hits and machines do no damage there, and the boss timer does not start. Beam introduces the idea in Solace, the first system.
+
+**The jump flight.** Breaking a jump-point core clears the gate and puts the ship **in transit**: the cleared core waits at full health, nothing can damage it, and a launch panel appears over the orbit. The pilot who shattered the gate (in Co-op, the host if that pilot leaves) presses **Launch** when the tank is full and flies a twelve-second, top-to-bottom meteorite dodge with **WASD, the arrow keys or the pointer**. Reaching the far side burns the whole tank and opens the next system. **Three meteorite hits** turn the ship back: it stays at the jump point and loses **half its fuel**, so Beam needs feeding before the next attempt. Escape mid-flight counts as a crash. Later systems throw denser, faster rock. The flight is played on the flyer's own device and only its result is reported to the host; a transit survives rounds, reloads and host handover.
 
 | System | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -114,8 +118,9 @@ In Co-op, one pilot can buy a generator using LRCs earned by the others. The gen
 | Solar sail | 150,000 LRCs | 2,600 passive LRC/s (from orb 15) |
 | Lens cathedral | 1,800,000 LRCs | 24,000 passive LRC/s (orb 40, 20 rounds) |
 | Dyson lantern | 25,000,000 LRCs | 260,000 passive LRC/s (orb 80, one prestige) |
+| Singularity forge | 400,000,000 LRCs | 3,200,000 passive LRC/s (orb 120, three prestiges) |
 
-The shop's **Machinery** tab contains these eight machines, cheapest first. The **Click tech** and **Arsenal** catalogues each open with a one-rank **Outfitting** licence in the skill tree. **Arsenal** adds four research-gated machines:
+The shop's **Machinery** tab contains these nine machines, cheapest first. **Deep industry** research tunes the sail, cathedral, lantern and forge individually and as a group, sharpens each Refractometer beyond its base 10%, and discounts Workshop prices; **Arsenal doctrine** adds Arsenal damage, Mouse fire rate, heavier Lazer and Star gate strikes, relay income and Arsenal discounts. Permanent **Quartermaster** ranks discount every catalogue; total discounts cap at 50%. The **Click tech** and **Arsenal** catalogues each open with a one-rank **Outfitting** licence in the skill tree. **Arsenal** adds four research-gated machines:
 
 | Upgrade | First purchase | Base effect per unit | Unlock requirements |
 | --- | ---: | --- | --- |
@@ -147,8 +152,9 @@ The workshop's **Click tech** catalogue buys equipment with LRCs. Each purchase 
 | Wormhole generator | 600 LRCs | +4 base damage to manual and automatic hits |
 | Quantum foamer | 3,500 LRCs | +20% hit damage, additive with damage research |
 | String detheory | 18,000 LRCs | +1 percentage point of manual critical chance and +0.1 critical multiplier |
+| Momentum flywheel | 90,000 LRCs | +1 combo capacity and +0.1% damage per combo stack |
 
-Total critical chance caps at 80%. Automatic attacks still do not roll critical hits.
+Total critical chance caps at 80%, and combo capacity at 250 stacks. Automatic attacks still do not roll critical hits. **Click engineering** research raises each device's per-unit effect (Wormhole tuning, Foam density, String harmonics), lets combos survive longer between hits, adds combo capacity, discounts the catalogue and strengthens the solar surge beyond 2×. The permanent **Hangar lease** keeps a share of each device through prestige.
 
 ### Beam's Garden
 
@@ -188,7 +194,7 @@ Defeating Haze opens the farm if needed and unlocks **weed**, with a popup notif
 
 ### Research
 
-The research atlas has **60 connected normal nodes across ten branches**, with six tiers per branch, plus a **16-node permanent prestige graph**. Research ranks and unspent skill points survive every prestige. Pan and zoom the map, select a node to inspect its costs and requirements, and follow prerequisite links across branches. Search and availability highlights help find the next investment while keeping the surrounding graph visible. Expand the map for more space; Escape closes the expanded view. Touch dragging and the zoom controls work on mobile.
+The research atlas has **87 connected normal nodes across fifteen branches**: fourteen tuning disciplines with six tiers each, the three one-rank Outfitting licences, and a **24-node permanent prestige graph**. The four newest disciplines are **Arsenal doctrine** (requires the Arsenal licence), **Deep industry**, **Click engineering** (requires the Click tech licence) and **Hull integrity**, whose smaller rank caps (3, 5, 4, 4, 5 and 3) cover shields, light-ray dampers, salvage, reflection and comets. Research ranks and unspent skill points survive every prestige. Pan and zoom the map, select a node to inspect its costs and requirements, and follow prerequisite links across branches. Search and availability highlights help find the next investment while keeping the surrounding graph visible. Expand the map for more space; Escape closes the expanded view. Touch dragging and the zoom controls work on mobile.
 
 | Tier | Rank cap | Starting SP cost | Orb milestone | Completed rounds |
 | --- | ---: | ---: | ---: | ---: |
@@ -205,15 +211,21 @@ The board supports long-term development over many runs: stronger clicks, automa
 
 The six **Beam's garden** nodes improve growth speed, meal duration, purchase discounts, harvest yield and meal strength. Four permanent farm nodes—**Evergreen roots**, **Heirloom harvest**, **Endless lunch** and **Beam's bounty**—retain those improvements across runs. Both farm research paths require an unlocked garden as well as their displayed prerequisites and milestones.
 
+### Space hazards
+
+**Light rays.** While a system boss attempt (or the secret Haze challenge) is active, every **manual** hit has a **3% chance** to burst a light ray out of the core. If you own any machines, the ray destroys **one unit of a random owned machine type**; you buy it back at its current price. Automatic attacks never provoke rays, and a ray fired at an empty orbit does nothing. The hull branch answers this: **Prism shield** blocks up to three light-ray impacts (LRI) per boss attempt, refilling at every new attempt and round start; **Flare dampers** cut the chance by up to 50%; **Salvage drones** refund up to 60% of a destroyed machine's replacement price; **Ablative lattice** reflects each blocked ray back into the boss as automatic damage. The permanent **Hull plating** and **Salvage rights** chains add shield charges and refunds across every prestige. The boss panel shows your live shield charges, and the orbit draws each ray reaching its target or breaking on the shield ring.
+
+**Comets.** About three rounds in five, a comet crosses the sky for **six seconds** at a time fixed when the round starts (never during the surge). Manual hits during the comet deal **3× damage** and mint **5× LRC**; **Comet chaser**, **Aegis of light** and the permanent **Comet charts** raise those multipliers. Passive income and automatic attacks ignore comets.
+
 ### Progression audit
 
 Run `npm run balance` for the reproducible 1-hour, 6-hour and 24-hour pacing report. `--quick` checks 10 minutes, 30 minutes and one hour. `--extended` continues to 10,000 completed rounds, then allows up to 24 additional active hours without prestige; `--push-hours=168` increases that limit. A victory stops the audit instead of silently restarting the campaign. These commands write `test-results/balance.json`.
 
-Maxing normal research costs **74,770 SP across 390 ranks**. Even at the maximum **10 SP per round**, it requires at least **7,477 completed rounds**. At the shortest 60-second duration that is **5.19 active days**; researched extensions, intermissions and milestone gates increase the actual time. This is an optimistic lower bound, not an expected completion time.
+Maxing normal research costs **102,181 SP across 534 ranks**. Even at the maximum **10 SP per round**, it requires at least **10,219 completed rounds**. At the shortest 60-second duration that is **7.10 active days**; researched extensions, intermissions and milestone gates increase the actual time. This is an optimistic lower bound, not an expected completion time.
 
 The audit compares no manual clicks with two clicks per second. Both scripted policies invest every ten seconds, choosing the unlocked and affordable machine type with the highest base cost first, then cheaper types. They automatically ready between rounds, buy the cheapest legal research, and prestige for at least five points after fifteen completed rounds since the last reset; the first prestige happens as soon as eligible. No resources, research gates or Arsenal unlocks are bypassed.
 
-The current audit includes the expanded machine and research catalogues. Its policies do not plant, harvest or feed Beam, so these measurements provide a conservative **no-gardening baseline**, without meal bonuses.
+The current audit includes the expanded machine and research catalogues. Its policies do not plant, harvest or feed Beam, so these measurements provide a conservative **no-gardening baseline**, without meal bonuses. The two-click policy keeps clicking through boss attempts, so light rays cost it machines; neither policy times clicks to comets, and because the jump flight is a client mini-game the audit never leaves its first system.
 
 | Managed play policy | First core broken | First boss cleared | First prestige |
 | --- | ---: | ---: | ---: |
@@ -228,7 +240,9 @@ These figures describe continuously managed sessions. An unattended session stop
 
 Earn **2,500 LRCs in your run** to unlock your first prestige. The award is `floor(log2(1 + run LRCs / 2500))`: 2,500 earns 1 point, 7,500 earns 2, and 17,500 earns 3. Spending LRCs does not reduce your run total. Logarithmic awards keep repeated prestige resets from rapidly overwhelming the long-term economy.
 
-Each earned prestige point permanently adds **10% to your production**. Prestiging resets **your** personal spendable LRCs, run income, generators and personal orb. It preserves all research ranks, unspent skill points, lifetime income and prestige totals. In Co-op, the shared bank and shared orb are preserved in full. Other pilots keep their builds, and the shared round number continues. The permanent production bonus uses total earned prestige points, so spending available points on prestige research does not remove that bonus.
+Each earned prestige point permanently adds **10% to your production**; five ranks of the permanent **Brighter legacy** raise that to 15% per point. Prestiging resets **your** personal spendable LRCs, run income, generators, personal orb, shield charges and any personal transit. It preserves all research ranks, unspent skill points, lifetime income and prestige totals. In Co-op, the shared bank, shared orb and shared transit are preserved in full. Other pilots keep their builds, and the shared round number continues. The permanent production bonus uses total earned prestige points, so spending available points on prestige research does not remove that bonus.
+
+The permanent tree now has **six chains of four**. The **Hangar** chain softens every reset: **Launch kit** starts each run with Auto clickers, **Standing orders** adds a Light array and an orb farm, **Hangar lease** keeps up to 100% of each Click tech device, and **Quartermaster** discounts every machine. The **Hull** chain hardens the ship: **Hull plating** (permanent shield charges), **Salvage rights** (more refund from light rays), **Comet charts** (stronger comet clicks) and **Brighter legacy**. The Prestige tab lists exactly what the next reset keeps, including your launch kit.
 
 Your garden remains unlocked with its seed collection and farm research. Rebuild from one empty bed: purchased beds, equipment, harvested vegetables and Beam's current meal bonus reset.
 
@@ -270,6 +284,7 @@ The Pages workflow checks syntax, runs unit tests, and builds on pull requests a
 | [src/farm-sprites.js](src/farm-sprites.js) | Original pixel sprites: progress-driven plants, produce, equipment, ship and sky. Preview them at `tools/garden-sprites.html` |
 | `src/main.js` | Interface, input, local saves, simulation and relay wiring |
 | `src/research.js` | Connected research maps, pan/zoom and selected-node inspectors |
+| `src/flight.js` | The jump flight: a seeded top-to-bottom meteorite dodge played on the flyer's client and reported to the host |
 | `src/research.css` | Research nodes, prerequisite edges and map layout |
 | `src/frame.css` | Fixed desktop game frame and compact panels |
 | [src/beam.js](src/beam.js), [src/beam.css](src/beam.css) | Cosmetic pixel companion rendering, milestone reactions and motion |

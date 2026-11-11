@@ -11,6 +11,10 @@ export const SKILL_BRANCHES = Object.freeze([
   { id: 'farm', name: 'Beam’s garden', description: 'Faster vegetables, richer harvests and stronger meals for Beam.', currency: 'skill' },
   { id: 'chronos', name: 'Spacetime', description: 'Stretch active rounds from one minute to three. The longest researched duration leads the crew.', currency: 'skill' },
   { id: 'kit', name: 'Outfitting', description: 'One-rank licences that open Beam’s Garden, click technology and the Arsenal.', currency: 'skill' },
+  { id: 'arsenal', name: 'Arsenal doctrine', description: 'Targeting, overclocked mice, heavier beams, relay income and cheaper weapons.', currency: 'skill' },
+  { id: 'industry', name: 'Deep industry', description: 'Sails, cathedrals, lanterns, sharper refractometers and bulk machine contracts.', currency: 'skill' },
+  { id: 'engineering', name: 'Click engineering', description: 'Tune wormholes, quantum foam, strings, combo memory and the solar surge.', currency: 'skill' },
+  { id: 'hull', name: 'Hull integrity', description: 'Shields against boss light rays, salvage, reflected rays and comet chasing.', currency: 'skill' },
   { id: 'ascension', name: 'Eternal light', description: 'Spend prestige points on permanent disciplines.', currency: 'prestige' },
 ]);
 
@@ -24,7 +28,7 @@ const lines = {
     ['quantum-barrage', 'Quantum barrage', '+10 percentage points of a bonus hit and +8% damage.', { extraHitChance: 0.1, damagePct: 0.08 }],
   ],
   idle: [
-    ['solar-cells', 'Solar cells', '+2 continuous LRC per second.', { passiveFlat: 2 }],
+    ['solar-cells', 'Solar cells', '+2 continuous LRC per second and +2% continuous income.', { passiveFlat: 2, passivePct: 0.02 }],
     ['orbital-array', 'Orbital array', '+15% continuous income and automatic attack speed.', { passivePct: 0.15, autoPct: 0.15 }],
     ['perpetuity', 'Perpetual motion', '+12% machine income and automatic attack speed.', { generatorPct: 0.12, autoPct: 0.12 }],
     ['orb-horticulture', 'Orb horticulture', '+20% farm yield; each light array adds another 0.3% farm yield.', { farmPct: 0.2, farmSynergy: 0.003 }],
@@ -42,7 +46,7 @@ const lines = {
   orbs: [
     ['chip-fracture', 'Chip fracture', '+6% damage and +1 base LRC on every shattered orb.', { damagePct: 0.06, dropFlat: 1 }],
     ['prism-bounty', 'Prism bounty', '+12% LRC from shattered orbs.', { dropPct: 0.12 }],
-    ['bossbreaker', 'Bossbreaker', '+20% damage against every tenth orb: the boss.', { bossDamagePct: 0.2 }],
+    ['bossbreaker', 'Bossbreaker', '+20% damage against system bosses, the armoured twentieth core of every system.', { bossDamagePct: 0.2 }],
     ['royal-spectrum', 'Royal spectrum', '+30% additional LRC from boss orbs.', { bossDropPct: 0.3 }],
     ['orb-geology', 'Orb geology', '+0.5% orb rewards per log2 of your highest orb plus one.', { orbScaling: 0.005 }],
     ['event-harvester', 'Event harvester', '+30% orb rewards and +25% boss damage.', { dropPct: 0.3, bossDamagePct: 0.25 }],
@@ -96,25 +100,73 @@ lines.chronos = [
   ['spacetime-fold', 'Spacetime fold', '+4 seconds to each future round per rank.', { roundSeconds: 4 }],
   ['infinite-afternoon', 'Infinite afternoon', '+5 seconds per rank. Complete this discipline for 180-second rounds.', { roundSeconds: 5 }],
 ];
+/**
+ * Later disciplines: dedicated lines for the Arsenal, the deep collection machines, Click technology
+ * and the hull. They sit after every shipped node in the catalog so packed saves keep their positions.
+ */
+const laterLines = {
+  arsenal: [
+    ['targeting-array', 'Targeting array', '+6% damage from every Arsenal weapon per rank.', { arsenalDamagePct: 0.06 }],
+    ['overclocked-mice', 'Overclocked mice', '+8% AI Mouse click rate per rank.', { mouseRatePct: 0.08 }],
+    ['lazor-capacitors', 'Lazor capacitors', 'Each Lazer cannon beam deals +2 automatic hits of damage per rank.', { laserHits: 2 }],
+    ['relay-uplink', 'Relay uplink', '+15% Starlink probe and Star gate income per rank.', { arsenalIncomePct: 0.15 }],
+    ['gate-resonance', 'Gate resonance', 'Each Star gate strike deals +10 automatic hits and the Arsenal fires 4% faster per rank.', { gateHits: 10, arsenalSpeedPct: 0.04 }],
+    ['fleet-doctrine', 'Fleet doctrine', '+10% Arsenal damage, and Arsenal weapons cost 5% less per rank.', { arsenalDamagePct: 0.1, arsenalDiscount: 0.05 }],
+  ],
+  industry: [
+    ['mirror-polish', 'Mirror polish', '+10% Solar sail yield per rank.', { sailPct: 0.1 }],
+    ['calibrated-optics', 'Calibrated optics', 'Each Refractometer adds another 0.5 percentage points of damage and production per rank.', { starBonus: 0.005 }],
+    ['cathedral-choir', 'Cathedral choir', '+12% Lens cathedral yield per rank.', { lensPct: 0.12 }],
+    ['lantern-wardens', 'Lantern wardens', '+15% Dyson lantern yield per rank.', { dysonPct: 0.15 }],
+    ['bulk-contracts', 'Bulk contracts', 'Workshop machines cost 3% less per rank.', { workshopDiscount: 0.03 }],
+    ['stellar-foundry', 'Stellar foundry', '+20% yield from sails, cathedrals, lanterns and forges; each owned machine adds another 0.1% machine yield per rank.', { deepPct: 0.2, generatorSynergy: 0.001 }],
+  ],
+  engineering: [
+    ['wormhole-tuning', 'Wormhole tuning', 'Each Wormhole generator adds +1 more base damage per rank.', { wormholeFlat: 1 }],
+    ['foam-density', 'Foam density', 'Each Quantum foamer adds +5 more percentage points of damage per rank.', { foamerPct: 0.05 }],
+    ['string-harmonics', 'String harmonics', 'Each String detheory adds +0.05 more to the critical multiplier per rank.', { stringCrit: 0.05 }],
+    ['combo-memory', 'Combo memory', 'Combos survive +0.5 seconds longer between hits per rank.', { comboSeconds: 0.5 }],
+    ['flywheel-gearing', 'Flywheel gearing', '+2 combo capacity, and Click technology costs 4% less per rank.', { comboCap: 2, clickDiscount: 0.04 }],
+    ['surge-engine', 'Surge engine', 'The solar surge multiplies damage by another +0.25× per rank.', { surgeDamagePct: 0.25 }],
+  ],
+  hull: [
+    ['prism-shield', 'Prism shield', 'Blocks one more light-ray impact (LRI) per boss attempt per rank. Light rays burst from bosses when you click.', { shield: 1 }],
+    ['flare-dampers', 'Flare dampers', 'Boss light rays are 10% less likely per manual hit per rank.', { flareResist: 0.1 }],
+    ['salvage-drones', 'Salvage drones', 'A machine destroyed by a light ray refunds 15% of its replacement price per rank.', { salvagePct: 0.15 }],
+    ['ablative-lattice', 'Ablative lattice', 'Each blocked light ray reflects 10 automatic hits of damage into the boss per rank.', { reflectHits: 10 }],
+    ['comet-chaser', 'Comet chaser', 'Manual hits during a passing comet deal +1× more damage per rank.', { cometDamage: 1 }],
+    ['aegis-of-light', 'Aegis of light', '+1 shield charge, and comet clicks mint +2× more per rank.', { shield: 1, cometMint: 2 }],
+  ],
+};
 const tiers = [1, 4, 15, 50, 180, 600];
 const maxRanks = [8, 8, 8, 6, 5, 4];
+const hullRanks = [3, 5, 4, 4, 5, 3];
 const orbGates = [0, 10, 25, 50, 100, 175];
 const roundGates = [0, 3, 15, 60, 240, 720];
 const branchIds = Object.keys(lines);
-const icons = ['✦', '☀', '⌁', '◈', '◎', '¤', '✧', '∞'];
-const research = branchIds.flatMap((branch, branchIndex) => lines[branch].map(([id, name, description, effects], tier) => {
-  const requires = tier ? [lines[branch][tier - 1][0]] : [];
+const laterBranchIds = Object.keys(laterLines);
+/** Later lines link into the shipped discipline they extend. */
+const laterCross = { arsenal: 'automation', industry: 'idle', engineering: 'click', hull: 'orbs' };
+const licenceFor = { arsenal: 'arsenal-licence', engineering: 'click-licence' };
+const icons = ['✦', '☀', '⌁', '◈', '◎', '¤', '✧', '∞', '♧', '⌛', '⚿', '⌖', '✺', '↻', '⛨'];
+function researchNode(branch, branchIndex, [id, name, description, effects], tier, later = false) {
+  const source = later ? laterLines[branch] : lines[branch];
+  const requires = tier ? [source[tier - 1][0]] : [];
   const requiredRanks = tier ? { [requires[0]]: tier < 3 ? tier + 1 : 2 } : {};
   if (tier >= 3) {
     // Keep shipped cross-branch prerequisites stable when adding disciplines.
-    const cross = lines[branch === 'farm' ? 'idle' : branch === 'chronos' ? 'mastery' : branchIds[(branchIndex + 1) % 8]][tier - 2][0];
+    const crossBranch = later ? laterCross[branch] : branch === 'farm' ? 'idle' : branch === 'chronos' ? 'mastery' : branchIds[(branchIndex + 1) % 8];
+    const cross = lines[crossBranch][tier - 2][0];
     requires.push(cross); requiredRanks[cross] = tier >= 5 ? 1 : 2;
   }
+  if (!tier && licenceFor[branch]) { requires.push(licenceFor[branch]); requiredRanks[licenceFor[branch]] = 1; }
   return { id, name, branch, description, effects, cost: tiers[tier], costGrowth: 1.38,
-    maxRank: maxRanks[tier], requires, requiredRanks, currency: 'skill', tier: tier + 1,
+    maxRank: branch === 'hull' ? hullRanks[tier] : maxRanks[tier], requires, requiredRanks, currency: 'skill', tier: tier + 1,
     gates: { orb: orbGates[tier], rounds: roundGates[tier], prestiges: tier >= 4 ? 3 : tier >= 3 ? 1 : 0, prestige: tier === 5 ? 10 : 0, ...(branch === 'farm' ? {farm:true} : {}) },
-    icon: icons[branchIndex] || '♧' };
-}));
+    icon: icons[later ? branchIds.length + 1 + laterBranchIds.indexOf(branch) : branchIndex] || '♧' };
+}
+const research = branchIds.flatMap((branch, branchIndex) => lines[branch].map((entry, tier) => researchNode(branch, branchIndex, entry, tier)));
+const laterResearch = laterBranchIds.flatMap((branch, index) => laterLines[branch].map((entry, tier) => researchNode(branch, index, entry, tier, true)));
 
 const eternalLines = [
   [
@@ -135,24 +187,41 @@ const eternalLines = [
     ['eternal-record', 'Eternal record', '+5% orb rewards and +2% frequency per rank.', { dropPct: 0.05, frequency: 0.02 }],
     ['infinite-library', 'Infinite library', '+0.2 research insight and +5% personal power per rank.', { insight: 0.2, personalPct: 0.05 }],
   ],
+  [
+    ['evergreen-roots', 'Evergreen roots', '+15% vegetable growth speed per rank, across every prestige.', { cropSpeed: 0.15 }],
+    ['heirloom-harvest', 'Heirloom harvest', '+1 vegetable per harvested bed per rank, across every prestige.', { cropYield: 1 }],
+    ['endless-lunch', 'Endless lunch', '+20% meal duration per rank, across every prestige.', { mealDuration: 0.2 }],
+    ['beams-bounty', 'Beam’s bounty', 'Meals add 5 percentage points of income and damage per rank, permanently.', { beamBoost: 0.05 }],
+  ],
 ];
-eternalLines.push([
-  ['evergreen-roots', 'Evergreen roots', '+15% vegetable growth speed per rank, across every prestige.', { cropSpeed: 0.15 }],
-  ['heirloom-harvest', 'Heirloom harvest', '+1 vegetable per harvested bed per rank, across every prestige.', { cropYield: 1 }],
-  ['endless-lunch', 'Endless lunch', '+20% meal duration per rank, across every prestige.', { mealDuration: 0.2 }],
-  ['beams-bounty', 'Beam’s bounty', 'Meals add 5 percentage points of income and damage per rank, permanently.', { beamBoost: 0.05 }],
-]);
-const prestige = eternalLines.flatMap((line, lineIndex) => line.map(([id, name, description, effects], tier) => ({
+/** Later chains: the hangar keeps a run from starting empty; the hull chain hardens the ship against space itself. */
+const laterEternalLines = [
+  [
+    ['launch-kit', 'Launch kit', 'Every run after a prestige begins with +2 Auto clickers per rank.', { startMotes: 2 }],
+    ['standing-orders', 'Standing orders', 'Every run after a prestige begins with +1 Light array and +1 Refract orb farm per rank.', { startArrays: 1 }],
+    ['hangar-lease', 'Hangar lease', 'Keep 20% of each Click technology device through prestige per rank.', { keepClickPct: 0.2 }],
+    ['quartermaster', 'Quartermaster', 'Every machine costs 4% less per rank.', { machineDiscount: 0.04 }],
+  ],
+  [
+    ['hull-plating', 'Hull plating', '+1 permanent shield charge against boss light rays per rank.', { shield: 1 }],
+    ['salvage-rights', 'Salvage rights', 'Machines destroyed by light rays refund another 10% of their replacement price per rank.', { salvagePct: 0.1 }],
+    ['comet-charts', 'Comet charts', 'Comet clicks deal +1× damage and mint +1× more per rank.', { cometDamage: 1, cometMint: 1 }],
+    ['brighter-legacy', 'Brighter legacy', 'Each lifetime prestige point adds another +1% production per rank, on top of its +10%.', { legacyPct: 0.01 }],
+  ],
+];
+const eternalNode = (line, [id, name, description, effects], tier, farm) => ({
   id, name, description, effects, branch: 'ascension', currency: 'prestige', tier: tier + 1,
   cost: [1, 3, 8, 20][tier], costGrowth: 1.65, maxRank: 5,
   requires: tier ? [line[tier - 1][0]] : [], requiredRanks: tier ? { [line[tier - 1][0]]: 2 } : {},
-  gates: { orb: [0, 30, 80, 150][tier], rounds: [0, 30, 180, 720][tier], prestiges: 1, prestige: [1, 5, 20, 100][tier], ...(lineIndex === 3 ? {farm:true} : {}) }, icon: '✧',
-})));
+  gates: { orb: [0, 30, 80, 150][tier], rounds: [0, 30, 180, 720][tier], prestiges: 1, prestige: [1, 5, 20, 100][tier], ...(farm ? {farm:true} : {}) }, icon: '✧',
+});
+const prestige = eternalLines.flatMap((line, lineIndex) => line.map((entry, tier) => eternalNode(line, entry, tier, lineIndex === 3)));
+const laterPrestige = laterEternalLines.flatMap((line) => line.map((entry, tier) => eternalNode(line, entry, tier, false)));
 
 /** Outfitting: independent one-rank licences. Each opens a whole feature rather than tuning a number. */
 const kitLines = [
   ['garden-licence', 'Garden licence', 'Opens Beam’s Garden: grow vegetables, feed Beam and fuel the ship.', { garden: 1 }, 2, { orb: 0, rounds: 1 }],
-  ['click-licence', 'Click tech licence', 'Opens the Click technology catalogue: wormholes, quantum foam and string theory.', { clickTech: 1 }, 3, { orb: 5, rounds: 2 }],
+  ['click-licence', 'Click tech licence', 'Opens the Click technology catalogue: wormholes, quantum foam, string theory and flywheels.', { clickTech: 1 }, 3, { orb: 5, rounds: 2 }],
   ['arsenal-licence', 'Arsenal licence', 'Opens the Arsenal catalogue: autonomous weapons that strike and mint on their own.', { arsenal: 1 }, 4, { orb: 10, rounds: 4 }],
 ];
 const kit = kitLines.map(([id, name, description, effects, cost, gates], tier) => ({ id, name, branch: 'kit', description, effects, cost, costGrowth: 1,
@@ -160,16 +229,20 @@ const kit = kitLines.map(([id, name, description, effects, cost, gates], tier) =
 
 // Compact new IDs keep eight completed builds inside Refract's relay envelope.
 // Original shipped IDs remain unchanged; readable keys stay in catalog metadata.
-// Packed saves index this array by position, so new disciplines are appended after the prestige lines.
+// Packed saves index this array by position, so every later discipline is appended after the
+// shipped research, prestige and Outfitting nodes.
 const legacy = new Set(['tap-tuning', 'lucky-photon', 'singularity', 'solar-cells', 'orbital-array', 'perpetuity', 'shared-frequency', 'resonance', 'unity']);
-const raw = [...research, ...prestige, ...kit];
-const ids = new Map(raw.map((skill, index) => [skill.id, legacy.has(skill.id) ? skill.id
-  : skill.currency === 'prestige' ? `p${String(index - research.length + 1).padStart(2, '0')}` : `${skill.branch.slice(0, 2)}${skill.tier}`]));
+const raw = [...research, ...prestige, ...kit, ...laterResearch, ...laterPrestige];
+let prestigeOrdinal = 0;
+const ids = new Map(raw.map((skill) => [skill.id, legacy.has(skill.id) ? skill.id
+  : skill.currency === 'prestige' ? `p${String(++prestigeOrdinal).padStart(2, '0')}` : `${skill.branch.slice(0, 2)}${skill.tier}`]));
+if (new Set(ids.values()).size !== raw.length) throw new Error('Research IDs must be unique.');
 export const SKILLS = Object.freeze(raw.map((skill) => ({ ...skill, key: skill.id, id: ids.get(skill.id),
   requires: skill.requires.map((id) => ids.get(id)),
   requiredRanks: Object.fromEntries(Object.entries(skill.requiredRanks).map(([id, value]) => [ids.get(id), value])),
 })));
-export const RESEARCH_TOTAL_RANKS = [...research, ...kit].reduce((sum, skill) => sum + skill.maxRank, 0);
-export const RESEARCH_TOTAL_COST = [...research, ...kit].reduce((sum, skill) => sum + Array.from({ length: skill.maxRank }, (_, rank) => Math.ceil(skill.cost * skill.costGrowth ** rank)).reduce((a, b) => a + b, 0), 0);
+const regular = SKILLS.filter((skill) => skill.currency === 'skill');
+export const RESEARCH_TOTAL_RANKS = regular.reduce((sum, skill) => sum + skill.maxRank, 0);
+export const RESEARCH_TOTAL_COST = regular.reduce((sum, skill) => sum + Array.from({ length: skill.maxRank }, (_, rank) => Math.ceil(skill.cost * skill.costGrowth ** rank)).reduce((a, b) => a + b, 0), 0);
 // 2 base + 1 milestone + 1 Event horizon + floor(4.2 research + 2 prestige insight).
 export const MAX_SKILL_POINTS_PER_ROUND = 10;

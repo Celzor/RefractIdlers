@@ -25,6 +25,11 @@ const LINES = {
   scoreboard: 'The board has numbers. I have a good feeling.',
   boss: 'That orb looks serious. I’ve prepared my serious face.',
   surge: 'Hold on to your photons. Here comes the surge!',
+  flare: 'LIGHT RAY! It ate a machine. My serious face was right all along.',
+  shielded: 'Shield held! The light ray bounced off. Very satisfying. Do it again.',
+  comet: 'A comet! Quick, click before it leaves without us.',
+  launch: 'Jump time! Dodge the rocks: WASD or arrows. Three hits and we limp home.',
+  crash: 'We bounced off three meteorites. Half the tank is gone and so is my dignity. Feed me.',
   roundend: 'Round complete. Time to grow a brighter idea.',
   restday: 'A little boat break. Big ideas need a small breather.',
   restnight: 'Ideas first. Armchair second. Actually, armchair first.',
@@ -55,6 +60,8 @@ const MACHINE_LINES = {
   laser: 'Immah firin mah lazor! BWAAAH! Entirely peer-reviewed.',
   probe: 'Starlink probes! The light has excellent reception now.',
   gate: 'A star gate. Please keep your fingers inside this dimension.',
+  flywheel: 'A flywheel! It stores momentum. I store snacks. We all have our talents.',
+  forge: 'A singularity forge. We tamed a black hole. It is on probation.',
 };
 const GARDEN_LINES = {
   growLights: 'Grow lights! The vegetables are getting a scientifically approved tan.',
@@ -77,6 +84,11 @@ const EVENTS = {
   skill: {mood:'cheer',priority:2,duration:5500},
   boss: {mood:'boss',priority:3,duration:5000},
   surge: {mood:'surge',priority:4,duration:5000},
+  flare: {mood:'boss',priority:5,duration:4500},
+  shielded: {mood:'cheer',priority:3,duration:3500},
+  comet: {mood:'surge',priority:4,duration:4500},
+  launch: {mood:'surge',priority:5,duration:6000},
+  crash: {mood:'boss',priority:5,duration:7000},
   roundend: {mood:'rest',priority:5,duration:6500},
   prestige: {mood:'prestige',priority:6,duration:8500},
 };

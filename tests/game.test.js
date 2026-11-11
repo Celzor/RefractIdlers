@@ -133,7 +133,7 @@ test('prestige uses earned LRC, preserves lifetime progress, and resets only tha
   const lifetime = a.lifetimeLrc;
   const otherBalance = b.lrc;
   const result = applyAction(state, a.id, { type: 'prestige' });
-  assert.deepEqual(result, { ok: true, amount: 2 });
+  assert.deepEqual(result, { ok: true, amount: 2, machines: {} });
   assert.equal(a.lifetimeLrc, lifetime);
   assert.equal(a.runLrc, 0);
   assert.equal(a.lrc, 0);
@@ -660,13 +660,17 @@ test('analytical multi-orb combat matches an iterative oracle for partial, boss 
       if (budget < cost) { nextHp -= budget * factor; break; }
       budget -= cost;
       reward += ((boss ? 1500 : 300) * 1.14 ** (nextLevel - 1) * (boss ? stats.bossDropMultiplier : 1) + stats.dropFlat) * scale * stats.dropMultiplier;
-      kills++; nextLevel++; nextHp = nextLevel === FINAL_LEVEL ? FINAL_HP * scale : 2000 * scale * getSystemHpMultiplier(nextLevel) * 1.18 ** (nextLevel - 1);
+      kills++; if (boss) break; nextLevel++; nextHp = nextLevel === FINAL_LEVEL ? FINAL_HP * scale : 2000 * scale * getSystemHpMultiplier(nextLevel) * 1.18 ** (nextLevel - 1);
       if(nextLevel%20===0)break;
     }
+    // A shattered jump point no longer opens the next system by itself: the ship enters transit at the gate.
+    const gateCleared = level % 20 === 0 && kills === 1;
     const result = applyAction(state, player.id, { type: 'click' });
     assert.equal(result.critical, false);
     assert.equal(result.kills, kills);
     assert.equal(core.level, nextLevel);
+    assert.equal(result.transit, gateCleared);
+    if (gateCleared) nextHp = core.hp;
     assert.ok(Math.abs(core.hp - nextHp) / Math.max(1, nextHp) < 1e-10);
     assert.ok(Math.abs(result.amount - stats.clickIncome - reward) / Math.max(1, reward) < 1e-10);
     assert.equal(validateState(state), true);
@@ -676,19 +680,20 @@ test('analytical multi-orb combat matches an iterative oracle for partial, boss 
 test('research has functional breadth and a proven multi-day completion floor', () => {
   const research = SKILLS.filter((skill) => skill.currency === 'skill');
   const prestige = SKILLS.filter((skill) => skill.currency === 'prestige');
-  assert.equal(research.length, 63); assert.equal(prestige.length, 16);
-  assert.equal(SKILL_BRANCHES.filter((branch) => branch.currency === 'skill').length, 11);
-  assert.equal(new Set(SKILLS.map((skill) => skill.id)).size, 79);
-  assert.equal(RESEARCH_TOTAL_RANKS, 393);
-  // Outfitting licences are appended after the prestige lines so packed saves keep their positions.
-  assert.deepEqual(SKILLS.slice(-3).map((skill) => skill.id), ['ki1', 'ki2', 'ki3']);
-  assert.equal(SKILLS[59].currency, 'skill'); assert.equal(SKILLS[60].id, 'p01');
+  assert.equal(research.length, 87); assert.equal(prestige.length, 24);
+  assert.equal(SKILL_BRANCHES.filter((branch) => branch.currency === 'skill').length, 15);
+  assert.equal(new Set(SKILLS.map((skill) => skill.id)).size, 111);
+  assert.equal(RESEARCH_TOTAL_RANKS, 534);
+  // Shipped positions never move: Outfitting licences follow the first prestige lines, and every later discipline is appended.
+  assert.deepEqual(SKILLS.slice(76, 79).map((skill) => skill.id), ['ki1', 'ki2', 'ki3']);
+  assert.equal(SKILLS[59].currency, 'skill'); assert.equal(SKILLS[60].id, 'p01'); assert.equal(SKILLS[79].id, 'ar1'); assert.equal(SKILLS.at(-1).id, 'p24');
+  for (const branch of ['arsenal', 'industry', 'engineering', 'hull']) assert.equal(research.filter((skill) => skill.branch === branch).length, 6);
   const independentlySummedCost = research.reduce((total, skill) => total + Array.from({ length: skill.maxRank }, (_, i) => Math.ceil(skill.cost * skill.costGrowth ** i)).reduce((a, b) => a + b, 0), 0);
   assert.equal(RESEARCH_TOTAL_COST, independentlySummedCost);
   assert.ok(RESEARCH_TOTAL_COST / MAX_SKILL_POINTS_PER_ROUND / 1440 > 4);
   const state = setup(); start(state); const player = state.players[0];
   player.skills = Object.fromEntries(SKILLS.map((skill) => [skill.id, skill.maxRank]));
-  player.generators = { mote: 20, satellite: 20, prism: 20, star: 20, nova: 20 };
+  player.generators = Object.fromEntries(GENERATORS.map((generator) => [generator.id, 20]));
   player.highestOrb = 200; player.combo = 10;
   for (const skill of SKILLS) {
     const full = player.skills[skill.id]; player.skills[skill.id] = 0;
@@ -952,9 +957,9 @@ test('combat migration retains legacy damage fractions, rejects corrupt cores an
 
 test('all four Arsenal machines require their own milestones and research before the host permits a purchase', () => {
   assert.deepEqual(GENERATORS.filter((g) => g.category === 'arsenal').map((g) => g.id), ['mouse', 'laser', 'probe', 'gate']);
-  assert.equal(GENERATORS.filter((g) => g.category === 'workshop').length, 8);
-  // Collection tiers are appended after the shipped machines so packed saves keep every position.
-  assert.deepEqual(GENERATORS.slice(-3).map((g) => g.id), ['sail', 'lens', 'dyson']);
+  assert.equal(GENERATORS.filter((g) => g.category === 'workshop').length, 9);
+  // Collection tiers, the flywheel and the forge are appended after the shipped machines so packed saves keep every position.
+  assert.deepEqual(GENERATORS.slice(12).map((g) => g.id), ['sail', 'lens', 'dyson', 'flywheel', 'forge']);
   for (const generator of GENERATORS.filter((g) => g.category === 'arsenal')) {
     const state = setup(); start(state); const player = state.players[0]; fund(player, 1e10);
     const before = structuredClone(state);

@@ -6,7 +6,7 @@ export const PIXEL_PALETTE = Object.freeze({
   blue: '#4d718b', red: '#a35b50', pink: '#d3917c', purple: '#a491b1',
 });
 
-export const GENERATOR_IDS = Object.freeze(['mote', 'satellite', 'prism', 'star', 'nova', 'mouse', 'laser', 'probe', 'gate', 'wormhole', 'foamer', 'string', 'sail', 'lens', 'dyson']);
+export const GENERATOR_IDS = Object.freeze(['mote', 'satellite', 'prism', 'star', 'nova', 'mouse', 'laser', 'probe', 'gate', 'wormhole', 'foamer', 'string', 'sail', 'lens', 'dyson', 'flywheel', 'forge']);
 const IDS = GENERATOR_IDS;
 
 function sprite(id, phase = 0.5, running = false) {
@@ -200,6 +200,27 @@ function sprite(id, phase = 0.5, running = false) {
     for (let x = 11; x < 23; x += 5) r(x,8,1,17,'wood');
     r(9,8,1,17,'shade'); r(22,8,1,17,'shade');
     r(5,14,2,5,'ink'); r(25,14,2,5,'ink'); r(4,15,1,3,'yellow'); r(27,15,1,3,'yellow');
+  } else if (id === 'flywheel') {
+    // A heavy brass flywheel on a stand; one bright spoke marks the spin.
+    r(6,27,20,4,'ink'); r(8,28,16,2,'wood');
+    r(14,20,4,8,'ink'); r(15,21,2,6,'shade');
+    r(9,3,14,3,'ink'); r(6,6,20,3,'ink'); r(4,9,24,11,'ink'); r(6,20,20,3,'ink'); r(9,23,14,2,'ink');
+    r(10,5,12,2,'yellow'); r(7,8,18,2,'yellow'); r(5,10,22,9,'yellow'); r(7,19,18,2,'orange'); r(10,21,12,2,'orange');
+    r(9,8,14,12,'wood'); r(13,12,6,5,'ink'); r(14,13,4,3,'paper');
+    const spoke = running ? Math.floor(phase*4)%4 : 0;
+    const [sx,sy,sw,sh] = [[15,8,2,4],[20,13,4,2],[15,17,2,4],[8,13,4,2]][spoke]; r(sx,sy,sw,sh,'cream');
+    r(2,14,4,3,'ink'); r(26,14,4,3,'ink'); r(1,15,2,1,'yellow'); r(29,15,2,1,'yellow');
+  } else if (id === 'forge') {
+    // A black hole clamped inside a brass forge; stray starlight sparks off the rim.
+    r(4,27,24,4,'ink'); r(6,28,20,2,'shade');
+    r(8,22,16,5,'ink'); r(10,23,12,3,'wood');
+    r(3,8,5,14,'ink'); r(24,8,5,14,'ink'); r(4,9,3,12,'yellow'); r(25,9,3,12,'yellow');
+    r(8,6,16,3,'ink'); r(9,7,14,1,'yellow');
+    r(8,9,16,13,'ink'); r(10,10,12,11,'purple'); r(12,12,8,7,'blue'); r(14,14,4,3,'ink');
+    const swirl = running ? Math.floor(phase*4)%4 : 1;
+    const [ax,ay,aw,ah] = [[11,11,3,1],[19,13,2,3],[16,19,3,1],[10,15,2,3]][swirl]; r(ax,ay,aw,ah,'sky');
+    r(13,2,2,4,'ink'); r(17,1,2,5,'ink'); r(13,1,2,1,'cream'); r(17,0,2,1,'yellow');
+    if (running && phase < .5) { r(6,4,1,1,'cream'); r(25,3,1,1,'yellow'); }
   }
   return shapes;
 }

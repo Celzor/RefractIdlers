@@ -49,10 +49,14 @@ test('each system ends at a timed boss and excess damage stops at the next gate'
   setCore(state,19);p.orbsDestroyed=18;p.totalPrestige=Number.MAX_SAFE_INTEGER;p.generators={wormhole:1000,foamer:1000,star:1000};
   assert.equal(applyAction(state,p.id,{type:'click'}).ok,true);
   assert.equal(p.orb.level,20);assert.equal(p.orb.hp,getOrb(p,state).maxHp);assert.equal(Object.hasOwn(p.orb,'bossStartedAt'),false,'Arriving with excess damage does not start the attempt');
-  assert.equal(applyAction(state,p.id,{type:'click'}).ok,true);
-  assert.equal(p.orb.level,40,'Defeating the gate opens the next system');
-  assert.equal(p.orb.hp,getOrb(p,state).maxHp,'Excess damage cannot chip the next gate');
-  assert.equal(Object.hasOwn(p.orb,'bossStartedAt'),false);assert.equal(p.orbsDestroyed,39);assert.equal(validateState(state),true);
+  const gate=applyAction(state,p.id,{type:'click'});
+  assert.equal(gate.ok,true);assert.equal(gate.kills,1);assert.equal(gate.transit,true,'Defeating the gate launches the ship instead of opening the next system outright');
+  assert.equal(p.orb.level,20);assert.deepEqual(p.transit,{pilot:p.id});assert.equal(p.orb.hp,getOrb(p,state).maxHp,'The cleared jump point waits at full health while the ship is in transit');
+  assert.equal(Object.hasOwn(p.orb,'bossStartedAt'),false);assert.equal(p.orbsDestroyed,20);assert.equal(validateState(state),true);
+  assert.deepEqual(applyAction(state,p.id,{type:'click'}),{ok:true,damage:getStats(p,state).clickDamage,amount:getStats(p,state).clickIncome,kills:0,critical:false,transit:true,comet:false,flare:null},'Hits during transit never touch a core');
+  assert.equal(applyAction(state,p.id,{type:'completeJump',arrived:true}).ok,true);
+  assert.equal(p.orb.level,21,'Arrival opens the next system one core at a time');assert.equal(p.transit,null);assert.equal(p.fuel,0);
+  assert.equal(p.orb.hp,getOrb(p,state).maxHp,'Excess damage from the gate never carries into the next system');assert.equal(validateState(state),true);
 });
 
 test('boss timeout restores full health, grants no kill, and waits for a new hit to retry',()=>{

@@ -37,14 +37,18 @@ export const GENERATORS = Object.freeze([
   {id:'sail',name:'Solar sail',category:'workshop',kind:'passive',description:'A kilometre of mirror film catches starlight for 2,600 base LRC per second.',baseCost:150000,baseRate:2600,unlock:{orb:15},icon:'⛵'},
   {id:'lens',name:'Lens cathedral',category:'workshop',kind:'passive',description:'A vaulted hall of prisms focuses a whole system’s light: 24,000 base LRC per second.',baseCost:1800000,baseRate:24000,unlock:{orb:40,rounds:20},icon:'◭'},
   {id:'dyson',name:'Dyson lantern',category:'workshop',kind:'passive',description:'A lantern shell around a captured star: 260,000 base LRC per second.',baseCost:25000000,baseRate:260000,unlock:{orb:80,prestiges:1},icon:'✺'},
+  {id:'flywheel',name:'Momentum flywheel',category:'click',kind:'click',description:'+1 combo capacity and +0.1% damage per combo stack per unit. Combos cap at 250 stacks.',baseCost:90000,baseRate:0,comboCap:1,comboPower:.001,unlock:{skills:{ki2:1}},icon:'↻'},
+  {id:'forge',name:'Singularity forge',category:'workshop',kind:'passive',description:'A tamed black hole hammers captured starlight into 3,200,000 base LRC per second.',baseCost:400000000,baseRate:3200000,unlock:{orb:120,prestiges:3},icon:'◍'},
 ]);
 const skillById = new Map(SKILLS.map(s=>[s.id,s]));
 const generatorById = new Map(GENERATORS.map(g=>[g.id,g]));
-/** Collection machines beyond the pocket star: plain base rates, no dedicated research line yet. */
-const DEEP_IDS=['sail','lens','dyson'];
+/** Collection machines beyond the pocket star. Deep industry research tunes each one and the whole group. */
+const DEEP_IDS=['sail','lens','dyson','forge'],DEEP_PCT={sail:'sailPct',lens:'lensPct',dyson:'dysonPct'};
+/** Boss light rays, shields, passing comets and the flight between systems. */
+export const FLARE_CHANCE=0.03,COMET_SECONDS=6,SHIELD_LIMIT=100,COMBO_LIMIT=250,CRASH_FUEL_FRACTION=0.5;
 
 export function createGame({seed=0x5eed,mode='scoreboard'}={}) {
-  return {version:1,combatVersion:COMBAT_VERSION,campaignVersion:CAMPAIGN_VERSION,victory:null,mode:mode==='coop'?'coop':'scoreboard',sharedLrc:0,sharedFuel:0,sharedOrb:freshOrb(),phase:'lobby',round:0,
+  return {version:1,combatVersion:COMBAT_VERSION,campaignVersion:CAMPAIGN_VERSION,victory:null,mode:mode==='coop'?'coop':'scoreboard',sharedLrc:0,sharedFuel:0,sharedOrb:freshOrb(),sharedTransit:null,comet:null,phase:'lobby',round:0,
     roundDuration:60,remaining:60,now:0,players:[],teamLrc:0,goal:500,goalReached:false,lastRound:null,rng:seed>>>0};
 }
 function safeAvatar(value) {
@@ -64,7 +68,7 @@ function createPlayer(state,person) {
   const player={id:person.id,name:String(person.name||'Pilot').slice(0,40),avatarUrl:safeAvatar(person.avatarUrl),color:COLORS[state.players.length%8],bot:Boolean(person.bot),
     lrc:0,runLrc:0,lifetimeLrc:0,roundLrc:0,clicks:0,roundClicks:0,autoClicks:0,autoClock:0,arsenalClock:[0,0,0,0],arsenalShots:[0,0,0,0],skillPoints:0,skills:{},generators:{},
     prestigePoints:0,totalPrestige:0,prestigeCount:0,orb:freshOrb(),highestOrb:state.mode==='coop'?state.sharedOrb.level:1,orbsDestroyed:0,
-    completedRounds:0,victories:0,combo:0,comboAt:0,ready:false,clickTokens:3,botClock:0,secretOrb:null,fuel:0,farm:createFarm()};
+    completedRounds:0,victories:0,combo:0,comboAt:0,ready:false,clickTokens:3,botClock:0,secretOrb:null,fuel:0,shield:0,machinesLost:0,transit:null,farm:createFarm()};
   // A returning winner still sees the frozen final core. Joining never pays a
   // victory reward again; the event itself survives roster changes.
   if(state.phase==='victory'&&state.mode==='scoreboard'&&state.victory?.playerId===player.id){player.orb={level:FINAL_LEVEL,hp:0,finalElapsed:FINAL_MIN_SECONDS};player.highestOrb=FINAL_LEVEL;}
@@ -91,42 +95,66 @@ function effectsOf(p) {
   const e={};for(const [id,owned]of Object.entries(p.skills)){const s=skillById.get(id);if(!s||!owned)continue;
     for(const [effect,amount]of Object.entries(s.effects))e[effect]=(e[effect]||0)+amount*owned;}return e;
 }
+const comboWindow=(e)=>2+(e.comboSeconds||0);
+const shieldCapacityOf=(e)=>Math.min(SHIELD_LIMIT,Math.floor((e.shield||0)+1e-9));
+const discountOf=(e,g)=>Math.min(0.5,(e.machineDiscount||0)+(g.category==='workshop'?e.workshopDiscount||0:g.category==='arsenal'?e.arsenalDiscount||0:e.clickDiscount||0));
+const unitPrice=(g,owned,discount)=>Math.ceil(g.baseCost*1.17**owned*(1-discount));
+/** Permanent hangar research: the machines a fresh run starts with. */
+const startingKitOf=(e)=>{const kit={};if(e.startMotes>0)kit.mote=Math.floor(e.startMotes+1e-9);if(e.startArrays>0){kit.prism=Math.floor(e.startArrays+1e-9);kit.satellite=kit.prism;}return kit;};
+/** One shared comet window per round, fixed from the round number and host RNG without advancing it. */
+export function cometWindow(state){
+  if(!state||state.phase!=='round'||!state.comet)return null;
+  const elapsed=state.roundDuration-state.remaining,at=state.comet.at;
+  return {at,seconds:COMET_SECONDS,active:elapsed>=at&&elapsed<at+COMET_SECONDS,remaining:Math.max(0,at+COMET_SECONDS-elapsed),until:Math.max(0,at-elapsed)};
+}
+function rollComet(state){
+  const mix=(value,salt)=>(Math.imul((value^salt)>>>0,2654435761)>>>0)/2**32;
+  if(mix(state.rng,state.round*0x9e3779b9)>=0.6)return null;
+  const span=state.roundDuration-10-COMET_SECONDS-8;
+  return span>0?{at:8+Math.floor(mix(state.rng,state.round*0x85ebca6b+1)*span)}:null;
+}
 export function getRoundDuration(state){return Math.min(180,ROUND_DURATION+Math.max(0,...state.players.filter(player=>!player.bot).map(player=>Math.max(0,effectsOf(player).roundSeconds||0))));}
 export function getStats(p,state) {
   const e=effectsOf(p),crew=state?.mode==='coop'?state.players:[p];let frequency=0,crewAuto=0;
   for(const member of crew){const c=member===p?e:effectsOf(member);frequency+=(c.frequency||0)+(c.crewStrength||0)*crew.length;crewAuto+=(c.crewAutomation||0)*crew.length;}
-  const machines=Object.values(p.generators).reduce((a,b)=>a+b,0),generatorMultiplier=1+(p.generators.star||0)*0.1;
+  const owned=id=>p.generators[id]||0,machines=Object.values(p.generators).reduce((a,b)=>a+b,0),prestigeBonusPerPoint=0.1+(e.legacyPct||0),generatorMultiplier=1+owned('star')*(0.1+(e.starBonus||0));
   const farmStats=getFarmStats(p,e),beamBonus=p.farm?.fedSeconds>0?farmStats.feedBonus:0,scoreMultiplier=farmStats.scoreMultiplier||1;
-  const multiplier=cap((1+p.totalPrestige*0.1)*(1+frequency)*(1+(e.personalPct||0))*generatorMultiplier*(1+beamBonus));
-  const surge=Boolean(state?.phase==='round'&&state.remaining<=10&&state.remaining>0);
-  const comboCap=Math.floor(10+(e.comboCap||0)),combo=!state||state.now<p.comboAt+2?Math.min(comboCap,p.combo):0;
-  const clickDamage=cap((2+(e.damageFlat||0)+(p.generators.wormhole||0)*4)*(1+(e.damagePct||0)+(p.generators.foamer||0)*.2)*multiplier*(1+combo*(e.comboPower||0))*(surge?2:1));
+  const multiplier=cap((1+p.totalPrestige*prestigeBonusPerPoint)*(1+frequency)*(1+(e.personalPct||0))*generatorMultiplier*(1+beamBonus));
+  const surge=Boolean(state?.phase==='round'&&state.remaining<=10&&state.remaining>0),comet=Boolean(cometWindow(state)?.active);
+  const comboCap=Math.min(COMBO_LIMIT,Math.floor(10+(e.comboCap||0)+owned('flywheel'))),comboPower=(e.comboPower||0)+owned('flywheel')*0.001,comboSeconds=comboWindow(e);
+  const combo=!state||state.now<p.comboAt+comboSeconds?Math.min(comboCap,p.combo):0;
+  const clickDamage=cap((2+(e.damageFlat||0)+owned('wormhole')*(4+(e.wormholeFlat||0)))*(1+(e.damagePct||0)+owned('foamer')*(.2+(e.foamerPct||0)))*multiplier*(1+combo*comboPower)*(surge?2+(e.surgeDamagePct||0):1));
   const clickIncome=cap((0.25+(e.mintFlat||0))*(1+(e.mintPct||0))*(1+machines*(e.mintSynergy||0))*multiplier*(surge?1+(e.surgeMintPct||0):1)*scoreMultiplier);
-  const farms=(p.generators.satellite||0)*generatorById.get('satellite').baseRate*(1+(e.farmPct||0))*(1+(p.generators.prism||0)*(e.farmSynergy||0));
-  const deep=DEEP_IDS.reduce((total,id)=>total+(p.generators[id]||0)*generatorById.get(id).baseRate,0);
-  const arrays=(p.generators.prism||0)*32*(1+(e.arrayPct||0)),stars=(p.generators.nova||0)*300*(1+(e.starPct||0));
-  const arsenalRate=ARSENAL_IDS.reduce((total,id)=>total+(p.generators[id]||0)*generatorById.get(id).baseRate,0);
+  const farms=owned('satellite')*generatorById.get('satellite').baseRate*(1+(e.farmPct||0))*(1+owned('prism')*(e.farmSynergy||0));
+  const deep=DEEP_IDS.reduce((total,id)=>total+owned(id)*generatorById.get(id).baseRate*(1+(e.deepPct||0)+(e[DEEP_PCT[id]]||0)),0);
+  const arrays=owned('prism')*32*(1+(e.arrayPct||0)),stars=owned('nova')*300*(1+(e.starPct||0));
+  const arsenalRate=ARSENAL_IDS.reduce((total,id)=>total+owned(id)*generatorById.get(id).baseRate,0)*(1+(e.arsenalIncomePct||0));
   const machineRate=(farms+arrays+stars+deep+arsenalRate)*(1+(e.generatorPct||0))*(1+machines*(e.generatorSynergy||0));
   const passiveRate=cap((1+(e.passiveFlat||0)+machineRate)*(1+(e.passivePct||0))*multiplier*scoreMultiplier);
   const autoDamage=cap(clickDamage*(1+(e.autoDamagePct||0))),autoMint=cap(clickIncome*(e.autoMint||0));
-  const autoSpeed=1+(e.autoPct||0)+crewAuto,arsenalShots=p.arsenalShots||[0,0,0,0];
-  const autoProfiles=AUTO_IDS.map((id,index)=>{const g=generatorById.get(id),owned=p.generators[id]||0;
-    return {id,owned,rate:(owned*g.autoRate+(index===0?e.autoFlat||0:0))*autoSpeed,damage:cap(autoDamage*g.attackMultiplier),mint:id==='mouse'?clickIncome:autoMint,
+  const autoSpeed=1+(e.autoPct||0)+crewAuto,arsenalSpeed=1+(e.arsenalSpeedPct||0),arsenalDamage=1+(e.arsenalDamagePct||0),arsenalShots=p.arsenalShots||[0,0,0,0];
+  const strikeHits={laser:20+(e.laserHits||0),gate:100+(e.gateHits||0)};
+  const autoProfiles=AUTO_IDS.map((id,index)=>{const g=generatorById.get(id),units=owned(id);
+    return {id,owned:units,rate:(units*g.autoRate+(index===0?e.autoFlat||0:0))*autoSpeed*(index?arsenalSpeed*(id==='mouse'?1+(e.mouseRatePct||0):1):1),damage:cap(autoDamage*(strikeHits[id]??g.attackMultiplier)*(index?arsenalDamage:1)),mint:id==='mouse'?clickIncome:autoMint,
       shots:index===0?Math.max(0,p.autoClicks-arsenalShots.reduce((a,b)=>a+b,0)):arsenalShots[index-1],progress:index===0?p.autoClock:p.arsenalClock?.[index-1]||0};});
   const autoRate=autoProfiles.reduce((total,profile)=>total+profile.rate,0),autoDps=cap(autoProfiles.reduce((total,profile)=>total+profile.rate*profile.damage,0));
   const automaticMintRate=autoProfiles.reduce((total,profile)=>total+profile.rate*profile.mint,0);
   return {clickPower:clickDamage,clickDamage,clickIncome,passiveRate,idleRate:cap(passiveRate+automaticMintRate),autoRate,autoDamage,autoDps,autoMint,autoProfiles,
-    generatorMultiplier,multiplier,beamBonus,scoreMultiplier,surge,combo,comboCap,criticalChance:Math.min(0.8,0.05+(e.critChance||0)+(p.generators.string||0)*.01),criticalMultiplier:3+(e.critMultiplier||0)+(p.generators.string||0)*.1,
+    generatorMultiplier,multiplier,prestigeBonusPerPoint,beamBonus,scoreMultiplier,surge,combo,comboCap,comboPower,comboSeconds,criticalChance:Math.min(0.8,0.05+(e.critChance||0)+owned('string')*.01),criticalMultiplier:3+(e.critMultiplier||0)+owned('string')*(.1+(e.stringCrit||0)),
     extraHitChance:Math.min(0.9,e.extraHitChance||0),criticalMintMultiplier:1+(e.criticalMintPct||0),bossDamageMultiplier:1+(e.bossDamagePct||0),
     bossDropMultiplier:1+(e.bossDropPct||0),dropMultiplier:cap(multiplier*(1+(e.dropPct||0))*(1+Math.log2(p.highestOrb+1)*(e.orbScaling||0))*scoreMultiplier),
     dropFlat:e.dropFlat||0,autoDropMultiplier:1+(e.autoDropPct||0),roundBonusSeconds:Math.min(120,e.roundSeconds||0),
-    roundSkillBonus:Math.min(MAX_SKILL_POINTS_PER_ROUND-3,Math.floor((e.insight||0)+1e-9)+(rank(p,'unity')>0?1:0))};
+    roundSkillBonus:Math.min(MAX_SKILL_POINTS_PER_ROUND-3,Math.floor((e.insight||0)+1e-9)+(rank(p,'unity')>0?1:0)),
+    // Space hazards and hangar research. Shield charges are the live count; capacity is what a boss attempt refills to.
+    surgeDamageMultiplier:2+(e.surgeDamagePct||0),comet,cometDamage:3+(e.cometDamage||0),cometMint:5+(e.cometMint||0),shield:p.shield||0,shieldCapacity:shieldCapacityOf(e),flareChance:FLARE_CHANCE*(1-Math.min(.75,e.flareResist||0)),
+    salvagePct:Math.min(1,e.salvagePct||0),reflectHits:e.reflectHits||0,discounts:{workshop:discountOf(e,{category:'workshop'}),arsenal:discountOf(e,{category:'arsenal'}),click:discountOf(e,{category:'click'})},
+    startingKit:startingKitOf(e),clickTechRetention:Math.min(1,e.keepClickPct||0)};
 }
 export function getBalance(p,state){return state?.mode==='coop'?state.sharedLrc:p?.lrc??0;}
 export function getTeamStats(state){return state.players.reduce((total,p)=>{const s=getStats(p,state);return {clickPower:cap(total.clickPower+s.clickPower),idleRate:cap(total.idleRate+s.idleRate),autoDps:cap(total.autoDps+s.autoDps)};},{clickPower:0,idleRate:0,autoDps:0});}
 const personalTarget=(round)=>cap(Math.round(500*(1+0.12*Math.max(0,round-1))**2));
 export function getRoundTarget(state){return state.mode==='coop'?state.goal:personalTarget(state.round);}
-export function generatorCost(p,id){const g=generatorById.get(id);return g?Math.ceil(g.baseCost*1.17**(p.generators[id]||0)):Infinity;}
+export function generatorCost(p,id){const g=generatorById.get(id);return g?unitPrice(g,p.generators[id]||0,discountOf(effectsOf(p),g)):Infinity;}
 export function generatorAvailability(p,id,state){
   const g=generatorById.get(id);if(!p||!g)return {unlocked:false,available:false,reason:'Unknown generator.'};
   const locked=(reason)=>({unlocked:false,available:false,reason}),u=g.unlock||{};
@@ -143,8 +171,8 @@ export function generatorQuote(p,id,quantity=1,state){
   const g=generatorById.get(id);if(!g||![1,10,'max'].includes(quantity))return {quantity:0,cost:0};
   const owned=p.generators[id]||0,wanted=quantity==='max'?1000-owned:quantity;
   if(wanted<=0||owned+wanted>1000)return {quantity:0,cost:0};
-  const budget=getBalance(p,state);let cost=0,bought=0;
-  for(let i=0;i<wanted;i++){const next=Math.ceil(g.baseCost*1.17**(owned+i));if(quantity==='max'&&cost+next>budget)break;cost+=next;bought++;}
+  const budget=getBalance(p,state),discount=discountOf(effectsOf(p),g);let cost=0,bought=0;
+  for(let i=0;i<wanted;i++){const next=unitPrice(g,owned+i,discount);if(quantity==='max'&&cost+next>budget)break;cost+=next;bought++;}
   return {quantity:bought,cost};
 }
 export function skillCost(p,id){const s=skillById.get(id);return s?Math.ceil(s.cost*s.costGrowth**rank(p,id)):Infinity;}
@@ -182,8 +210,13 @@ const orbState=(p,state)=>state.mode==='coop'?state.sharedOrb:p.orb;
 export const getFuel=(p,state)=>state?.mode==='coop'?state.sharedFuel||0:p?.fuel||0;
 function setFuel(p,state,value){if(state.mode==='coop')state.sharedFuel=value;else p.fuel=value;}
 /** A jump-point core cannot be reached until the tank holds that system's fuel target. */
-export function getShipStatus(p,state){const level=orbState(p||{orb:freshOrb()},state).level,target=fuelTarget(level),fuel=Math.min(target,getFuel(p,state));
-  return {fuel,target,full:fuel>=target,jumpPoint:isJumpPoint(level),grounded:isJumpPoint(level)&&fuel<target,systemIndex:getCampaignLocation(level).index};}
+/** A transit is a shattered jump point whose flight to the next system has not succeeded yet. */
+export const getTransit=(p,state)=>(state?.mode==='coop'?state.sharedTransit:p?.transit)||null;
+function setTransit(p,state,value){if(state.mode==='coop')state.sharedTransit=value;else p.transit=value;}
+/** The pilot who flies: whoever shattered the jump point, or the host once that pilot has left the crew. */
+export function getFlyer(state,transit){if(!transit)return null;return state.players.some(member=>member.id===transit.pilot)?transit.pilot:state.players[0]?.id??null;}
+export function getShipStatus(p,state){const level=orbState(p||{orb:freshOrb()},state).level,target=fuelTarget(level),fuel=Math.min(target,getFuel(p,state)),transit=p?getTransit(p,state):null;
+  return {fuel,target,full:fuel>=target,jumpPoint:isJumpPoint(level),grounded:isJumpPoint(level)&&fuel<target,systemIndex:getCampaignLocation(level).index,transit:Boolean(transit),flyer:getFlyer(state,transit),launchReady:Boolean(transit)&&fuel>=target};}
 function rewardAt(level,s,automatic=false,scale=1){return cap((baseReward(level,scale)*(boss(level)?s.bossDropMultiplier:1)+s.dropFlat*scale)*s.dropMultiplier*(automatic?s.autoDropMultiplier:1));}
 export function getOrb(p,state){const campaignOrb=orbState(p||{orb:freshOrb()},state),secret=Boolean(p?.secretOrb),orb=secret?{...p.secretOrb,level:campaignOrb.level}:campaignOrb,s=p?getStats(p,state):null,location=getCampaignLocation(orb.level);
   const {crewSize,crewScale}=getCoopDifficulty(state),maxHp=secret?SECRET_HP:orbHp(orb.level,crewScale),damageFraction=Math.max(0,Math.min(1,1-orb.hp/maxHp));
@@ -191,7 +224,7 @@ export function getOrb(p,state){const campaignOrb=orbState(p||{orb:freshOrb()},s
   const systemBoss=!secret&&boss(orb.level),bossActive=secret||systemBoss&&Object.hasOwn(orb,'bossStartedAt'),duration=secret?SECRET_DURATION:BOSS_DURATION;
   const participants=secret?[p]:state.mode==='coop'?state.players.filter(member=>!member.secretOrb):p?[p]:[];
   const bossDps=cap(participants.reduce((total,member)=>{const stats=member===p?s:getStats(member,state);return total+stats.autoDps*(systemBoss?stats.bossDamageMultiplier/2:1);},0));
-  return {...orb,maxHp,unscaledMaxHp:secret?SECRET_HP:orbHp(orb.level),crewSize:secret?1:crewSize,crewScale:secret?1:crewScale,damageFraction,fractureStage,boss:secret||systemBoss,resistance:systemBoss?0.5:0,
+  return {...orb,maxHp,unscaledMaxHp:secret?SECRET_HP:orbHp(orb.level),crewSize:secret?1:crewSize,crewScale:secret?1:crewScale,damageFraction,fractureStage,boss:secret||systemBoss,resistance:systemBoss?0.5:0,transit:!secret&&Boolean(p&&getTransit(p,state)),
     secret,systemBoss,bossActive,bossRemaining:systemBoss||secret?Math.max(0,duration-(bossActive?state.now-(secret?orb.startedAt:orb.bossStartedAt):0)):0,requiredDps:systemBoss||secret?maxHp/duration:0,bossDps,
     final:!secret&&location.final,finalElapsed:orb.finalElapsed||0,finalRemaining:!secret&&location.final?Math.max(0,FINAL_MIN_SECONDS-(orb.finalElapsed||0)):0,
     systemIndex:location.index,systemName:secret?'The Green Star':location.system.name,planetName:secret?'Haze':location.planetName,reward:secret||location.final?0:s?rewardAt(orb.level,s,false,crewScale):baseReward(orb.level,crewScale)};}
@@ -232,12 +265,19 @@ function damageOrb(state,p,damage,s,automatic=false,hits=1,perHit=damage,at=stat
     return {kills:0,amount:0};
   }
   const orb=orbState(p,state),scale=getCoopDifficulty(state).crewScale;let budget=cap(damage),kills=0,reward=0;
+  if(getTransit(p,state))return {kills:0,amount:0,transit:true};
   if(isJumpPoint(orb.level)&&getFuel(p,state)<fuelTarget(orb.level))return {kills:0,amount:0,grounded:true};
   if(orb.level===FINAL_LEVEL)return damageFinal(state,p,perHit,hits,at);
-  if(boss(orb.level)&&!Object.hasOwn(orb,'bossStartedAt'))orb.bossStartedAt=at;
+  if(boss(orb.level)&&!Object.hasOwn(orb,'bossStartedAt')){orb.bossStartedAt=at;rechargeShields(state,p);}
   const factor=boss(orb.level)?s.bossDamageMultiplier/2:1,firstCost=orb.hp/factor;
   if(budget<firstCost){orb.hp=Math.max(Number.MIN_VALUE,orb.hp-budget*factor);return {kills,amount:0};}
-  budget=Math.max(0,budget-firstCost);reward=rewardAt(orb.level,s,automatic,scale);kills=1;if(isJumpPoint(orb.level))setFuel(p,state,0);orb.level=Math.min(FINAL_LEVEL,orb.level+1);delete orb.bossStartedAt;
+  budget=Math.max(0,budget-firstCost);reward=rewardAt(orb.level,s,automatic,scale);kills=1;delete orb.bossStartedAt;
+  if(isJumpPoint(orb.level)){
+    // The shattered jump point becomes a launch pad. The flight between systems decides whether the next system is reached.
+    orb.hp=orbHp(orb.level,scale);setTransit(p,state,{pilot:p.id});p.orbsDestroyed=count(p.orbsDestroyed+1);
+    return {kills,amount:earn(state,p,reward),transit:true};
+  }
+  orb.level=Math.min(FINAL_LEVEL,orb.level+1);
   // A new system boss always starts at full health. Overflow cannot skip its DPS check.
   const nextGate=Math.min(FINAL_LEVEL,Math.ceil(orb.level/20)*20),maxFull=nextGate-orb.level;let low=0,high=Math.min(maxFull,1);
   while(high<maxFull&&hpCost(orb.level,high,s,scale)<=budget)high=Math.min(maxFull,high*2);
@@ -250,11 +290,34 @@ function damageOrb(state,p,damage,s,automatic=false,hits=1,perHit=damage,at=stat
   if(state.mode==='coop')for(const member of state.players)member.highestOrb=Math.max(member.highestOrb,orb.level);else p.highestOrb=Math.max(p.highestOrb,orb.level);
   return {kills,amount:earn(state,p,reward)};
 }
-function startRound(state){state.phase='round';state.round++;state.roundDuration=getRoundDuration(state);state.remaining=state.roundDuration;state.teamLrc=0;state.goal=cap(personalTarget(state.round)*Math.max(1,state.players.length));state.goalReached=false;
-  for(const p of state.players){p.roundLrc=0;p.roundClicks=0;p.ready=false;p.clickTokens=3;p.botClock=0;p.combo=0;}}
+/** Every pilot on a boss attempt starts it with a full shield; in co-op the shared attempt refills the whole crew. */
+function rechargeShields(state,p){for(const member of state.mode==='coop'?state.players.filter(member=>!member.secretOrb):[p])member.shield=shieldCapacityOf(effectsOf(member));}
+function inBossFight(p,state){if(p.secretOrb)return true;const orb=orbState(p,state);return boss(orb.level)&&Object.hasOwn(orb,'bossStartedAt');}
+/**
+ * A light ray bursts from the boss. It only matters when it can hit something: a shield charge absorbs it (and may
+ * reflect it back), otherwise one unit of a random owned machine type is destroyed and partially salvaged.
+ */
+function lightRay(state,p,s){
+  const targets=GENERATORS.filter(g=>(p.generators[g.id]||0)>0);
+  if(!targets.length)return {hit:false,blocked:false,id:null,refund:0};
+  if((p.shield||0)>0){
+    p.shield--;let reflected=0;
+    if(s.reflectHits>0)reflected=damageOrb(state,p,cap(s.autoDamage*s.reflectHits),s,true,s.reflectHits,s.autoDamage).kills||0;
+    return {hit:false,blocked:true,id:null,shield:p.shield,reflected,refund:0};
+  }
+  const g=targets[Math.floor(random(state)*targets.length)];
+  p.generators[g.id]--;if(!p.generators[g.id])delete p.generators[g.id];p.machinesLost=count(p.machinesLost+1);
+  let refund=cap(generatorCost(p,g.id)*s.salvagePct);
+  // Salvage is spendable money, never new run earnings: a personal wallet can never exceed its run total.
+  if(state.mode==='coop')state.sharedLrc=cap(state.sharedLrc+refund);
+  else{refund=Math.min(refund,Math.max(0,p.runLrc-p.lrc));p.lrc=cap(p.lrc+refund);}
+  return {hit:true,blocked:false,id:g.id,index:p.generators[g.id]||0,refund};
+}
+function startRound(state){state.phase='round';state.round++;state.roundDuration=getRoundDuration(state);state.remaining=state.roundDuration;state.teamLrc=0;state.goal=cap(personalTarget(state.round)*Math.max(1,state.players.length));state.goalReached=false;state.comet=rollComet(state);
+  for(const p of state.players){p.roundLrc=0;p.roundClicks=0;p.ready=false;p.clickTokens=3;p.botClock=0;p.combo=0;p.shield=shieldCapacityOf(effectsOf(p));}}
 function maybeStartNextRound(state){const humans=state.players.filter(p=>!p.bot);if(humans.length&&humans.every(p=>p.ready))startRound(state);}
 function finishRound(state){
-  state.phase='intermission';state.remaining=0;const skillPoints=2+(state.mode==='coop'&&state.goalReached?1:0);
+  state.phase='intermission';state.remaining=0;state.comet=null;const skillPoints=2+(state.mode==='coop'&&state.goalReached?1:0);
   const awards=new Map(state.players.map(p=>[p.id,Math.min(MAX_SKILL_POINTS_PER_ROUND,skillPoints+(state.mode==='scoreboard'&&p.roundLrc>=getRoundTarget(state)?1:0)+getStats(p,state).roundSkillBonus)]));
   state.lastRound={round:state.round,teamLrc:state.teamLrc,goal:state.goal,goalReached:state.goalReached,skillPoints,players:state.players.map(p=>({id:p.id,lrc:p.roundLrc,clicks:p.roundClicks,skillPoints:awards.get(p.id)}))};
   for(const p of state.players){p.skillPoints=count(p.skillPoints+awards.get(p.id));p.completedRounds=count(p.completedRounds+1);p.ready=false;
@@ -265,14 +328,14 @@ export function applyAction(state,playerId,action){
   if(Object.hasOwn(action,'round')&&(!integer(action.round,1e6)||action.round!==state.round))return fail('That action belongs to an earlier round. Resync and try again.');
   if(action.type==='newJourney'){
     if(state.phase!=='victory')return fail('Complete the current journey first.');if(state.players[0]?.id!==playerId)return fail('Only the host can begin a new journey.');
-    state.victory=null;state.phase='intermission';state.remaining=0;state.sharedFuel=0;state.sharedOrb={level:1,hp:orbHp(1,getCoopDifficulty(state).crewScale)};
-    for(const member of state.players){member.orb=freshOrb();member.fuel=0;member.autoClock=0;member.arsenalClock=[0,0,0,0];member.combo=0;member.ready=false;member.secretOrb=null;}return {ok:true};}
+    state.victory=null;state.phase='intermission';state.remaining=0;state.sharedFuel=0;state.sharedTransit=null;state.sharedOrb={level:1,hp:orbHp(1,getCoopDifficulty(state).crewScale)};
+    for(const member of state.players){member.orb=freshOrb();member.fuel=0;member.transit=null;member.shield=0;member.autoClock=0;member.arsenalClock=[0,0,0,0];member.combo=0;member.ready=false;member.secretOrb=null;}return {ok:true};}
   if(state.phase==='victory')return fail('The journey is complete. The host can begin another when everyone is ready.');
   if(action.type==='startSecretChallenge'){
     if(!['round','intermission'].includes(state.phase))return fail('Start a round before entering the hidden system.');
     if(p.secretOrb)return fail('The secret challenge is already in progress.');
     if(p.farm.crops.weed)return fail('You have already unlocked the secret crop.');
-    p.secretOrb={hp:SECRET_HP,startedAt:state.now};return {ok:true};}
+    p.secretOrb={hp:SECRET_HP,startedAt:state.now};p.shield=shieldCapacityOf(effectsOf(p));return {ok:true};}
   if(action.type==='leaveSecretChallenge'){
     if(!p.secretOrb)return fail('There is no secret challenge to leave.');p.secretOrb=null;return {ok:true};}
   if(action.type==='resetProgress'){
@@ -285,17 +348,30 @@ export function applyAction(state,playerId,action){
   if(action.type==='start'){if(state.phase!=='lobby')return fail('The run has already started.');if(state.players[0]?.id!==playerId)return fail('Only the host can start the run.');startRound(state);return {ok:true};}
   if(action.type==='click'){
     if(state.phase!=='round')return fail('Harvesting resumes next round.');if(p.clickTokens<1)return fail('The core is recharging.');p.clickTokens--;
-    const before=getStats(p,state);p.combo=state.now<p.comboAt+2?Math.min(before.comboCap,p.combo+1):1;p.comboAt=state.now;
+    const before=getStats(p,state);p.combo=state.now<p.comboAt+before.comboSeconds?Math.min(before.comboCap,p.combo+1):1;p.comboAt=state.now;
     const s=getStats(p,state),critical=random(state)<s.criticalChance,hits=1+(s.extraHitChance>0&&random(state)<s.extraHitChance?1:0);
-    const damage=cap(s.clickDamage*hits*(critical?s.criticalMultiplier:1)),result=damageOrb(state,p,damage,s);
-    const minted=state.phase==='victory'?0:earn(state,p,s.clickIncome*(critical?s.criticalMintMultiplier:1));p.clicks=count(p.clicks+1);p.roundClicks=count(p.roundClicks+1);
-    return {ok:true,damage,amount:cap(result.amount+minted),kills:result.kills,critical};}
+    const damage=cap(s.clickDamage*hits*(critical?s.criticalMultiplier:1)*(s.comet?s.cometDamage:1)),result=damageOrb(state,p,damage,s);
+    const minted=state.phase==='victory'?0:earn(state,p,s.clickIncome*(critical?s.criticalMintMultiplier:1)*(s.comet?s.cometMint:1));p.clicks=count(p.clicks+1);p.roundClicks=count(p.roundClicks+1);
+    // A boss answers manual hits with light rays. Only the pilot who clicked risks their own machines.
+    const flare=!result.kills&&!result.grounded&&!result.transit&&inBossFight(p,state)&&random(state)<s.flareChance?lightRay(state,p,s):null;
+    return {ok:true,damage,amount:cap(result.amount+minted),kills:result.kills,critical,transit:Boolean(result.transit),comet:s.comet,flare};}
   if(action.type==='ready'){if(state.phase!=='intermission')return fail('Ready up between rounds.');p.ready=!p.ready;maybeStartNextRound(state);return {ok:true};}
   if(FARM_ACTIONS.has(action.type)){
     if(!['round','intermission'].includes(state.phase))return fail('Start a round to tend your garden.');
     const ship=getShipStatus(p,state),result=applyFarmAction(p,action,getBalance(p,state),cost=>{if(state.mode==='coop')state.sharedLrc-=cost;else p.lrc-=cost;},{fuelRoom:ship.target-ship.fuel});
     if(result.ok&&result.fuel>0)setFuel(p,state,Math.min(ship.target,ship.fuel+result.fuel));
     return result;}
+  if(action.type==='completeJump'){
+    // The flight itself is played on the flyer's client; the host only accepts a result for a fuelled ship at a jump point.
+    if(!['round','intermission'].includes(state.phase))return fail('Start a round before flying.');
+    const transit=getTransit(p,state);if(!transit)return fail('The ship is not waiting at a jump point.');
+    if(getFlyer(state,transit)!==playerId)return fail('Another pilot is flying this ship.');
+    if(typeof action.arrived!=='boolean')return fail('Invalid flight result.');
+    const ship=getShipStatus(p,state);if(!ship.full)return fail('Fuel the ship before launching.');
+    if(!action.arrived){setFuel(p,state,ship.fuel*CRASH_FUEL_FRACTION);return {ok:true,arrived:false,fuel:getFuel(p,state)};}
+    const orb=orbState(p,state);setFuel(p,state,0);setTransit(p,state,null);orb.level=Math.min(FINAL_LEVEL,orb.level+1);orb.hp=orbHp(orb.level,getCoopDifficulty(state).crewScale);delete orb.bossStartedAt;
+    if(state.mode==='coop')for(const member of state.players)member.highestOrb=Math.max(member.highestOrb,orb.level);else p.highestOrb=Math.max(p.highestOrb,orb.level);
+    return {ok:true,arrived:true,level:orb.level};}
   if(action.type==='buyGenerator'){
     const availability=generatorAvailability(p,action.id,state);if(!availability.available)return fail(availability.reason);
     const quantity=action.quantity===undefined?1:action.quantity;if(![1,10,'max'].includes(quantity))return fail('Choose Buy 1, Buy 10, or Buy Max.');
@@ -307,7 +383,9 @@ export function applyAction(state,playerId,action){
   if(action.type==='prestige'){
     if(state.phase!=='intermission')return fail('Refract your core between rounds.');const gain=prestigeGain(p);if(gain<1)return fail('Earn 2,500 LRCs in your own run to prestige.');
     p.prestigePoints=count(p.prestigePoints+gain);p.totalPrestige=count(p.totalPrestige+gain);p.prestigeCount=count(p.prestigeCount+1);
-    resetFarm(p);p.lrc=0;p.runLrc=0;p.generators={};p.orb=freshOrb();p.fuel=0;p.secretOrb=null;p.autoClock=0;p.arsenalClock=[0,0,0,0];p.combo=0;p.ready=false;return {ok:true,amount:gain};}
+    // Hangar research survives the reset: a share of Click technology stays and the launch kit is waiting.
+    const e=effectsOf(p),kept=Object.fromEntries(GENERATORS.filter(g=>g.category==='click'&&p.generators[g.id]>0).map(g=>[g.id,Math.floor(p.generators[g.id]*Math.min(1,e.keepClickPct||0)+1e-9)]).filter(([,units])=>units>0));
+    resetFarm(p);p.lrc=0;p.runLrc=0;p.generators={...kept,...startingKitOf(e)};p.orb=freshOrb();p.fuel=0;p.transit=null;p.shield=0;p.secretOrb=null;p.autoClock=0;p.arsenalClock=[0,0,0,0];p.combo=0;p.ready=false;return {ok:true,amount:gain,machines:{...p.generators}};}
   return fail('Unknown action.');
 }
 function expireChallenges(state){
@@ -325,7 +403,7 @@ function encounterStep(state,work,limit){
   const scale=getCoopDifficulty(state).crewScale;
   for(const {orb,entries,secret}of groups){
     // A jump-point core the ship cannot reach yet takes no hits, so it never starts a timed encounter.
-    if(!secret&&isJumpPoint(orb.level)&&getFuel(entries[0]?.p,state)<fuelTarget(orb.level))continue;
+    if(!secret&&(getTransit(entries[0]?.p,state)||isJumpPoint(orb.level)&&getFuel(entries[0]?.p,state)<fuelTarget(orb.level)))continue;
     const timed=secret||boss(orb.level),active=secret||Object.hasOwn(orb,'bossStartedAt');
     if(timed&&active)elapsed=Math.min(elapsed,Math.max(1e-8,(secret?orb.startedAt:orb.bossStartedAt)+(secret?SECRET_DURATION:BOSS_DURATION)-state.now));
     const profiles=entries.flatMap(({s})=>s.autoProfiles.filter(profile=>profile.rate>0).map(profile=>({...profile,damage:profile.damage*(timed&&!secret?s.bossDamageMultiplier/2:1)})));
@@ -349,9 +427,10 @@ export function advance(state,dtSeconds){
     expireChallenges(state);
     // Use the same absolute deadline as the step split below. Subtracting the
     // timestamps can round differently and leave a combo stuck at a zero step.
-    for(const p of state.players)if(p.combo&&state.now>=p.comboAt+2)p.combo=0;
+    const windows=new Map(state.players.map(p=>[p.id,p.combo?comboWindow(effectsOf(p)):0]));
+    for(const p of state.players)if(p.combo&&state.now>=p.comboAt+windows.get(p.id))p.combo=0;
     let elapsed=Math.min(pending,state.remaining>10?state.remaining-10:state.remaining);
-    for(const p of state.players)if(p.combo)elapsed=Math.min(elapsed,Math.max(0,p.comboAt+2-state.now));
+    for(const p of state.players)if(p.combo)elapsed=Math.min(elapsed,Math.max(0,p.comboAt+windows.get(p.id)-state.now));
     for(const p of state.players)if(p.farm.fedSeconds>0)elapsed=Math.min(elapsed,p.farm.fedSeconds);
     for(const p of state.players)if(p.farm.cookedSeconds>0)elapsed=Math.min(elapsed,p.farm.cookedSeconds);
     const finals=(state.mode==='coop'?[state.sharedOrb]:state.players.map(p=>p.orb)).filter(orb=>orb.level===FINAL_LEVEL);
@@ -384,6 +463,13 @@ function validOrb(orb,scale=1,allowVictory=false,now=0){
   const minimum=orbHp(FINAL_LEVEL,scale)*Math.max(0,1-orb.finalElapsed/FINAL_MIN_SECONDS);
   return orb.hp>=minimum*(1-1e-12)&&(orb.hp>0||allowVictory&&orb.finalElapsed===FINAL_MIN_SECONDS);
 }
+/** A transit may only mark an intact, inactive jump-point boss below the final core, and it names its pilot. */
+function validTransit(transit,orb,pilot){
+  if(transit===null)return true;
+  if(!orb||!record(transit)||Object.keys(transit).length!==1||!text(transit.pilot,100))return false;
+  if(pilot!==null&&transit.pilot!==pilot)return false;
+  return isJumpPoint(orb.level)&&orb.level<FINAL_LEVEL&&!Object.hasOwn(orb,'bossStartedAt');
+}
 function validPlayer(p,state){
   if(!record(p)||!text(p.id,100)||!text(p.name,40)||!/^#[\da-f]{6}$/i.test(p.color)||typeof p.bot!=='boolean'||typeof p.ready!=='boolean'
     ||!(p.avatarUrl===null||safeAvatar(p.avatarUrl)===p.avatarUrl)||!record(p.skills)||!record(p.generators)||!validOrb(p.orb,1,state.phase==='victory'&&state.mode==='scoreboard'&&state.victory?.playerId===p.id,state.now)||!validateFarm(p.farm)
@@ -392,7 +478,8 @@ function validPlayer(p,state){
   if(p.secretOrb!==null&&(!record(p.secretOrb)||Object.keys(p.secretOrb).some(key=>!['hp','startedAt'].includes(key))||!bounded(p.secretOrb.hp,SECRET_HP)||p.secretOrb.hp<=0||!bounded(p.secretOrb.startedAt,state.now)||state.now-p.secretOrb.startedAt>=SECRET_DURATION||p.farm.crops.weed))return false;
   if(!bounded(p.fuel,state.mode==='coop'?0:fuelTarget(p.orb.level)))return false;
   for(const key of ['lrc','runLrc','lifetimeLrc','roundLrc','comboAt'])if(!bounded(p[key]))return false;
-  for(const key of ['clicks','roundClicks','autoClicks','skillPoints','prestigePoints','totalPrestige','prestigeCount','orbsDestroyed','completedRounds','combo','victories'])if(!integer(p[key]))return false;
+  for(const key of ['clicks','roundClicks','autoClicks','skillPoints','prestigePoints','totalPrestige','prestigeCount','orbsDestroyed','completedRounds','combo','victories','machinesLost'])if(!integer(p[key]))return false;
+  if(!integer(p.shield,SHIELD_LIMIT)||!Object.hasOwn(p,'transit')||!validTransit(p.transit,state.mode==='coop'?null:p.orb,p.id))return false;
   if(!integer(p.highestOrb,MAX_LEVEL)||p.highestOrb<p.orb.level||!bounded(p.clickTokens,3)||!bounded(p.botClock,0.8)||!bounded(p.autoClock,1))return false;
   if(p.lrc>p.runLrc*(1+1e-12)||p.runLrc>p.lifetimeLrc*(1+1e-12)||p.prestigePoints>p.totalPrestige)return false;
   // Older earned ranks are grandfathered; future purchases enforce all new gates.
@@ -403,6 +490,8 @@ export function validateState(state){
   if(!record(state)||state.version!==1||state.combatVersion!==COMBAT_VERSION||state.campaignVersion!==CAMPAIGN_VERSION||!Array.isArray(state.players)||!state.players.every(record)||!['lobby','round','intermission','victory'].includes(state.phase)||!['scoreboard','coop'].includes(state.mode)||!bounded(state.sharedLrc)||!validOrb(state.sharedOrb,getCoopDifficulty(state).crewScale,state.phase==='victory'&&state.mode==='coop',state.now)
     ||!bounded(state.sharedFuel,state.mode==='coop'?fuelTarget(state.sharedOrb.level):0)||(state.mode==='scoreboard'&&state.sharedLrc!==0)||!integer(state.round,1e6)||!integer(state.roundDuration,180)||state.roundDuration<60||!bounded(state.remaining,state.roundDuration)||!bounded(state.now)||!bounded(state.teamLrc)||!bounded(state.goal)||state.goal<=0
     ||typeof state.goalReached!=='boolean'||state.goalReached!==(state.teamLrc>=state.goal)||!integer(state.rng,0xffffffff)||!Array.isArray(state.players)||state.players.length>8
+    ||!Object.hasOwn(state,'comet')||!(state.comet===null||record(state.comet)&&Object.keys(state.comet).length===1&&integer(state.comet.at,state.roundDuration))
+    ||!Object.hasOwn(state,'sharedTransit')||!validTransit(state.sharedTransit,state.mode==='coop'?state.sharedOrb:null,null)
     ||!state.players.every(p=>validPlayer(p,state))||new Set(state.players.map(p=>p.id)).size!==state.players.length)return false;
   if(state.phase==='victory'){
     if(!record(state.victory)||!text(state.victory.playerId,100)||!bounded(state.victory.at,state.now)||state.remaining!==0)return false;
@@ -447,9 +536,10 @@ export function migrateState(saved){
     next.campaignVersion=CAMPAIGN_VERSION;if(!Object.hasOwn(next,'victory'))next.victory=null;
     const defaultOrb=()=>legacy?{level:1,hp:12}:freshOrb();
     if(!Object.hasOwn(next,'mode'))next.mode='scoreboard';if(!Object.hasOwn(next,'sharedLrc'))next.sharedLrc=0;if(!Object.hasOwn(next,'sharedFuel'))next.sharedFuel=0;
+    if(!Object.hasOwn(next,'comet'))next.comet=null;if(!Object.hasOwn(next,'sharedTransit'))next.sharedTransit=null;
     if(Array.isArray(next.sharedOrb))next.sharedOrb=unpackOrb(next.sharedOrb);
     if(!Object.hasOwn(next,'sharedOrb'))next.sharedOrb=!legacy&&Array.isArray(next.players)&&next.players.every(record)?{level:1,hp:orbHp(1,getCoopDifficulty(next).crewScale)}:defaultOrb();
-    if(Array.isArray(next.players))for(const p of next.players)if(record(p)){const defaults={autoClicks:0,autoClock:0,arsenalClock:[0,0,0,0],arsenalShots:[0,0,0,0],orb:defaultOrb(),highestOrb:1,orbsDestroyed:0,victories:0,completedRounds:Math.max(0,(next.round||0)-(next.phase==='round'?1:0)),combo:0,comboAt:0,secretOrb:null,fuel:0,farm:{...createFarm(),unlocked:Boolean(p.generators?.satellite>0)}};
+    if(Array.isArray(next.players))for(const p of next.players)if(record(p)){const defaults={autoClicks:0,autoClock:0,arsenalClock:[0,0,0,0],arsenalShots:[0,0,0,0],orb:defaultOrb(),highestOrb:1,orbsDestroyed:0,victories:0,completedRounds:Math.max(0,(next.round||0)-(next.phase==='round'?1:0)),combo:0,comboAt:0,secretOrb:null,fuel:0,shield:0,machinesLost:0,transit:null,farm:{...createFarm(),unlocked:Boolean(p.generators?.satellite>0)}};
       for(const [key,value]of Object.entries(defaults))if(!Object.hasOwn(p,key))p[key]=value;
       if(Array.isArray(p.farm))p.farm=unpackFarm(p.farm);else p.farm=migrateFarm(p.farm);
       if(typeof p.skills==='string')p.skills=unpackSkills(p.skills);else if(Array.isArray(p.skills))p.skills=unpackRanks(p.skills,SKILLS,skill=>skill.maxRank);
