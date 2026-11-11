@@ -77,11 +77,26 @@ Large attacks use capped geometric sums and a binary search for the number of fu
 | Refractometer | 4,500 | +10% personal damage and all LRC production |
 | Pocket star | 12,000 | 300 base continuous LRC/second |
 
+The Workshop keeps these five machines. The Arsenal adds four purchasable devices with permanent-progress unlocks:
+
+| Arsenal device | Initial price | Base effect per unit | Unlock requirements |
+| --- | ---: | --- | --- |
+| AI Mouse | 2,400 | Two automatic clicks per second; each deals one automatic hit and mints the normal guaranteed click income | Highest orb 5; Clockwork core rank 2 |
+| Lazer cannon | 35,000 | One beam every five seconds, dealing 20 times an automatic hit | Highest orb 15; Servo lenses rank 2 |
+| Starlink probe | 250,000 | A pulse every two seconds dealing three times an automatic hit, plus 1,200 base continuous LRC/second | Highest orb 30; Perpetual motion rank 1 |
+| Star gate | 5,000,000 | A strike every ten seconds dealing 100 times an automatic hit, plus 10,000 base continuous LRC/second | Highest orb 60; 120 completed rounds; one prestige; Parallel beams rank 2 |
+
+The Lazer cannon's flavor line is “Immah firin mah lazor BWAAAH.” Its heavy strike is one attack, not twenty separate paid clicks. The AI Mouse is the exception to ordinary automatic minting: it always earns the owner's guaranteed `clickIncome` per pulse, without a manual critical roll, bonus hit, combo increment, or input-token cost. Other devices mint only the amount granted by automatic-mint research. Existing damage and surge buffs apply to every automatic device. Probe and gate income receives ordinary machine-production, passive-income and personal-power modifiers.
+
+`generatorAvailability(player,id,state)` returns `{unlocked,available,reason}`. `unlocked` covers the purchaser's own highest orb, completed rounds, prestige count and research requirements. `available` additionally checks phase, capacity and funds for the next single unit. Shared money cannot bypass another pilot's personal unlock. The host checks availability before every purchase; hiding a disabled button is not the enforcement mechanism. Price quotes remain readable for locked devices and do not grant purchase permission.
+
 Each successive unit costs `ceil(base price × 1.17^owned)`. **Buy 1** buys the next unit. **Buy 10** requires the full next-ten-unit price and capacity; it never buys a partial bundle. **Buy Max** buys the largest affordable prefix, up to the 1,000-unit capacity per machine. The bundle price is the sum of each individually rounded unit price. Quotes do not mutate balances; the host validates and deducts the entire purchase atomically.
 
 Machine spending never reduces run or lifetime earnings. Co-op purchases deduct only the shared bank, while personal contribution counters remain intact.
 
-Automatic strikes are actual pulses. Fractional pulse progress is stored in `autoClock`; completed pulses increment lifetime `autoClicks`. They damage the orb and receive destruction rewards, but never consume manual input tokens or increment manual click counters. They do not roll critical hits or bonus hits. Damage research, prestige, Refractometers, and surge affect their damage; automation research adds independent speed, damage, minting, and drop bonuses. Clockwork core can supply a small automatic rate even before a machine is owned.
+Automatic strikes are actual pulses. The original clicker and Clockwork core share `autoClock`; four compact `arsenalClock` entries track the Mouse, Lazer, probe and gate independently. Matching `arsenalShots` entries retain lifetime per-type shots, while `autoClicks` remains the lifetime total of all automatic attacks. A type with multiple units has their combined attack cadence. The simulation aggregates each type's pulses without iterating over individual owned machines. They damage the orb and receive destruction rewards, but never consume manual input tokens or increment manual click counters. They do not roll critical hits or bonus hits. Damage research, prestige, Refractometers, and surge affect their damage; automation research adds independent speed, damage, minting, and drop bonuses. Clockwork core can supply a small automatic rate even before a machine is owned.
+
+`getStats().autoProfiles` exposes five entries in the order `mote`, `mouse`, `laser`, `probe`, `gate`. Each has `{id,owned,rate,damage,mint,shots,progress}`. Rate means the **total owned-type attacks per second**, including automation-speed modifiers. Damage and mint are per pulse; shots are lifetime confirmed attacks; progress is the fraction toward that type's next pulse. Visuals can therefore follow actual confirmed attacks while using the same timing information as the simulation. Prestige removes machines and resets fractional charges, while retaining research, unlock milestones and lifetime attack counts. Older saves receive zeroed Arsenal arrays without changing their existing clicker charge or lifetime count.
 
 `idleRate` means projected **continuous LRC plus automatic minting**. It excludes uncertain orb-destruction rewards. `autoDps` reports automated damage separately. This prevents an HP-damaging auto clicker from being advertised as guaranteed continuous LRC production.
 
@@ -166,7 +181,7 @@ manual mint = (0.25 + flat-mint research) × (1 + mint research)
 
 Farm, array, and star output use their separate research multipliers. Farm horticulture adds yield based on owned arrays; Dyson crown adds machine yield based on total machine count. Their sum is enhanced by machine-production research, then added to the baseline 1 LRC/second and flat passive research before the general passive and power multipliers apply.
 
-Automatic rate is `(0.5 × auto clickers + flat automatic research) × (1 + automatic-speed research + shared automation)`. Each strike uses hit damage times its automatic-damage modifier. Autonomous mint pays a fraction of manual-mint income per strike. Projected idle income is continuous production plus automatic rate times automatic mint.
+The original automatic rate is `(0.5 × auto clickers + flat automatic research) × (1 + automatic-speed research + shared automation)`. Each Arsenal type adds `owned × catalog rate × the same speed factor`. Each strike uses hit damage times its automatic-damage modifier and the device's attack multiplier. Autonomous mint pays a fraction of manual-mint income per non-Mouse strike; Mouse strikes earn the full guaranteed manual-mint income. Projected idle income is continuous production plus the sum of every type's rate times its own mint amount. Total automated DPS is the sum of every type's rate times its hit damage.
 
 Orb drops combine the geometric base reward, boss reward modifiers, flat drop research, the power multiplier, drop research, and highest-orb research. Automatic-only drop research applies to automatic kills. Long catch-up batches use the stats at the start of each segment; orb-level scaling updates for subsequent segments. Normal simulation advances on short timer ticks.
 

@@ -34,6 +34,10 @@ const MACHINE_LINES = {
   prism: 'More wavelengths. Fewer sensible electricity bills.',
   star: 'I measured the vibes. They are multiplying.',
   nova: 'A pocket star. I checked: pockets are optional.',
+  mouse: 'An AI mouse. Finally, someone else to click the paperwork.',
+  laser: 'Immah firin mah lazor! BWAAAH! Entirely peer-reviewed.',
+  probe: 'Starlink probes! The light has excellent reception now.',
+  gate: 'A star gate. Please keep your fingers inside this dimension.',
 };
 const EVENTS = {
   welcome: {mood:'greeting',priority:0,duration:6500},

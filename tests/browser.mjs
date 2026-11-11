@@ -9,6 +9,8 @@ const base = process.env.TEST_URL || 'http://127.0.0.1:4175/';
 const graphOnly = process.argv.includes('--graph-only');
 const includeMobile = process.argv.includes('--mobile');
 const sidebarOnly = process.argv.includes('--sidebar-only');
+const fleetOnly = process.argv.includes('--fleet-only');
+const fleetNetworkOnly = process.argv.includes('--fleet-network-only');
 const executable = process.env.BROWSER_EXECUTABLE || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const output = path.resolve('test-results');
 await mkdir(output, { recursive: true });
@@ -85,6 +87,9 @@ async function reload() {
 }
 const readSolo = `JSON.parse(localStorage.getItem(${JSON.stringify(soloKey)}))`;
 const bossFixture = `game.applyAction(state,'you',{type:'start'});const player=state.players[0];player.orb.level=10;player.orb.hp=game.getOrb(player,state).maxHp;player.highestOrb=10;player.orbsDestroyed=9;player.lrc=1e40;player.runLrc=1e40;player.lifetimeLrc=1e40;player.generators={mote:5,satellite:4,prism:3,star:2,nova:1};`;
+const arsenalFixture=`game.applyAction(state,'you',{type:'start'});game.advance(state,60);const p=state.players[0];state.round=800;p.completedRounds=800;p.highestOrb=180;p.orbsDestroyed=179;p.prestigeCount=3;p.totalPrestige=100;p.prestigePoints=100;p.skillPoints=100000;p.lrc=p.runLrc=p.lifetimeLrc=1e12;
+  function acquire(id,target){const skill=game.SKILLS.find(s=>s.id===id);for(const required of skill.requires)acquire(required,skill.requiredRanks[required]||1);while((p.skills[id]||0)<target){const result=game.applyAction(state,'you',{type:'buySkill',id});if(!result.ok)throw Error(result.reason);}}
+  for(const generator of game.GENERATORS.filter(g=>g.category==='arsenal'))for(const [id,target]of Object.entries(generator.unlock.skills||{}))acquire(id,target);`;
 async function solo() { return evaluate(readSolo); }
 const orbFor = (state,id=state.players[0]?.id) => engine.getOrb(state.players.find(player=>player.id===id),state);
 async function seed(code) {
@@ -228,7 +233,7 @@ async function eightPlayerSidebars(){
     await send('Emulation.setDeviceMetricsOverride',{width:1366,height:768,deviceScaleFactor:1,mobile:false});
     await evaluate(`(()=>{const frame=document.querySelector('iframe[data-participant-id="101"]');Object.assign(frame.style,{position:'fixed',inset:'0',width:'100vw',height:'100vh',zIndex:'9999',border:'0',background:'#302a25'});document.body.style.overflow='hidden';})()`);
     const doc=frameDoc(101);
-    await desktopFrame(`Eight-player ${mode} 1366x768`,['#core','#round-action','[data-buy-generator]','#beam-companion'],doc);
+    await desktopFrame(`Eight-player ${mode} 1366x768`,['#core','#round-action','.generator:not([hidden]) [data-buy-generator]','#beam-companion'],doc);
     if(mode==='scoreboard'){
       await desktopFrame('Scorebook launcher',['#scoreboard-toggle'],doc);
       await capture('desktop-1366-eight-player-orbit');
@@ -263,6 +268,135 @@ async function eightPlayerSidebars(){
       await capture('desktop-1366-eight-player-coop');
     }
   }
+}
+async function fleetChecks(){
+  await send('Emulation.setDeviceMetricsOverride',{width:1366,height:768,deviceScaleFactor:1,mobile:false});
+  await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
+  for(const count of [1,10,100]){
+    await seed(`game.applyAction(state,'you',{type:'start'});const p=state.players[0];p.lrc=p.runLrc=p.lifetimeLrc=1e12;for(let i=0;i<${count};i++){if(!game.applyAction(state,'you',{type:'buyGenerator',id:'mote'}).ok)throw Error('Fleet fixture buy failed');}`);
+    await waitFor(`document.querySelector('#orbit-canvas').dataset.fleetOwned==='${count}' && document.querySelector('#orbit-canvas').dataset.fleetRendered==='${count}'`);
+    await pause(450);
+    await capture(`desktop-fleet-${count}`);
+  }
+  log('Every purchase adds a visible unit through the1/10/100-unit fleets');
+  await seed(`game.applyAction(state,'you',{type:'start'});game.advance(state,60);state.players[0].lrc=state.players[0].runLrc=state.players[0].lifetimeLrc=1e12;`);
+  await click('[data-shop-catalog="arsenal"]');
+  for(const id of ['mouse','laser','probe','gate']){
+    assert.equal(await evaluate(`document.querySelector('[data-buy-generator="${id}"]').disabled`),true,`${id} is locked before its research milestones`);
+    assert.ok(await evaluate(`document.querySelector('#unlock-${id}').textContent.trim().length>0`),`${id} explains its unlock requirements`);
+  }
+  await capture('desktop-arsenal-locked');
+  await seed(arsenalFixture);
+  await click('[data-shop-catalog="arsenal"]');
+  for(const id of ['mouse','laser','probe','gate'])await click(`[data-buy-generator="${id}"]`);
+  await waitFor(`document.querySelector('#orbit-canvas').dataset.fleetOwned==='4'`);
+  await click('[data-buy-quantity="10"]');
+  await click('[data-buy-generator="mouse"]');
+  await waitFor(`${readSolo}?.players?.[0]?.generators?.mouse===11 && document.querySelector('#orbit-canvas').dataset.fleetRendered==='14'`);
+  await click('[data-shop-catalog="workshop"]');
+  await click('[data-buy-quantity="max"]');
+  const beforeMax=await solo(),maxQuote=engine.generatorQuote(beforeMax.players[0],'mote','max',beforeMax);
+  await click('[data-buy-generator="mote"]');
+  await waitFor(`${readSolo}?.players?.[0]?.generators?.mote===${maxQuote.quantity} && Number(document.querySelector('#orbit-canvas').dataset.fleetOwned)===${maxQuote.quantity+14}`);
+  await click('[data-buy-quantity="1"]');
+  await click('#round-action');
+  await waitFor(`${readSolo}?.players?.[0]?.arsenalShots?.every(count=>count>0)`,'All four Arsenal attack clocks fire');
+  const armed=await solo();
+  assert.equal(armed.players[0].clicks,0,'Arsenal attacks do not count as manual input');
+  await capture('desktop-arsenal-midgame');
+  await reload();
+  assert.deepEqual((await solo()).players[0].generators,armed.players[0].generators,'All four Arsenal investments survive reload');
+  assert.equal((await solo()).players[0].arsenalClock.length,4,'Per-type firing clocks survive saves');
+  const effects=await evaluate(`(()=>{const layer=document.querySelector('.arena-effects'),core=document.querySelector('#core'),canvas=document.querySelector('#orbit-canvas');const a=canvas.getBoundingClientRect(),b=core.getBoundingClientRect();return{pointerEvents:getComputedStyle(layer).pointerEvents,centerError:Math.hypot(a.x+a.width/2-(b.x+b.width/2),a.y+a.height*.49-(b.y+b.height/2))};})()`);
+  assert.equal(effects.pointerEvents,'none','The effects layer cannot block core clicks');
+  assert.ok(effects.centerError<4,`Projectile target aligns with the actual core center (${effects.centerError}px)`);
+  const manualBefore=(await solo()).players[0].clicks;
+  await pointerClick('#core');
+  await waitFor(`${readSolo}?.players?.[0]?.clicks===${manualBefore+1}`,'Core remains clickable through effects');
+  log('Arsenal unlocks, purchases, Buy10/Max fleet growth, automatic attacks and reload pass');
+  await seed(`${arsenalFixture}p.lrc=p.runLrc=p.lifetimeLrc=1e100;for(const g of game.GENERATORS){if(!game.applyAction(state,'you',{type:'buyGenerator',id:g.id,quantity:'max'}).ok)throw Error('Endgame buy failed');}p.orb.level=500;p.highestOrb=500;p.orbsDestroyed=499;p.orb.hp=game.getOrb(p,state).maxHp;game.applyAction(state,'you',{type:'ready'});`);
+  await waitFor(`document.querySelector('#orbit-canvas').dataset.fleetOwned==='9000' && document.querySelector('#orbit-canvas').dataset.fleetRendered==='768' && document.querySelector('#orbit-canvas').dataset.fleetAggregated==='8232'`);
+  for(const [width,height]of [[1366,768],[1920,1080]]){
+    await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
+    for(const category of ['workshop','arsenal']){
+      await click(`[data-shop-catalog="${category}"]`);
+      await desktopFrame(`Endgame ${category} ${width}x${height}`,['#core','#round-action','[data-shop-catalog]','.generator:not([hidden]) [data-buy-generator]']);
+      await capture(`desktop-${width}-endgame-${category}`);
+    }
+  }
+  const timing=await evaluate(`new Promise(resolve=>{const gaps=[];let last;function frame(now){if(last!==undefined)gaps.push(now-last);last=now;if(gaps.length<60)requestAnimationFrame(frame);else{const sorted=[...gaps].sort((a,b)=>a-b);resolve({frames:gaps.length,meanMs:gaps.reduce((a,b)=>a+b)/gaps.length,p95Ms:sorted[Math.floor(sorted.length*.95)],maxMs:Math.max(...gaps)});}}requestAnimationFrame(frame);})`);
+  await writeFile(path.join(output,'fleet-performance.json'),JSON.stringify(timing,null,2)+'\n');
+  assert.ok(timing.meanMs<80&&timing.p95Ms<150,`Dense fleet remains responsive: ${JSON.stringify(timing)}`);
+  await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+  await pause(250);
+  await capture('desktop-endgame-reduced-motion');
+  log(`Dense9,000-unit fleet stays bounded; measured mean frame ${timing.meanMs.toFixed(1)}ms, p95 ${timing.p95Ms.toFixed(1)}ms`);
+  await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
+  const renderProof=await evaluate(`(async()=>{
+    const [{OrbitArena},game]=await Promise.all([import('./src/arena.js'),import('./src/game.js')]);
+    const holder=document.createElement('div'),canvas=document.createElement('canvas');holder.append(canvas);
+    const arena=new OrbitArena(canvas);arena.resize(700,500);
+    const state=game.createGame(),p=game.addPlayer(state,{id:'render-proof',name:'Proof'});game.applyAction(state,p.id,{type:'start'});
+    p.generators={mote:1,mouse:1,laser:1,probe:1,gate:1};arena.render(state,p.id,0);
+    for(let i=1;i<=720;i++){game.advance(state,1/60);arena.render(state,p.id,i*1000/60);}
+    const moving=arena.getFleetDiagnostics();
+    game.advance(state,state.remaining);arena.render(state,p.id,12100);const paused=arena.getFleetDiagnostics();
+    game.applyAction(state,p.id,{type:'ready'});arena.onMotionChange({matches:true});
+    for(let i=1;i<=20;i++){game.advance(state,.05);arena.render(state,p.id,12100+i*50);}
+    const reduced=arena.getFleetDiagnostics();arena.destroy();
+    return{moving,paused,reduced,remainingLayers:holder.querySelectorAll('.arena-effects').length};
+  })()`);
+  assert.deepEqual([...new Set(renderProof.moving.completedShots.map(shot=>shot.id))].sort(),['gate','laser','mote','mouse','probe'],'Every attacking type reaches the center');
+  for(const shot of renderProof.moving.completedShots){
+    assert.equal(shot.reached,true);
+    assert.deepEqual(shot.point,renderProof.moving.center,'Completed projectile reaches the exact center, not just the shell edge');
+    assert.deepEqual(shot.target,renderProof.moving.center);
+  }
+  assert.ok(renderProof.moving.activeShots<=96,'Concurrent visual shots stay capped');
+  assert.equal(renderProof.paused.activeShots,0,'Intermission stops attack effects');
+  assert.equal(renderProof.paused.running,false);
+  assert.equal(renderProof.reduced.activeShots,0,'Reduced motion suppresses moving attack effects');
+  assert.equal(renderProof.reduced.reducedMotion,true);
+  assert.equal(renderProof.remainingLayers,0,'Destroy removes the additional effects canvas');
+  log('All attack paths reach the center; intermission/reduced motion stop effects and cleanup removes the overlay');
+  await arsenalNetworkChecks();
+}
+async function arsenalNetworkChecks(){
+  await freshPreview();
+  await click('[data-mode="coop"]',frameDoc(101));await click('#round-action',frameDoc(101));
+  await waitFor(`${session(202)}?.phase==='round'`);
+  let shared=await evaluate(`(()=>{const storage=${frameWindow(101)}.sessionStorage,key=Object.keys(storage).find(key=>key.startsWith('refract-idlers:session:')&&key.endsWith(':101'));return{key,state:JSON.parse(storage.getItem(key))};})()`);
+  engine.advance(shared.state,shared.state.remaining);shared.state.sharedLrc=1e12;
+  async function restoreShared(fixture,condition){
+    assert.equal(engine.validateState(fixture.state),true,'Valid co-op Arsenal fixture');
+    const {identifier}=await send('Page.addScriptToEvaluateOnNewDocument',{source:`sessionStorage.setItem(${JSON.stringify(fixture.key)},${JSON.stringify(JSON.stringify(fixture.state))});`});
+    try{await evaluate(`${frameWindow(101)}.location.reload()`);await waitFor(condition);}finally{await send('Page.removeScriptToEvaluateOnNewDocument',{identifier});}
+  }
+  await restoreShared(shared,`${session(202)}?.phase==='intermission' && ${session(202)}.sharedLrc===1e12`);
+  await click('[data-tab="orbit"]',frameDoc(101));await click('[data-tab="orbit"]',frameDoc(202));
+  await click('[data-shop-catalog="arsenal"]',frameDoc(202));
+  const eventsBefore=await evaluate(`Number.parseInt(document.querySelector('#event-count').textContent,10)`);
+  await evaluate(`(()=>{const button=${frameDoc(202)}.querySelector('[data-buy-generator="gate"]');button.disabled=false;button.click();})()`);
+  await waitFor(`Number.parseInt(document.querySelector('#event-count').textContent,10)>${eventsBefore}`,'The tampered follower sends a real relayed action');
+  await pause(200);
+  const rejected=await evaluate(session(101));
+  assert.equal(rejected.players.find(p=>p.id==='202').generators.gate||0,0,'Host rejects a locked gun even when a follower changes its button');
+  assert.equal(rejected.sharedLrc,1e12,'Rejected Arsenal action does not spend the crew bank');
+  shared.state=rejected;shared.state.round=800;
+  const purchaser=shared.state.players.find(p=>p.id==='202');
+  Object.assign(purchaser,{completedRounds:800,highestOrb:180,orbsDestroyed:179,prestigeCount:3,totalPrestige:100,prestigePoints:100,skillPoints:100000});
+  function acquire(id,target){const skill=engine.SKILLS.find(s=>s.id===id);for(const required of skill.requires)acquire(required,skill.requiredRanks[required]||1);while((purchaser.skills[id]||0)<target)assert.equal(engine.applyAction(shared.state,purchaser.id,{type:'buySkill',id}).ok,true);}
+  for(const generator of engine.GENERATORS.filter(g=>g.category==='arsenal'))for(const [id,target]of Object.entries(generator.unlock.skills||{}))acquire(id,target);
+  await restoreShared(shared,`${session(202)}?.players?.find(p=>p.id==='202')?.highestOrb===180`);
+  await click('[data-tab="orbit"]',frameDoc(101));await click('[data-tab="orbit"]',frameDoc(202));
+  await click('[data-shop-catalog="arsenal"]',frameDoc(202));
+  await click('[data-buy-generator="gate"]',frameDoc(202));
+  await waitFor(`${session(101)}?.players?.find(p=>p.id==='202')?.generators?.gate===1 && ${session(202)}?.players?.find(p=>p.id==='202')?.generators?.gate===1`);
+  const purchased=await evaluate(session(101));
+  assert.equal(purchased.sharedLrc,1e12-engine.GENERATORS.find(g=>g.id==='gate').baseCost,'Legal follower purchase uses the shared pool');
+  assert.equal(purchased.players.find(p=>p.id==='101').generators.gate||0,0,'The Arsenal investment belongs to its purchaser');
+  await waitFor(`${frameDoc(101)}.querySelector('#orbit-canvas').dataset.fleetOwned==='1' && ${frameDoc(202)}.querySelector('#orbit-canvas').dataset.fleetOwned==='1'`,'Both co-op clients show the combined fleet');
+  log('Host validates Arsenal unlocks independently; legitimate co-op purchases synchronize ownership, pool spending and fleet');
 }
 
 try {
@@ -300,7 +434,7 @@ try {
   const loadedFonts = await evaluate(`[...document.fonts].filter(face=>face.status==='loaded').map(face=>face.family.replaceAll('"','').replaceAll("'",''))`);
   assert.ok(loadedFonts.includes('Pixel') && loadedFonts.includes('Terminal'), `Local retro fonts loaded: ${loadedFonts.join(', ')}`);
   log('Local Pixel and Terminal fonts loaded without fallback');
-  if(sidebarOnly)await eightPlayerSidebars();else{
+  if(sidebarOnly)await eightPlayerSidebars();else if(fleetNetworkOnly)await arsenalNetworkChecks();else if(fleetOnly)await fleetChecks();else{
   for(const [width,height]of [[1366,768],[1920,1080]]){
     await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
     await seed('');
@@ -308,7 +442,7 @@ try {
     assert.equal(await evaluate(`Boolean(document.querySelector('#beam-companion img, #beam-companion svg, #beam-companion canvas'))`),true,'Beam has a visible pixel-art representation');
     await capture(`desktop-${width}-lobby`);
     await seed(bossFixture);
-    await desktopFrame(`Desktop ${width}x${height} orbit`,['#core','#orb-health','#round-action','[data-buy-quantity]','[data-buy-generator]','#beam-companion']);
+    await desktopFrame(`Desktop ${width}x${height} orbit`,['#core','#orb-health','#round-action','[data-buy-quantity]','.generator:not([hidden]) [data-buy-generator]','#beam-companion']);
     await containedContent('.stat > div',{overlap:false});
     await containedElements('.stat','small');
     await capture(`desktop-${width}-frame-orbit`);
@@ -559,7 +693,7 @@ try {
     for(let round=0;round<40&&Object.keys(state.players[0].generators).length<5;round++){
       for(let second=0;second<60;second++){
         game.advance(state,1);
-        for(const generator of [...game.GENERATORS].reverse()){
+        for(const generator of game.GENERATORS.filter(g=>g.category==='workshop').reverse()){
           if(game.generatorCost(state.players[0],generator.id)<=state.players[0].lrc)game.applyAction(state,'you',{type:'buyGenerator',id:generator.id});
         }
       }

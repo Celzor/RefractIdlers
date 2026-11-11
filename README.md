@@ -41,6 +41,8 @@ It uses installed Microsoft Edge on Windows by default. Set `BROWSER_EXECUTABLE`
 
 Use `npm run test:browser -- --graph-only` for focused desktop frame and research-map checks, or `--sidebar-only` for the maximum-size Scoreboard and Co-op rosters. Release checks target desktop play.
 
+Use `npm run test:browser -- --fleet-only` for Arsenal unlocks, bulk-fleet growth, firing paths, dense-fleet performance, reduced motion and host validation. Frame timing is recorded in `test-results/fleet-performance.json`.
+
 ## The game loop
 
 1. The host chooses **Scoreboard** or **Co-op** in the lobby, then starts a **60-second round**. The choice stays fixed for the session. Click or tap the central orb to damage it. Breaking an orb grants an LRC drop and reveals a stronger orb. Your orbit also starts with **1 passive LRC per second**.
@@ -81,6 +83,19 @@ In Co-op, one pilot can buy a generator using LRCs earned by the others. The gen
 | Refractometer | 4,500 LRCs | +10% to your production |
 | Pocket star | 12,000 LRCs | 300 passive LRC/s |
 
+The shop's **Machinery** tab contains these five machines. **Arsenal** adds four research-gated machines:
+
+| Upgrade | First purchase | Base effect per unit | Unlock requirements |
+| --- | ---: | --- | --- |
+| AI Mouse | 2,400 LRCs | 2 automatic attacks/sec; each also mints your current click income | Highest orb 5; Clockwork core rank 2 |
+| Lazer cannon | 35,000 LRCs | A 20× automatic-damage beam every 5 seconds | Highest orb 15; Servo lenses rank 2 |
+| Starlink probe | 250,000 LRCs | A 3× automatic-damage pulse every 2 seconds; 1,200 passive LRC/s | Highest orb 30; Perpetual motion rank 1 |
+| Star gate | 5,000,000 LRCs | A 100× automatic-damage strike every 10 seconds; 10,000 passive LRC/s | Highest orb 60; 120 completed rounds; one prestige; Parallel beams rank 2 |
+
+These are base rates before research and production bonuses. Automatic damage research boosts all five attacking types, and automation speed research shortens their firing intervals. General generator and passive-production research also improves the probe and gate's income. The AI Mouse always mints click income; other automatic attackers require auto-mint research to earn that additional per-attack income. Automatic attacks never trigger manual-click counts or critical rolls.
+
+Unlock requirements belong to the purchaser, including in Co-op; another pilot's research does not unlock your Arsenal. Once unlocked, Co-op purchases can use the shared bank. Each attacking type has its own saved firing progress, so the slower cannon and gate retain their place in the cycle across reloads.
+
 Each purchase costs `ceil(base cost × 1.17^owned)`. Skill, crew, and prestige bonuses increase production. Each generator type is capped at 1,000 units.
 
 Bulk purchases charge the sum of the escalating individual prices. **10** buys exactly ten or fails without spending anything; **Max** buys the largest affordable batch up to the generator cap. The host validates the full quote against the current balance, including other pilots' spending from the Co-op bank.
@@ -88,6 +103,8 @@ Bulk purchases charge the sum of the escalating individual prices. **10** buys e
 Auto clickers damage the orb automatically during harvesting rounds. Their attacks use your current click damage, including click skills, prestige, Refractometer bonuses, and the final-ten-second surge. Automatic clicks have no critical-hit roll, do not consume your manual click allowance, and are counted separately from manual clicks. Their damage generates LRCs when an orb breaks; passive LRC production continues separately. Orbital array and Perpetual motion skills increase their pulse rate.
 
 Refractometer bonuses add together before multiplying your own production: five units grant +50%. In Co-op, the resulting income flows into the shared bank. Upgrade purchases and automatic production trigger visual feedback. Sound is enabled initially and unlocks after your first interaction; the sound button mutes or restores synthesized effects and remembers your choice on this device. Reduced-motion preferences suppress decorative animation.
+
+Each owned unit adds a sprite to the fleet. The renderer draws up to **256 detailed units plus 512 small units** individually; larger holdings add a density field, with purchase flashes still marking new units. This bounds rendering work while keeping every owned unit in the economy. Scoreboard shows your fleet; Co-op combines active pilots' machines. Actual attack events drive projectiles and beams that reach the center of the orb through a transparent, click-through effects layer. Up to 96 visual shots are active at once. Intermissions and reduced motion suppress moving attack effects.
 
 ### Research
 
@@ -112,14 +129,14 @@ Run `npm run balance` for the reproducible 1-hour, 6-hour and 24-hour pacing rep
 
 Maxing normal research costs **59,816 SP across 312 ranks**. Even at the maximum **10 SP per 60-second round**, it requires at least **5,982 completed rounds**, or **4.15 active days**, before intermission time and milestone gates. This is an optimistic lower bound, not an expected completion time.
 
-The audit compares no manual clicks with two clicks per second. Both scripted policies invest every ten seconds, automatically ready between rounds, buy the cheapest legal research, and prestige for at least five points after fifteen completed rounds since the last reset; the first prestige happens as soon as eligible. No resources or research gates are bypassed.
+The audit compares no manual clicks with two clicks per second. Both scripted policies invest every ten seconds, choosing the unlocked and affordable machine type with the highest base cost first, then cheaper types. They automatically ready between rounds, buy the cheapest legal research, and prestige for at least five points after fifteen completed rounds since the last reset; the first prestige happens as soon as eligible. No resources, research gates or Arsenal unlocks are bypassed.
 
 | Managed play policy | First core broken | First boss cleared | First prestige |
 | --- | ---: | ---: | ---: |
-| No manual clicks | 5 min | 15 min 20 sec | 6 min |
-| Two clicks per second | 3 min 22 sec | About 13 min 7 sec | 5 min |
+| No manual clicks | 5 min | 14 min 20 sec | 6 min |
+| Two clicks per second | 3 min 22 sec | 12 min | 5 min |
 
-Both policies reach **32 normal nodes / 215 ranks** after 24 active hours. Ten thousand rounds remain finite without saturating the prestige counter. After that checkpoint, holding prestige reaches orb 175 after another **145.38 active hours without manual clicks**, or **42.89 hours at two clicks per second**. All normal research completes at the following intermission: about **312.05** or **209.57 total active hours**, respectively. These are measured results for the stated policies, not optimal completion times.
+Both policies reach **32 normal nodes / 215 ranks** after 24 active hours. Ten thousand rounds remain finite without saturating the prestige counter. After that checkpoint, holding prestige reaches orb 175 after another **5.10 active hours without manual clicks**, or **1.43 hours at two clicks per second**. All normal research completes at the following intermission: about **171.78** or **168.10 total active hours**, respectively. These Arsenal-enabled results describe the stated policies, not optimal completion times.
 
 These figures describe continuously managed sessions. An unattended session stops at its first intermission after 60 seconds, and there is no offline income. Frequent prestige resets also restart personal orb progression; reaching the deepest orb gates requires deliberately keeping a run going longer under these policies.
 

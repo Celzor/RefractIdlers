@@ -6,7 +6,8 @@ export const PIXEL_PALETTE = Object.freeze({
   blue: '#4d718b', red: '#a35b50', pink: '#d3917c', purple: '#a491b1',
 });
 
-const IDS = ['mote', 'satellite', 'prism', 'star', 'nova'];
+export const GENERATOR_IDS = Object.freeze(['mote', 'satellite', 'prism', 'star', 'nova', 'mouse', 'laser', 'probe', 'gate']);
+const IDS = GENERATOR_IDS;
 
 function sprite(id, phase = 0.5, running = false) {
   const shapes = [];
@@ -87,6 +88,54 @@ function sprite(id, phase = 0.5, running = false) {
     r(15, 15, 3, 4, 'cream');
     if (running && phase < 0.3) { r(26, 3, 1, 5, 'yellow'); r(24, 5, 5, 1, 'yellow'); }
     r(11, 3, 2, 1, 'orange'); r(15, 3, 2, 1, 'orange'); r(19, 3, 2, 1, 'orange');
+  } else if (id === 'mouse') {
+    // A cream pixel pointer with a tiny thinking chip and a brass click pad.
+    r(4, 24, 24, 6, 'ink'); r(6, 25, 20, 3, 'blue');
+    r(7, 26, 5, 1, 'sky'); r(21, 26, 4, 1, 'sage');
+    for (let i = 0; i < 7; i++) r(7, 3 + i * 3, 3 + i * 2, 3, 'ink');
+    for (let i = 0; i < 5; i++) r(9, 6 + i * 3, 1 + i * 2, 3, 'cream');
+    r(12, 19, 5, 3, 'paper'); r(16, 19, 4, 7, 'ink');
+    r(17, 19, 2, 5, 'paper'); r(23, 5, 6, 7, 'ink');
+    r(24, 6, 4, 5, running && phase < .25 ? 'yellow' : 'sage');
+    r(25, 7, 2, 2, 'cream'); r(22, 7, 1, 1, 'yellow'); r(29, 7, 1, 1, 'yellow');
+    r(22, 10, 1, 1, 'yellow'); r(29, 10, 1, 1, 'yellow');
+  } else if (id === 'laser') {
+    // A weighty red cannon. Its right-hand muzzle is the exact beam origin.
+    r(3, 23, 22, 7, 'ink'); r(5, 24, 18, 4, 'shade');
+    for (let i = 0; i < 4; i++) { r(5 + i * 5, 25, 3, 3, 'wood'); r(6 + i * 5, 26, 1, 1, 'ink'); }
+    r(8, 17, 13, 7, 'ink'); r(10, 18, 9, 4, 'red');
+    r(3, 8, 17, 12, 'ink'); r(5, 10, 13, 8, 'red');
+    r(6, 10, 11, 2, 'pink'); r(4, 13, 4, 4, 'orange');
+    r(17, 11, 14, 8, 'ink'); r(18, 12, 12, 6, 'wood');
+    r(19, 12, 10, 2, 'paper'); r(27, 10, 4, 11, 'ink');
+    r(28, 12, 3, 7, running && phase < .25 ? 'cream' : 'yellow');
+    r(2, 4, 9, 4, 'ink'); r(3, 5, 7, 2, 'sky');
+    r(7, 7, 2, 2, 'ink'); r(11, 13, 4, 3, 'ink'); r(12, 13, 2, 2, 'yellow');
+  } else if (id === 'probe') {
+    // Starlink-inspired solar wings around a small independent optical probe.
+    r(1, 3, 9, 11, 'ink'); r(2, 4, 7, 9, 'blue');
+    r(1, 19, 9, 11, 'ink'); r(2, 20, 7, 9, 'blue');
+    r(4, 4, 1, 9, 'sky'); r(2, 8, 7, 1, 'sky');
+    r(4, 20, 1, 9, 'sky'); r(2, 24, 7, 1, 'sky');
+    r(8, 7, 7, 3, 'ink'); r(8, 22, 7, 3, 'ink');
+    r(12, 7, 12, 19, 'ink'); r(14, 9, 8, 15, 'paper');
+    r(15, 10, 6, 3, 'cream'); r(15, 19, 6, 4, 'wood');
+    r(24, 11, 4, 10, 'ink'); r(25, 13, 4, 6, 'sky');
+    r(29, 14, 3, 4, running && phase < .3 ? 'cream' : 'yellow');
+    r(8, 14, 4, 5, 'ink'); r(7, 15, 4, 3, 'orange');
+    if (running) r(3 + Math.floor(phase * 3), 16, 4, 1, 'yellow');
+  } else if (id === 'gate') {
+    // An eight-sided brass portal, floating motes crossing its violet aperture.
+    r(7, 27, 18, 4, 'ink'); r(9, 28, 14, 2, 'wood');
+    r(9, 2, 14, 3, 'ink'); r(5, 5, 22, 3, 'ink');
+    r(2, 8, 28, 15, 'ink'); r(5, 23, 22, 3, 'ink'); r(9, 26, 14, 3, 'ink');
+    r(10, 4, 12, 3, 'yellow'); r(6, 7, 20, 3, 'wood');
+    r(4, 10, 24, 11, 'yellow'); r(6, 21, 20, 3, 'wood'); r(10, 24, 12, 3, 'yellow');
+    r(10, 7, 12, 3, 'purple'); r(7, 10, 18, 11, 'purple'); r(10, 21, 12, 3, 'purple');
+    r(11, 10, 10, 11, 'blue'); r(9, 12, 14, 7, 'blue');
+    r(14, 11, 4, 10, 'sky'); r(11, 14, 10, 4, 'sky'); r(14, 14, 4, 4, 'cream');
+    for (const [x, y] of [[14,4],[4,14],[26,14],[14,24]]) { r(x, y, 3, 3, 'ink'); r(x+1, y+1, 1, 1, 'cream'); }
+    if (running) { const shift = Math.floor(phase * 3); r(10 + shift, 11, 2, 1, 'paper'); r(19 - shift, 20, 2, 1, 'paper'); }
   }
   return shapes;
 }
@@ -98,11 +147,27 @@ const icons = Object.freeze(Object.fromEntries(IDS.map((id) => [id,
 /** Only prebuilt finite-palette SVG markup is returned; id is never interpolated. */
 export function generatorIcon(id) { return Object.hasOwn(icons, id) ? icons[id] : ''; }
 
-export function drawGeneratorSprite(context, id, x, y, { phase = 0.5, running = false } = {}) {
-  for (const [dx, dy, width, height, color] of sprite(id, phase, running)) {
-    context.fillStyle = color;
-    context.fillRect(Math.round(x) + dx, Math.round(y) + dy, width, height);
+const spriteAtlas = new Map();
+export function drawGeneratorSprite(context, id, x, y, { phase = 0.5, running = false, scale = 1, rotation = 0 } = {}) {
+  if (!IDS.includes(id)) return;
+  const frame = running ? Math.floor(Math.max(0, Math.min(.999, phase)) * 8) : 4;
+  const key = `${id}:${running ? frame : 'still'}`;
+  let bitmap = spriteAtlas.get(key);
+  if (!bitmap) {
+    const canvas = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(32,32) : context.canvas?.ownerDocument?.createElement('canvas');
+    const painter = canvas?.getContext('2d');
+    if (painter) {
+      canvas.width = canvas.height = 32;
+      for (const [dx,dy,w,h,color] of sprite(id,(frame+.5)/8,running)) { painter.fillStyle = color; painter.fillRect(dx,dy,w,h); }
+      bitmap = canvas; spriteAtlas.set(key,bitmap);
+    }
   }
+  context.save(); context.translate(Math.round(x) + 16*scale,Math.round(y) + 16*scale);
+  if (rotation) context.rotate(rotation);
+  context.translate(-16*scale,-16*scale);
+  if (bitmap) context.drawImage(bitmap,0,0,32*scale,32*scale);
+  else for (const [dx,dy,w,h,color] of sprite(id,(frame+.5)/8,running)) { context.fillStyle=color; context.fillRect(dx*scale,dy*scale,w*scale,h*scale); }
+  context.restore();
 }
 
 const ORB_THEMES = Object.freeze([

@@ -4,6 +4,7 @@ export { SKILLS, SKILL_BRANCHES, RESEARCH_TOTAL_RANKS, RESEARCH_TOTAL_COST, MAX_
 export const MAX_PLAYERS = 8, ROUND_DURATION = 60, PRESTIGE_THRESHOLD = 2500, ECONOMY_LIMIT = 1e150, COMBAT_VERSION = 2;
 const LIMIT = ECONOMY_LIMIT, COUNT_LIMIT = Number.MAX_SAFE_INTEGER, MAX_LEVEL = 1e6;
 const BASE_HP = 2000, BASE_REWARD = 300, HP_GROWTH = 1.18, REWARD_GROWTH = 1.14;
+const ARSENAL_IDS = ['mouse','laser','probe','gate'], AUTO_IDS = ['mote',...ARSENAL_IDS];
 const COLORS = ['#9a8cff','#58ddca','#ffb86c','#f080b8','#7eb8ff','#d7e889','#bc9cf7','#f5d589'];
 const record = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const bounded = (v,max=LIMIT) => Number.isFinite(v) && v >= 0 && v <= max;
@@ -19,11 +20,15 @@ const orbHp = (level,scale=1) => power(BASE_HP*scale,HP_GROWTH,level-1);
 const baseReward = (level,scale=1) => power(BASE_REWARD*(boss(level)?5:1)*scale,REWARD_GROWTH,level-1);
 const freshOrb = () => ({level:1,hp:BASE_HP});
 export const GENERATORS = Object.freeze([
-  {id:'mote',name:'Auto clicker',kind:'auto',description:'Strikes the orb automatically every two seconds. Scales with your damage.',baseCost:25,baseRate:0,autoRate:0.5,icon:'✧'},
-  {id:'satellite',name:'Refract orb farm',kind:'passive',description:'Grow luminous Refract orbs for 6 base LRC per second.',baseCost:140,baseRate:6,icon:'◎'},
-  {id:'prism',name:'Light array',kind:'passive',description:'Harvest a broad spectrum of light for 32 base LRC per second.',baseCost:800,baseRate:32,icon:'◈'},
-  {id:'star',name:'Refractometer',kind:'multiplier',description:'+10% to your damage and all LRC production per unit.',baseCost:4500,baseRate:0,multiplier:0.1,icon:'◇'},
-  {id:'nova',name:'Pocket star',kind:'passive',description:'Your own miniature sun produces 300 base LRC per second.',baseCost:12000,baseRate:300,icon:'☀'},
+  {id:'mote',name:'Auto clicker',category:'workshop',kind:'auto',description:'Strikes the orb automatically every two seconds. Scales with your damage.',baseCost:25,baseRate:0,autoRate:0.5,attackMultiplier:1,icon:'✧'},
+  {id:'satellite',name:'Refract orb farm',category:'workshop',kind:'passive',description:'Grow luminous Refract orbs for 6 base LRC per second.',baseCost:140,baseRate:6,icon:'◎'},
+  {id:'prism',name:'Light array',category:'workshop',kind:'passive',description:'Harvest a broad spectrum of light for 32 base LRC per second.',baseCost:800,baseRate:32,icon:'◈'},
+  {id:'star',name:'Refractometer',category:'workshop',kind:'multiplier',description:'+10% to your damage and all LRC production per unit.',baseCost:4500,baseRate:0,multiplier:0.1,icon:'◇'},
+  {id:'nova',name:'Pocket star',category:'workshop',kind:'passive',description:'Your own miniature sun produces 300 base LRC per second.',baseCost:12000,baseRate:300,icon:'☀'},
+  {id:'mouse',name:'AI Mouse',category:'arsenal',kind:'auto',description:'An autonomous cursor clicks twice per second, dealing automatic damage and minting your guaranteed click income.',baseCost:2400,baseRate:0,autoRate:2,attackMultiplier:1,unlock:{orb:5,skills:{au1:2}},icon:'↖'},
+  {id:'laser',name:'Lazer cannon',category:'arsenal',kind:'auto',description:'Charges for five seconds, then fires a beam dealing 20 automatic hits of damage.',flavor:'Immah firin mah lazor BWAAAH',baseCost:35000,baseRate:0,autoRate:0.2,attackMultiplier:20,unlock:{orb:15,skills:{au2:2}},icon:'⌁'},
+  {id:'probe',name:'Starlink probe',category:'arsenal',kind:'hybrid',description:'Fires a 3× strength pulse every two seconds and relays 1,200 base LRC per second.',baseCost:250000,baseRate:1200,autoRate:0.5,attackMultiplier:3,unlock:{orb:30,skills:{perpetuity:1}},icon:'⌖'},
+  {id:'gate',name:'Star gate',category:'arsenal',kind:'hybrid',description:'Opens every ten seconds for a 100× strength strike and channels 10,000 base LRC per second.',baseCost:5000000,baseRate:10000,autoRate:0.1,attackMultiplier:100,unlock:{orb:60,rounds:120,prestiges:1,skills:{au3:2}},icon:'◉'},
 ]);
 const skillById = new Map(SKILLS.map(s=>[s.id,s]));
 const generatorById = new Map(GENERATORS.map(g=>[g.id,g]));
@@ -47,7 +52,7 @@ function resizeSharedOrb(state,previousMax) {
 }
 function createPlayer(state,person) {
   return {id:person.id,name:String(person.name||'Pilot').slice(0,40),avatarUrl:safeAvatar(person.avatarUrl),color:COLORS[state.players.length%8],bot:Boolean(person.bot),
-    lrc:0,runLrc:0,lifetimeLrc:0,roundLrc:0,clicks:0,roundClicks:0,autoClicks:0,autoClock:0,skillPoints:0,skills:{},generators:{},
+    lrc:0,runLrc:0,lifetimeLrc:0,roundLrc:0,clicks:0,roundClicks:0,autoClicks:0,autoClock:0,arsenalClock:[0,0,0,0],arsenalShots:[0,0,0,0],skillPoints:0,skills:{},generators:{},
     prestigePoints:0,totalPrestige:0,prestigeCount:0,orb:freshOrb(),highestOrb:state.mode==='coop'?state.sharedOrb.level:1,orbsDestroyed:0,
     completedRounds:0,combo:0,comboAt:0,ready:false,clickTokens:3,botClock:0};
 }
@@ -83,11 +88,17 @@ export function getStats(p,state) {
   const clickIncome=cap((0.25+(e.mintFlat||0))*(1+(e.mintPct||0))*(1+machines*(e.mintSynergy||0))*multiplier*(surge?1+(e.surgeMintPct||0):1));
   const farms=(p.generators.satellite||0)*6*(1+(e.farmPct||0))*(1+(p.generators.prism||0)*(e.farmSynergy||0));
   const arrays=(p.generators.prism||0)*32*(1+(e.arrayPct||0)),stars=(p.generators.nova||0)*300*(1+(e.starPct||0));
-  const machineRate=(farms+arrays+stars)*(1+(e.generatorPct||0))*(1+machines*(e.generatorSynergy||0));
+  const arsenalRate=ARSENAL_IDS.reduce((total,id)=>total+(p.generators[id]||0)*generatorById.get(id).baseRate,0);
+  const machineRate=(farms+arrays+stars+arsenalRate)*(1+(e.generatorPct||0))*(1+machines*(e.generatorSynergy||0));
   const passiveRate=cap((1+(e.passiveFlat||0)+machineRate)*(1+(e.passivePct||0))*multiplier);
-  const autoRate=((p.generators.mote||0)*0.5+(e.autoFlat||0))*(1+(e.autoPct||0)+crewAuto);
   const autoDamage=cap(clickDamage*(1+(e.autoDamagePct||0))),autoMint=cap(clickIncome*(e.autoMint||0));
-  return {clickPower:clickDamage,clickDamage,clickIncome,passiveRate,idleRate:cap(passiveRate+autoRate*autoMint),autoRate,autoDamage,autoDps:cap(autoRate*autoDamage),autoMint,
+  const autoSpeed=1+(e.autoPct||0)+crewAuto,arsenalShots=p.arsenalShots||[0,0,0,0];
+  const autoProfiles=AUTO_IDS.map((id,index)=>{const g=generatorById.get(id),owned=p.generators[id]||0;
+    return {id,owned,rate:(owned*g.autoRate+(index===0?e.autoFlat||0:0))*autoSpeed,damage:cap(autoDamage*g.attackMultiplier),mint:id==='mouse'?clickIncome:autoMint,
+      shots:index===0?Math.max(0,p.autoClicks-arsenalShots.reduce((a,b)=>a+b,0)):arsenalShots[index-1],progress:index===0?p.autoClock:p.arsenalClock?.[index-1]||0};});
+  const autoRate=autoProfiles.reduce((total,profile)=>total+profile.rate,0),autoDps=cap(autoProfiles.reduce((total,profile)=>total+profile.rate*profile.damage,0));
+  const automaticMintRate=autoProfiles.reduce((total,profile)=>total+profile.rate*profile.mint,0);
+  return {clickPower:clickDamage,clickDamage,clickIncome,passiveRate,idleRate:cap(passiveRate+automaticMintRate),autoRate,autoDamage,autoDps,autoMint,autoProfiles,
     generatorMultiplier,multiplier,surge,combo,comboCap,criticalChance:Math.min(0.8,0.05+(e.critChance||0)),criticalMultiplier:3+(e.critMultiplier||0),
     extraHitChance:Math.min(0.9,e.extraHitChance||0),criticalMintMultiplier:1+(e.criticalMintPct||0),bossDamageMultiplier:1+(e.bossDamagePct||0),
     bossDropMultiplier:1+(e.bossDropPct||0),dropMultiplier:cap(multiplier*(1+(e.dropPct||0))*(1+Math.log2(p.highestOrb+1)*(e.orbScaling||0))),
@@ -99,6 +110,18 @@ export function getTeamStats(state){return state.players.reduce((total,p)=>{cons
 const personalTarget=(round)=>cap(Math.round(500*(1+0.12*Math.max(0,round-1))**2));
 export function getRoundTarget(state){return state.mode==='coop'?state.goal:personalTarget(state.round);}
 export function generatorCost(p,id){const g=generatorById.get(id);return g?Math.ceil(g.baseCost*1.17**(p.generators[id]||0)):Infinity;}
+export function generatorAvailability(p,id,state){
+  const g=generatorById.get(id);if(!p||!g)return {unlocked:false,available:false,reason:'Unknown generator.'};
+  const locked=(reason)=>({unlocked:false,available:false,reason}),u=g.unlock||{};
+  if(p.highestOrb<(u.orb||0))return locked(`Reach orb ${u.orb} (best: ${p.highestOrb}).`);
+  if(p.completedRounds<(u.rounds||0))return locked(`Complete ${u.rounds} rounds (${p.completedRounds} completed).`);
+  if(p.prestigeCount<(u.prestiges||0))return locked(`Prestige ${u.prestiges} times (${p.prestigeCount} completed).`);
+  for(const [required,needed]of Object.entries(u.skills||{}))if(rank(p,required)<needed)return locked(`Requires ${skillById.get(required)?.name||required} rank ${needed}.`);
+  if((p.generators[id]||0)>=1000)return {unlocked:true,available:false,reason:'Maximum capacity reached.'};
+  if(!['round','intermission'].includes(state?.phase))return {unlocked:true,available:false,reason:'Start a round to build your orbit.'};
+  if(getBalance(p,state)<generatorCost(p,id))return {unlocked:true,available:false,reason:'Collect more LRCs to buy this machine.'};
+  return {unlocked:true,available:true,reason:'Ready to build.'};
+}
 export function generatorQuote(p,id,quantity=1,state){
   const g=generatorById.get(id);if(!g||![1,10,'max'].includes(quantity))return {quantity:0,cost:0};
   const owned=p.generators[id]||0,wanted=quantity==='max'?1000-owned:quantity;
@@ -192,7 +215,7 @@ export function applyAction(state,playerId,action){
     return {ok:true,damage,amount:cap(result.amount+minted),kills:result.kills,critical};}
   if(action.type==='ready'){if(state.phase!=='intermission')return fail('Ready up between rounds.');p.ready=!p.ready;maybeStartNextRound(state);return {ok:true};}
   if(action.type==='buyGenerator'){
-    if(!['round','intermission'].includes(state.phase))return fail('Start a round to build your orbit.');if(!generatorById.has(action.id))return fail('Unknown generator.');
+    const availability=generatorAvailability(p,action.id,state);if(!availability.available)return fail(availability.reason);
     const quantity=action.quantity===undefined?1:action.quantity;if(![1,10,'max'].includes(quantity))return fail('Choose Buy 1, Buy 10, or Buy Max.');
     const quote=generatorQuote(p,action.id,quantity,state);if(!quote.quantity)return fail('No affordable capacity remains for this purchase.');if(getBalance(p,state)<quote.cost)return fail('Collect more LRCs to buy that whole bundle.');
     if(state.mode==='coop')state.sharedLrc-=quote.cost;else p.lrc-=quote.cost;p.generators[action.id]=(p.generators[action.id]||0)+quote.quantity;return {ok:true,...quote};}
@@ -202,7 +225,7 @@ export function applyAction(state,playerId,action){
   if(action.type==='prestige'){
     if(state.phase!=='intermission')return fail('Refract your core between rounds.');const gain=prestigeGain(p);if(gain<1)return fail('Earn 2,500 LRCs in your own run to prestige.');
     p.prestigePoints=count(p.prestigePoints+gain);p.totalPrestige=count(p.totalPrestige+gain);p.prestigeCount=count(p.prestigeCount+1);
-    p.lrc=0;p.runLrc=0;p.generators={};p.orb=freshOrb();p.autoClock=0;p.combo=0;p.ready=false;return {ok:true,amount:gain};}
+    p.lrc=0;p.runLrc=0;p.generators={};p.orb=freshOrb();p.autoClock=0;p.arsenalClock=[0,0,0,0];p.combo=0;p.ready=false;return {ok:true,amount:gain};}
   return fail('Unknown action.');
 }
 export function advance(state,dtSeconds){
@@ -212,15 +235,19 @@ export function advance(state,dtSeconds){
     let elapsed=Math.min(pending,state.remaining>10?state.remaining-10:state.remaining);
     for(const p of state.players)if(p.combo)elapsed=Math.min(elapsed,Math.max(0,p.comboAt+2-state.now));
     for(const p of state.players){p.clickTokens=Math.min(3,p.clickTokens+elapsed*15);const s=getStats(p,state);earn(state,p,s.passiveRate*elapsed);
-      p.autoClock+=s.autoRate*elapsed;const pulses=Math.floor(p.autoClock+1e-9);p.autoClock=Math.max(0,p.autoClock-pulses);
-      if(pulses){damageOrb(state,p,cap(pulses*s.autoDamage),s,true);earn(state,p,cap(pulses*s.autoMint));p.autoClicks=count(p.autoClicks+pulses);}
+      for(let index=0;index<s.autoProfiles.length;index++){const profile=s.autoProfiles[index],clock=profile.progress+profile.rate*elapsed,pulses=Math.floor(clock+1e-9),remainder=Math.max(0,clock-pulses);
+        if(index===0)p.autoClock=remainder;else p.arsenalClock[index-1]=remainder;
+        if(pulses){damageOrb(state,p,cap(pulses*profile.damage),s,true);earn(state,p,cap(pulses*profile.mint));p.autoClicks=count(p.autoClicks+pulses);
+          if(index>0)p.arsenalShots[index-1]=count(p.arsenalShots[index-1]+pulses);}}
       if(p.bot){p.botClock+=elapsed;const clicks=Math.min(3,Math.floor(p.botClock/0.8));p.botClock%=0.8;for(let i=0;i<clicks;i++)applyAction(state,p.id,{type:'click'});if(getBalance(p,state)>=generatorCost(p,'mote'))applyAction(state,p.id,{type:'buyGenerator',id:'mote'});}}
     state.now=cap(state.now+elapsed);state.remaining=Math.max(0,state.remaining-elapsed);if(state.remaining<1e-8)finishRound(state);pending=Math.max(0,pending-elapsed);}
 }
 function validOrb(orb,scale=1){return record(orb)&&integer(orb.level,MAX_LEVEL)&&orb.level>=1&&bounded(orb.hp,orbHp(orb.level,scale)*(1+1e-12))&&orb.hp>0;}
 function validPlayer(p){
   if(!record(p)||!text(p.id,100)||!text(p.name,40)||!/^#[\da-f]{6}$/i.test(p.color)||typeof p.bot!=='boolean'||typeof p.ready!=='boolean'
-    ||!(p.avatarUrl===null||safeAvatar(p.avatarUrl)===p.avatarUrl)||!record(p.skills)||!record(p.generators)||!validOrb(p.orb))return false;
+    ||!(p.avatarUrl===null||safeAvatar(p.avatarUrl)===p.avatarUrl)||!record(p.skills)||!record(p.generators)||!validOrb(p.orb)
+    ||!Array.isArray(p.arsenalClock)||p.arsenalClock.length!==4||!p.arsenalClock.every(value=>bounded(value,1))
+    ||!Array.isArray(p.arsenalShots)||p.arsenalShots.length!==4||!p.arsenalShots.every(value=>integer(value)))return false;
   for(const key of ['lrc','runLrc','lifetimeLrc','roundLrc','comboAt'])if(!bounded(p[key]))return false;
   for(const key of ['clicks','roundClicks','autoClicks','skillPoints','prestigePoints','totalPrestige','prestigeCount','orbsDestroyed','completedRounds','combo'])if(!integer(p[key]))return false;
   if(!integer(p.highestOrb,MAX_LEVEL)||p.highestOrb<p.orb.level||!bounded(p.clickTokens,3)||!bounded(p.botClock,0.8)||!bounded(p.autoClock,1))return false;
@@ -246,7 +273,7 @@ export function migrateState(saved){
     const defaultOrb=()=>legacy?{level:1,hp:12}:freshOrb();
     if(!Object.hasOwn(next,'mode'))next.mode='scoreboard';if(!Object.hasOwn(next,'sharedLrc'))next.sharedLrc=0;
     if(!Object.hasOwn(next,'sharedOrb'))next.sharedOrb=!legacy&&Array.isArray(next.players)&&next.players.every(record)?{level:1,hp:orbHp(1,getCoopDifficulty(next).crewScale)}:defaultOrb();
-    if(Array.isArray(next.players))for(const p of next.players)if(record(p)){const defaults={autoClicks:0,autoClock:0,orb:defaultOrb(),highestOrb:1,orbsDestroyed:0,completedRounds:Math.max(0,(next.round||0)-(next.phase==='round'?1:0)),combo:0,comboAt:0};
+    if(Array.isArray(next.players))for(const p of next.players)if(record(p)){const defaults={autoClicks:0,autoClock:0,arsenalClock:[0,0,0,0],arsenalShots:[0,0,0,0],orb:defaultOrb(),highestOrb:1,orbsDestroyed:0,completedRounds:Math.max(0,(next.round||0)-(next.phase==='round'?1:0)),combo:0,comboAt:0};
       for(const [key,value]of Object.entries(defaults))if(!Object.hasOwn(p,key))p[key]=value;}
     if(legacy){
       const convert=(orb,scale=1)=>{if(!record(orb)||!integer(orb.level,MAX_LEVEL)||orb.level<1)return false;

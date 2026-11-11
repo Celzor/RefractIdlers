@@ -33,6 +33,14 @@ main{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 254px;gr
 .team-goal{padding:7px 8px}.team-goal>div:first-child{gap:5px}.team-goal>div>span{font-size:5px}.team-goal strong{font-size:17px}.team-goal small{font-size:13px}
 .generator-panel{min-height:0;display:flex;flex-direction:column;padding:13px 11px 10px}
 .generator-panel .section-description{margin:5px 0 4px;font-size:16px}
+.shop-catalogs{display:flex;gap:5px;margin:5px 0 1px}
+.shop-catalogs button{display:flex;align-items:center;justify-content:center;gap:8px;flex:1;min-height:29px;padding:4px 7px;border:2px solid #8c704e;background:#d0b47e;color:#6c5138;font:6px/1.4 Pixel,monospace;box-shadow:1px 1px #ab8d60}
+.shop-catalogs button[aria-pressed=true]{border-color:#59432e;background:var(--gold);color:var(--ink)}
+.shop-catalogs button:hover{background:#f3d48a}.shop-catalogs small{font:14px/1 Terminal,monospace}
+.generator-panel[data-catalog=arsenal] .generators{grid-template-rows:repeat(4,minmax(0,1fr))}
+.generator-unlock{display:block;font:14px/1.1 Terminal,monospace;color:#815a3d;border-top:1px dashed #b79e73;padding-top:4px;margin-top:5px}
+.generator.is-locked .generator-symbol{opacity:.55;filter:grayscale(.7)}
+.generator.is-locked button{font:13px/1.4 Terminal,monospace}
 .buy-quantity{padding:6px 0 8px;margin-bottom:8px}.buy-quantity button{min-height:26px}
 .generators{flex:1;min-height:0;grid-template-rows:repeat(5,minmax(0,1fr));gap:7px}
 .generator{min-height:0;grid-template-columns:36px minmax(0,1fr) 65px;padding:6px;gap:6px}
