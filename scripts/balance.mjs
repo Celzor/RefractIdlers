@@ -14,7 +14,7 @@ const started = performance.now();
 const report = {
   methodology: {
     mode: 'Solo scoreboard, fixed RNG seed 0x5eed.',
-    policies: '0 manual clicks/sec and 2 manual clicks/sec. Both policies buy the most expensive affordable machine type first every 10 seconds, then cheaper types, using Buy Max.',
+    policies: '0 manual clicks/sec and 2 manual clicks/sec. Both policies buy the most expensive unlocked, affordable machine type first every 10 seconds, then cheaper types, using Buy Max. Arsenal gates are never bypassed.',
     research: 'Between rounds buy the cheapest currently legal research repeatedly. Every purchase uses skillAvailability and applyAction; no gates or resources are bypassed.',
     prestige: 'First prestige as soon as eligible at intermission. Subsequent prestige requires at least 15 completed rounds since the previous reset and a gain of at least 5 points. Research is retained.',
     unattended: 'The two long simulations automatically ready and shop between rounds. They model continuously managed play, not closed-tab or hands-free progress. A separate true-unattended check stops at the first intermission.',
@@ -45,7 +45,8 @@ function researchAllAvailable(state, player) {
   }
 }
 function invest(state, player) {
-  for (const generator of [...game.GENERATORS].reverse()) {
+  for (const generator of [...game.GENERATORS].sort((a,b)=>b.baseCost-a.baseCost)) {
+    if(!game.generatorAvailability(player,generator.id,state).available)continue;
     if (game.generatorCost(player,generator.id)>game.getBalance(player,state)) continue;
     const quote = game.generatorQuote(player,generator.id,'max',state);
     if (!quote.quantity) continue;

@@ -64,7 +64,7 @@ export class GameAudio {
     const throttle = { ray: 0.085, critical: 0.14, collision: 0.12, revolution: 0.12,
       levelup: 0.3, boost: 0.25, purchase: 0.12, reroll: 0.15, countdown: 0.6,
       roundend: 0.5, start: 0.4, click: 0.035, error: 0.15, collect: 0.07, surge: 0.07,
-      hit: 0.05, shatter: 0.12, boss: 0.45 };
+      hit: 0.05, shatter: 0.12, boss: 0.45, mouse: 0.18, laser: 0.9, probe: 0.35, gate: 1.5 };
     if (!(type in throttle) || now - (this.lastPlayed.get(type) ?? -Infinity) < throttle[type]) return;
     if (this.voices.size >= 28) return;
     this.lastPlayed.set(type, now);
@@ -79,6 +79,25 @@ export class GameAudio {
       frequencies.forEach((frequency, i) => note(frequency, i * step, duration, gain, i % 2 ? 'triangle' : 'square'));
 
     switch (type) {
+      case 'mouse':
+        note(680, 0, 0.025, 0.07, 'square', 420);
+        note(1360, 0.018, 0.02, 0.035, 'triangle');
+        break;
+      case 'laser':
+        // A deliberately ridiculous arcade BWAAAH, made from oscillators.
+        note(170, 0, 0.34, 0.13, 'sawtooth', 48);
+        note(340, 0.012, 0.27, 0.075, 'square', 74);
+        note(1100, 0, 0.07, 0.04, 'triangle', 160);
+        break;
+      case 'probe':
+        note(1568, 0, 0.085, 0.07, 'sine', 784);
+        note(2093, 0.055, 0.05, 0.03, 'triangle', 1047);
+        break;
+      case 'gate':
+        note(65.41, 0, 0.4, 0.14, 'triangle', 130.81);
+        arpeggio([261.63, 392, 523.25, 1046.5], 0.055, 0.12, 0.055);
+        note(1567.98, 0.19, 0.19, 0.035, 'sine', 392);
+        break;
       case 'hit':
         note(220, 0, 0.04, 0.12, 'triangle', 130);
         note(880, 0.005, 0.025, 0.06, 'square');

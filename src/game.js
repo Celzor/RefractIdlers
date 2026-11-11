@@ -1,9 +1,11 @@
 /** Host-authoritative orbital economy. All elapsed time is in seconds. */
 import { SKILLS, SKILL_BRANCHES, RESEARCH_TOTAL_RANKS, RESEARCH_TOTAL_COST, MAX_SKILL_POINTS_PER_ROUND } from './skills.js';
+import { createFarm, getFarmUnlocked, getFarmStats, advanceFarm, resetFarm, applyFarmAction, FARM_ACTIONS, validateFarm, packFarm, unpackFarm } from './farm.js';
 export { SKILLS, SKILL_BRANCHES, RESEARCH_TOTAL_RANKS, RESEARCH_TOTAL_COST, MAX_SKILL_POINTS_PER_ROUND };
 export const MAX_PLAYERS = 8, ROUND_DURATION = 60, PRESTIGE_THRESHOLD = 2500, ECONOMY_LIMIT = 1e150, COMBAT_VERSION = 2;
 const LIMIT = ECONOMY_LIMIT, COUNT_LIMIT = Number.MAX_SAFE_INTEGER, MAX_LEVEL = 1e6;
 const BASE_HP = 2000, BASE_REWARD = 300, HP_GROWTH = 1.18, REWARD_GROWTH = 1.14;
+const ARSENAL_IDS = ['mouse','laser','probe','gate'], AUTO_IDS = ['mote',...ARSENAL_IDS];
 const COLORS = ['#9a8cff','#58ddca','#ffb86c','#f080b8','#7eb8ff','#d7e889','#bc9cf7','#f5d589'];
 const record = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const bounded = (v,max=LIMIT) => Number.isFinite(v) && v >= 0 && v <= max;
@@ -19,11 +21,18 @@ const orbHp = (level,scale=1) => power(BASE_HP*scale,HP_GROWTH,level-1);
 const baseReward = (level,scale=1) => power(BASE_REWARD*(boss(level)?5:1)*scale,REWARD_GROWTH,level-1);
 const freshOrb = () => ({level:1,hp:BASE_HP});
 export const GENERATORS = Object.freeze([
-  {id:'mote',name:'Auto clicker',kind:'auto',description:'Strikes the orb automatically every two seconds. Scales with your damage.',baseCost:25,baseRate:0,autoRate:0.5,icon:'✧'},
-  {id:'satellite',name:'Refract orb farm',kind:'passive',description:'Grow luminous Refract orbs for 6 base LRC per second.',baseCost:140,baseRate:6,icon:'◎'},
-  {id:'prism',name:'Light array',kind:'passive',description:'Harvest a broad spectrum of light for 32 base LRC per second.',baseCost:800,baseRate:32,icon:'◈'},
-  {id:'star',name:'Refractometer',kind:'multiplier',description:'+10% to your damage and all LRC production per unit.',baseCost:4500,baseRate:0,multiplier:0.1,icon:'◇'},
-  {id:'nova',name:'Pocket star',kind:'passive',description:'Your own miniature sun produces 300 base LRC per second.',baseCost:12000,baseRate:300,icon:'☀'},
+  {id:'mote',name:'Auto clicker',category:'workshop',kind:'auto',description:'Strikes the orb automatically every two seconds. Scales with your damage.',baseCost:25,baseRate:0,autoRate:0.5,attackMultiplier:1,icon:'✧'},
+  {id:'satellite',name:'Refract orb farm',category:'workshop',kind:'passive',description:'Grow luminous Refract orbs for 6 base LRC per second.',baseCost:140,baseRate:6,icon:'◎'},
+  {id:'prism',name:'Light array',category:'workshop',kind:'passive',description:'Harvest a broad spectrum of light for 32 base LRC per second.',baseCost:800,baseRate:32,icon:'◈'},
+  {id:'star',name:'Refractometer',category:'workshop',kind:'multiplier',description:'+10% to your damage and all LRC production per unit.',baseCost:4500,baseRate:0,multiplier:0.1,icon:'◇'},
+  {id:'nova',name:'Pocket star',category:'workshop',kind:'passive',description:'Your own miniature sun produces 300 base LRC per second.',baseCost:12000,baseRate:300,icon:'☀'},
+  {id:'mouse',name:'AI Mouse',category:'arsenal',kind:'auto',description:'An autonomous cursor clicks twice per second, dealing automatic damage and minting your guaranteed click income.',baseCost:2400,baseRate:0,autoRate:2,attackMultiplier:1,unlock:{orb:5,skills:{au1:2}},icon:'↖'},
+  {id:'laser',name:'Lazer cannon',category:'arsenal',kind:'auto',description:'Charges for five seconds, then fires a beam dealing 20 automatic hits of damage.',flavor:'Immah firin mah lazor BWAAAH',baseCost:35000,baseRate:0,autoRate:0.2,attackMultiplier:20,unlock:{orb:15,skills:{au2:2}},icon:'⌁'},
+  {id:'probe',name:'Starlink probe',category:'arsenal',kind:'hybrid',description:'Fires a 3× strength pulse every two seconds and relays 1,200 base LRC per second.',baseCost:250000,baseRate:1200,autoRate:0.5,attackMultiplier:3,unlock:{orb:30,skills:{perpetuity:1}},icon:'⌖'},
+  {id:'gate',name:'Star gate',category:'arsenal',kind:'hybrid',description:'Opens every ten seconds for a 100× strength strike and channels 10,000 base LRC per second.',baseCost:5000000,baseRate:10000,autoRate:0.1,attackMultiplier:100,unlock:{orb:60,rounds:120,prestiges:1,skills:{au3:2}},icon:'◉'},
+  {id:'wormhole',name:'Wormhole generator',category:'click',kind:'click',description:'+4 base damage to every manual and automatic hit.',baseCost:600,baseRate:0,damageFlat:4,icon:'◎'},
+  {id:'foamer',name:'Quantum foamer',category:'click',kind:'click',description:'+20% damage to every manual and automatic hit.',baseCost:3500,baseRate:0,damagePct:.2,icon:'◌'},
+  {id:'string',name:'String detheory',category:'click',kind:'click',description:'+1% critical chance and +0.1 critical damage multiplier.',baseCost:18000,baseRate:0,criticalChance:.01,criticalMultiplier:.1,icon:'≈'},
 ]);
 const skillById = new Map(SKILLS.map(s=>[s.id,s]));
 const generatorById = new Map(GENERATORS.map(g=>[g.id,g]));
@@ -47,9 +56,9 @@ function resizeSharedOrb(state,previousMax) {
 }
 function createPlayer(state,person) {
   return {id:person.id,name:String(person.name||'Pilot').slice(0,40),avatarUrl:safeAvatar(person.avatarUrl),color:COLORS[state.players.length%8],bot:Boolean(person.bot),
-    lrc:0,runLrc:0,lifetimeLrc:0,roundLrc:0,clicks:0,roundClicks:0,autoClicks:0,autoClock:0,skillPoints:0,skills:{},generators:{},
+    lrc:0,runLrc:0,lifetimeLrc:0,roundLrc:0,clicks:0,roundClicks:0,autoClicks:0,autoClock:0,arsenalClock:[0,0,0,0],arsenalShots:[0,0,0,0],skillPoints:0,skills:{},generators:{},
     prestigePoints:0,totalPrestige:0,prestigeCount:0,orb:freshOrb(),highestOrb:state.mode==='coop'?state.sharedOrb.level:1,orbsDestroyed:0,
-    completedRounds:0,combo:0,comboAt:0,ready:false,clickTokens:3,botClock:0};
+    completedRounds:0,combo:0,comboAt:0,ready:false,clickTokens:3,botClock:0,farm:createFarm()};
 }
 export function addPlayer(state,person) {
   if(!record(person)||!text(person.id,100))return null;
@@ -76,19 +85,26 @@ export function getStats(p,state) {
   const e=effectsOf(p),crew=state?.mode==='coop'?state.players:[p];let frequency=0,crewAuto=0;
   for(const member of crew){const c=member===p?e:effectsOf(member);frequency+=(c.frequency||0)+(c.crewStrength||0)*crew.length;crewAuto+=(c.crewAutomation||0)*crew.length;}
   const machines=Object.values(p.generators).reduce((a,b)=>a+b,0),generatorMultiplier=1+(p.generators.star||0)*0.1;
-  const multiplier=cap((1+p.totalPrestige*0.1)*(1+frequency)*(1+(e.personalPct||0))*generatorMultiplier);
+  const beamBonus=p.farm?.fedSeconds>0?getFarmStats(p,e).feedBonus:0;
+  const multiplier=cap((1+p.totalPrestige*0.1)*(1+frequency)*(1+(e.personalPct||0))*generatorMultiplier*(1+beamBonus));
   const surge=Boolean(state?.phase==='round'&&state.remaining<=10&&state.remaining>0);
   const comboCap=Math.floor(10+(e.comboCap||0)),combo=!state||state.now-p.comboAt<=2?Math.min(comboCap,p.combo):0;
-  const clickDamage=cap((2+(e.damageFlat||0))*(1+(e.damagePct||0))*multiplier*(1+combo*(e.comboPower||0))*(surge?2:1));
+  const clickDamage=cap((2+(e.damageFlat||0)+(p.generators.wormhole||0)*4)*(1+(e.damagePct||0)+(p.generators.foamer||0)*.2)*multiplier*(1+combo*(e.comboPower||0))*(surge?2:1));
   const clickIncome=cap((0.25+(e.mintFlat||0))*(1+(e.mintPct||0))*(1+machines*(e.mintSynergy||0))*multiplier*(surge?1+(e.surgeMintPct||0):1));
   const farms=(p.generators.satellite||0)*6*(1+(e.farmPct||0))*(1+(p.generators.prism||0)*(e.farmSynergy||0));
   const arrays=(p.generators.prism||0)*32*(1+(e.arrayPct||0)),stars=(p.generators.nova||0)*300*(1+(e.starPct||0));
-  const machineRate=(farms+arrays+stars)*(1+(e.generatorPct||0))*(1+machines*(e.generatorSynergy||0));
+  const arsenalRate=ARSENAL_IDS.reduce((total,id)=>total+(p.generators[id]||0)*generatorById.get(id).baseRate,0);
+  const machineRate=(farms+arrays+stars+arsenalRate)*(1+(e.generatorPct||0))*(1+machines*(e.generatorSynergy||0));
   const passiveRate=cap((1+(e.passiveFlat||0)+machineRate)*(1+(e.passivePct||0))*multiplier);
-  const autoRate=((p.generators.mote||0)*0.5+(e.autoFlat||0))*(1+(e.autoPct||0)+crewAuto);
   const autoDamage=cap(clickDamage*(1+(e.autoDamagePct||0))),autoMint=cap(clickIncome*(e.autoMint||0));
-  return {clickPower:clickDamage,clickDamage,clickIncome,passiveRate,idleRate:cap(passiveRate+autoRate*autoMint),autoRate,autoDamage,autoDps:cap(autoRate*autoDamage),autoMint,
-    generatorMultiplier,multiplier,surge,combo,comboCap,criticalChance:Math.min(0.8,0.05+(e.critChance||0)),criticalMultiplier:3+(e.critMultiplier||0),
+  const autoSpeed=1+(e.autoPct||0)+crewAuto,arsenalShots=p.arsenalShots||[0,0,0,0];
+  const autoProfiles=AUTO_IDS.map((id,index)=>{const g=generatorById.get(id),owned=p.generators[id]||0;
+    return {id,owned,rate:(owned*g.autoRate+(index===0?e.autoFlat||0:0))*autoSpeed,damage:cap(autoDamage*g.attackMultiplier),mint:id==='mouse'?clickIncome:autoMint,
+      shots:index===0?Math.max(0,p.autoClicks-arsenalShots.reduce((a,b)=>a+b,0)):arsenalShots[index-1],progress:index===0?p.autoClock:p.arsenalClock?.[index-1]||0};});
+  const autoRate=autoProfiles.reduce((total,profile)=>total+profile.rate,0),autoDps=cap(autoProfiles.reduce((total,profile)=>total+profile.rate*profile.damage,0));
+  const automaticMintRate=autoProfiles.reduce((total,profile)=>total+profile.rate*profile.mint,0);
+  return {clickPower:clickDamage,clickDamage,clickIncome,passiveRate,idleRate:cap(passiveRate+automaticMintRate),autoRate,autoDamage,autoDps,autoMint,autoProfiles,
+    generatorMultiplier,multiplier,beamBonus,surge,combo,comboCap,criticalChance:Math.min(0.8,0.05+(e.critChance||0)+(p.generators.string||0)*.01),criticalMultiplier:3+(e.critMultiplier||0)+(p.generators.string||0)*.1,
     extraHitChance:Math.min(0.9,e.extraHitChance||0),criticalMintMultiplier:1+(e.criticalMintPct||0),bossDamageMultiplier:1+(e.bossDamagePct||0),
     bossDropMultiplier:1+(e.bossDropPct||0),dropMultiplier:cap(multiplier*(1+(e.dropPct||0))*(1+Math.log2(p.highestOrb+1)*(e.orbScaling||0))),
     dropFlat:e.dropFlat||0,autoDropMultiplier:1+(e.autoDropPct||0),
@@ -99,6 +115,18 @@ export function getTeamStats(state){return state.players.reduce((total,p)=>{cons
 const personalTarget=(round)=>cap(Math.round(500*(1+0.12*Math.max(0,round-1))**2));
 export function getRoundTarget(state){return state.mode==='coop'?state.goal:personalTarget(state.round);}
 export function generatorCost(p,id){const g=generatorById.get(id);return g?Math.ceil(g.baseCost*1.17**(p.generators[id]||0)):Infinity;}
+export function generatorAvailability(p,id,state){
+  const g=generatorById.get(id);if(!p||!g)return {unlocked:false,available:false,reason:'Unknown generator.'};
+  const locked=(reason)=>({unlocked:false,available:false,reason}),u=g.unlock||{};
+  if(p.highestOrb<(u.orb||0))return locked(`Reach orb ${u.orb} (best: ${p.highestOrb}).`);
+  if(p.completedRounds<(u.rounds||0))return locked(`Complete ${u.rounds} rounds (${p.completedRounds} completed).`);
+  if(p.prestigeCount<(u.prestiges||0))return locked(`Prestige ${u.prestiges} times (${p.prestigeCount} completed).`);
+  for(const [required,needed]of Object.entries(u.skills||{}))if(rank(p,required)<needed)return locked(`Requires ${skillById.get(required)?.name||required} rank ${needed}.`);
+  if((p.generators[id]||0)>=1000)return {unlocked:true,available:false,reason:'Maximum capacity reached.'};
+  if(!['round','intermission'].includes(state?.phase))return {unlocked:true,available:false,reason:'Start a round to build your orbit.'};
+  if(getBalance(p,state)<generatorCost(p,id))return {unlocked:true,available:false,reason:'Collect more LRCs to buy this machine.'};
+  return {unlocked:true,available:true,reason:'Ready to build.'};
+}
 export function generatorQuote(p,id,quantity=1,state){
   const g=generatorById.get(id);if(!g||![1,10,'max'].includes(quantity))return {quantity:0,cost:0};
   const owned=p.generators[id]||0,wanted=quantity==='max'?1000-owned:quantity;
@@ -113,6 +141,7 @@ export function skillAvailability(p,id,state){
   if(rank(p,id)>=s.maxRank)return {available:false,reason:'Fully researched.'};
   for(const required of s.requires){const needed=s.requiredRanks[required]||1;if(rank(p,required)<needed)return {available:false,reason:`Requires ${skillById.get(required)?.name||required} rank ${needed}.`};}
   const g=s.gates;
+  if(g.farm&&!getFarmUnlocked(p))return {available:false,reason:'Buy a Refract orb farm to unlock garden research.'};
   if(p.highestOrb<g.orb)return {available:false,reason:`Reach orb ${g.orb} (best: ${p.highestOrb}).`};
   if(p.completedRounds<g.rounds)return {available:false,reason:`Complete ${g.rounds} rounds (${p.completedRounds} completed).`};
   if(p.prestigeCount<g.prestiges)return {available:false,reason:`Prestige ${g.prestiges} times (${p.prestigeCount} completed).`};
@@ -191,18 +220,21 @@ export function applyAction(state,playerId,action){
     const minted=earn(state,p,s.clickIncome*(critical?s.criticalMintMultiplier:1));p.clicks=count(p.clicks+1);p.roundClicks=count(p.roundClicks+1);
     return {ok:true,damage,amount:cap(result.amount+minted),kills:result.kills,critical};}
   if(action.type==='ready'){if(state.phase!=='intermission')return fail('Ready up between rounds.');p.ready=!p.ready;maybeStartNextRound(state);return {ok:true};}
+  if(FARM_ACTIONS.has(action.type)){
+    if(!['round','intermission'].includes(state.phase))return fail('Start a round to tend your garden.');
+    return applyFarmAction(p,action,getBalance(p,state),cost=>{if(state.mode==='coop')state.sharedLrc-=cost;else p.lrc-=cost;});}
   if(action.type==='buyGenerator'){
-    if(!['round','intermission'].includes(state.phase))return fail('Start a round to build your orbit.');if(!generatorById.has(action.id))return fail('Unknown generator.');
+    const availability=generatorAvailability(p,action.id,state);if(!availability.available)return fail(availability.reason);
     const quantity=action.quantity===undefined?1:action.quantity;if(![1,10,'max'].includes(quantity))return fail('Choose Buy 1, Buy 10, or Buy Max.');
     const quote=generatorQuote(p,action.id,quantity,state);if(!quote.quantity)return fail('No affordable capacity remains for this purchase.');if(getBalance(p,state)<quote.cost)return fail('Collect more LRCs to buy that whole bundle.');
-    if(state.mode==='coop')state.sharedLrc-=quote.cost;else p.lrc-=quote.cost;p.generators[action.id]=(p.generators[action.id]||0)+quote.quantity;return {ok:true,...quote};}
+    if(state.mode==='coop')state.sharedLrc-=quote.cost;else p.lrc-=quote.cost;p.generators[action.id]=(p.generators[action.id]||0)+quote.quantity;if(action.id==='satellite')p.farm.unlocked=true;return {ok:true,...quote};}
   if(action.type==='buySkill'){
     const availability=skillAvailability(p,action.id,state);if(!availability.available)return fail(availability.reason);const s=skillById.get(action.id),cost=skillCost(p,action.id);
     if(s.currency==='prestige')p.prestigePoints-=cost;else p.skillPoints-=cost;p.skills[s.id]=rank(p,s.id)+1;p.ready=false;return {ok:true};}
   if(action.type==='prestige'){
     if(state.phase!=='intermission')return fail('Refract your core between rounds.');const gain=prestigeGain(p);if(gain<1)return fail('Earn 2,500 LRCs in your own run to prestige.');
     p.prestigePoints=count(p.prestigePoints+gain);p.totalPrestige=count(p.totalPrestige+gain);p.prestigeCount=count(p.prestigeCount+1);
-    p.lrc=0;p.runLrc=0;p.generators={};p.orb=freshOrb();p.autoClock=0;p.combo=0;p.ready=false;return {ok:true,amount:gain};}
+    resetFarm(p);p.lrc=0;p.runLrc=0;p.generators={};p.orb=freshOrb();p.autoClock=0;p.arsenalClock=[0,0,0,0];p.combo=0;p.ready=false;return {ok:true,amount:gain};}
   return fail('Unknown action.');
 }
 export function advance(state,dtSeconds){
@@ -211,16 +243,22 @@ export function advance(state,dtSeconds){
     for(const p of state.players)if(p.combo&&state.now-p.comboAt>=2)p.combo=0;
     let elapsed=Math.min(pending,state.remaining>10?state.remaining-10:state.remaining);
     for(const p of state.players)if(p.combo)elapsed=Math.min(elapsed,Math.max(0,p.comboAt+2-state.now));
+    for(const p of state.players)if(p.farm.fedSeconds>0)elapsed=Math.min(elapsed,p.farm.fedSeconds);
     for(const p of state.players){p.clickTokens=Math.min(3,p.clickTokens+elapsed*15);const s=getStats(p,state);earn(state,p,s.passiveRate*elapsed);
-      p.autoClock+=s.autoRate*elapsed;const pulses=Math.floor(p.autoClock+1e-9);p.autoClock=Math.max(0,p.autoClock-pulses);
-      if(pulses){damageOrb(state,p,cap(pulses*s.autoDamage),s,true);earn(state,p,cap(pulses*s.autoMint));p.autoClicks=count(p.autoClicks+pulses);}
+      for(let index=0;index<s.autoProfiles.length;index++){const profile=s.autoProfiles[index],clock=profile.progress+profile.rate*elapsed,pulses=Math.floor(clock+1e-9),remainder=Math.max(0,clock-pulses);
+        if(index===0)p.autoClock=remainder;else p.arsenalClock[index-1]=remainder;
+        if(pulses){damageOrb(state,p,cap(pulses*profile.damage),s,true);earn(state,p,cap(pulses*profile.mint));p.autoClicks=count(p.autoClicks+pulses);
+          if(index>0)p.arsenalShots[index-1]=count(p.arsenalShots[index-1]+pulses);}}
+      advanceFarm(p,elapsed);
       if(p.bot){p.botClock+=elapsed;const clicks=Math.min(3,Math.floor(p.botClock/0.8));p.botClock%=0.8;for(let i=0;i<clicks;i++)applyAction(state,p.id,{type:'click'});if(getBalance(p,state)>=generatorCost(p,'mote'))applyAction(state,p.id,{type:'buyGenerator',id:'mote'});}}
     state.now=cap(state.now+elapsed);state.remaining=Math.max(0,state.remaining-elapsed);if(state.remaining<1e-8)finishRound(state);pending=Math.max(0,pending-elapsed);}
 }
 function validOrb(orb,scale=1){return record(orb)&&integer(orb.level,MAX_LEVEL)&&orb.level>=1&&bounded(orb.hp,orbHp(orb.level,scale)*(1+1e-12))&&orb.hp>0;}
 function validPlayer(p){
   if(!record(p)||!text(p.id,100)||!text(p.name,40)||!/^#[\da-f]{6}$/i.test(p.color)||typeof p.bot!=='boolean'||typeof p.ready!=='boolean'
-    ||!(p.avatarUrl===null||safeAvatar(p.avatarUrl)===p.avatarUrl)||!record(p.skills)||!record(p.generators)||!validOrb(p.orb))return false;
+    ||!(p.avatarUrl===null||safeAvatar(p.avatarUrl)===p.avatarUrl)||!record(p.skills)||!record(p.generators)||!validOrb(p.orb)||!validateFarm(p.farm)
+    ||!Array.isArray(p.arsenalClock)||p.arsenalClock.length!==4||!p.arsenalClock.every(value=>bounded(value,1))
+    ||!Array.isArray(p.arsenalShots)||p.arsenalShots.length!==4||!p.arsenalShots.every(value=>integer(value)))return false;
   for(const key of ['lrc','runLrc','lifetimeLrc','roundLrc','comboAt'])if(!bounded(p[key]))return false;
   for(const key of ['clicks','roundClicks','autoClicks','skillPoints','prestigePoints','totalPrestige','prestigeCount','orbsDestroyed','completedRounds','combo'])if(!integer(p[key]))return false;
   if(!integer(p.highestOrb,MAX_LEVEL)||p.highestOrb<p.orb.level||!bounded(p.clickTokens,3)||!bounded(p.botClock,0.8)||!bounded(p.autoClock,1))return false;
@@ -239,15 +277,27 @@ export function validateState(state){
   if(state.lastRound!==null){const r=state.lastRound;if(!record(r)||!integer(r.round,state.round)||r.round<1||!bounded(r.teamLrc)||!bounded(r.goal)||r.goal<=0||typeof r.goalReached!=='boolean'||r.goalReached!==(r.teamLrc>=r.goal)
     ||![2,3].includes(r.skillPoints)||!Array.isArray(r.players)||r.players.length>8||!r.players.every(p=>record(p)&&text(p.id,100)&&bounded(p.lrc)&&integer(p.clicks)&&integer(p.skillPoints,MAX_SKILL_POINTS_PER_ROUND)&&p.skillPoints>=2)
     ||new Set(r.players.map(p=>p.id)).size!==r.players.length)return false;}
-  try{return new TextEncoder().encode(JSON.stringify(state)).length<15000;}catch{return false;}
+  try{return new TextEncoder().encode(JSON.stringify(compactGameState(state))).length<15000;}catch{return false;}
+}
+export function compactGameState(state){return {...state,players:state.players.map(player=>({...player,avatarUrl:null,
+  skills:Object.entries(player.skills).map(([id,rank])=>`${id}:${rank}`).join(','),farm:packFarm(player.farm)})),
+  lastRound:state.lastRound?{...state.lastRound,players:state.lastRound.players.map(player=>{
+    const index=state.players.findIndex(member=>member.id===player.id);return [index<0?player.id:index,player.lrc,player.clicks,player.skillPoints];
+  })}:null};}
+function unpackSkills(packed){
+  if(packed==='')return {};if(packed.length>3000)return null;const entries=packed.split(',');if(entries.length>SKILLS.length)return null;
+  const result={};for(const entry of entries){const match=/^([a-z0-9-]+):(\d+)$/.exec(entry);if(!match||!skillById.has(match[1])||Object.hasOwn(result,match[1]))return null;
+    const value=Number(match[2]);if(!integer(value,skillById.get(match[1]).maxRank))return null;result[match[1]]=value;}return result;
 }
 export function migrateState(saved){
   if(!record(saved)||saved.version!==1||Object.hasOwn(saved,'combatVersion')&&![1,COMBAT_VERSION].includes(saved.combatVersion))return null;try{const next=structuredClone(saved),legacy=next.combatVersion!==COMBAT_VERSION;
     const defaultOrb=()=>legacy?{level:1,hp:12}:freshOrb();
     if(!Object.hasOwn(next,'mode'))next.mode='scoreboard';if(!Object.hasOwn(next,'sharedLrc'))next.sharedLrc=0;
     if(!Object.hasOwn(next,'sharedOrb'))next.sharedOrb=!legacy&&Array.isArray(next.players)&&next.players.every(record)?{level:1,hp:orbHp(1,getCoopDifficulty(next).crewScale)}:defaultOrb();
-    if(Array.isArray(next.players))for(const p of next.players)if(record(p)){const defaults={autoClicks:0,autoClock:0,orb:defaultOrb(),highestOrb:1,orbsDestroyed:0,completedRounds:Math.max(0,(next.round||0)-(next.phase==='round'?1:0)),combo:0,comboAt:0};
-      for(const [key,value]of Object.entries(defaults))if(!Object.hasOwn(p,key))p[key]=value;}
+    if(Array.isArray(next.players))for(const p of next.players)if(record(p)){const defaults={autoClicks:0,autoClock:0,arsenalClock:[0,0,0,0],arsenalShots:[0,0,0,0],orb:defaultOrb(),highestOrb:1,orbsDestroyed:0,completedRounds:Math.max(0,(next.round||0)-(next.phase==='round'?1:0)),combo:0,comboAt:0,farm:{...createFarm(),unlocked:Boolean(p.generators?.satellite>0)}};
+      for(const [key,value]of Object.entries(defaults))if(!Object.hasOwn(p,key))p[key]=value;
+      if(Array.isArray(p.farm))p.farm=unpackFarm(p.farm);
+      if(typeof p.skills==='string')p.skills=unpackSkills(p.skills);}
     if(legacy){
       const convert=(orb,scale=1)=>{if(!record(orb)||!integer(orb.level,MAX_LEVEL)||orb.level<1)return false;
         const oldMax=power(12,HP_GROWTH,orb.level-1);if(!bounded(orb.hp,oldMax*(1+1e-12))||orb.hp<=0)return false;
@@ -255,6 +305,12 @@ export function migrateState(saved){
       if(!Array.isArray(next.players)||!next.players.every(record)||!convert(next.sharedOrb,getCoopDifficulty(next).crewScale)||!next.players.every(p=>convert(p.orb)))return null;
       next.combatVersion=COMBAT_VERSION;
     }
-    if(record(next.lastRound)&&Array.isArray(next.lastRound.players))for(const p of next.lastRound.players)if(record(p)&&!Object.hasOwn(p,'skillPoints'))p.skillPoints=next.lastRound.skillPoints;
+    if(record(next.lastRound)&&Array.isArray(next.lastRound.players)){
+      if(next.lastRound.players.some(Array.isArray)){
+        if(!Array.isArray(next.players)||!next.lastRound.players.every(row=>Array.isArray(row)&&row.length===4&&(text(row[0],100)||integer(row[0],next.players.length-1))))return null;
+        next.lastRound.players=next.lastRound.players.map(([id,lrc,clicks,skillPoints])=>({id:typeof id==='number'?next.players[id].id:id,lrc,clicks,skillPoints}));
+      }
+      for(const p of next.lastRound.players)if(record(p)&&!Object.hasOwn(p,'skillPoints'))p.skillPoints=next.lastRound.skillPoints;
+    }
     return validateState(next)?next:null;}catch{return null;}
 }

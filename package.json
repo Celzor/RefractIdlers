@@ -1,6 +1,6 @@
 {
   "name": "refract-idlers",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "A retro multiplayer light factory. Shatter Refract orbs, automate LRCs, research lasting upgrades, and prestige.",
@@ -11,6 +11,7 @@
     "check": "node scripts/check.mjs",
     "test": "node --test --test-isolation=none tests/*.test.js",
     "test:browser": "node tests/browser.mjs",
+    "test:farm-browser": "node tests/farm-browser.mjs",
     "balance": "node scripts/balance.mjs"
   },
   "engines": { "node": ">=24" },

@@ -1,4 +1,5 @@
 import { SKILLS, SKILL_BRANCHES, skillCost, skillAvailability } from './game.js';
+import { getFarmUnlocked } from './farm.js';
 
 const $ = (selector) => document.querySelector(selector);
 const safe = (value) => String(value).replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -6,7 +7,7 @@ const catalog = new Map(SKILLS.map(skill => [skill.id,skill]));
 const disciplines = SKILL_BRANCHES.filter(branch => branch.currency !== 'prestige');
 const research = SKILLS.filter(skill => skill.currency !== 'prestige');
 const legacy = SKILLS.filter(skill => skill.currency === 'prestige');
-const colors = ['#dfbf65','#94bc79','#7cbdb7','#c7909b','#8daccb','#e0ad69','#b4a0cd','#b8bc8b'];
+const colors = ['#dfbf65','#94bc79','#7cbdb7','#c7909b','#8daccb','#e0ad69','#b4a0cd','#b8bc8b','#83bf88'];
 const count = value => value >= 1e15 ? value.toExponential(1).replace('+','') : new Intl.NumberFormat('en',{notation:value >= 1e6 ? 'compact' : 'standard',maximumFractionDigits:0}).format(value || 0);
 const branchColor = skill => colors[disciplines.findIndex(branch => branch.id === skill.branch)] || '#c3a3cb';
 let lastPlayer, lastState, lastUsable, lastSignature = '';
@@ -16,9 +17,10 @@ let mainMap, legacyMap;
 /** Original pixel glyphs: eight optical motifs, with distinct tier geometry. */
 function glyph(skill) {
   const tier = skill.tier || 1;
-  const branch = skill.currency === 'prestige' ? ['click','idle','mastery'][Math.floor(legacy.indexOf(skill)/4)] : skill.branch;
+  const branch = skill.currency === 'prestige' ? ['click','idle','mastery','farm'][Math.floor(legacy.indexOf(skill)/4)] : skill.branch;
   const ink = 'currentColor', pale = '#eee2ba';
   const motifs = {
+    farm: `<path d="M7 5H3V3H1V0h4v2h2v3h2V3h2V0h4v3h-2v2h-3v3h3v3h-2v3H7v2H5v-5H3V8h4z" fill="${ink}"/><path d="M5 9h6v2H9v2H7v-2H5z" fill="#e7a45f"/>`,
     click: `<path d="M9 1H6v5H3v3h5v6h3V9h3V6H9z" fill="${ink}"/><path d="M9 3H7v4H5v1h4v5h1V8h2V7H9z" fill="${pale}"/>`,
     idle: `<path d="M7 7H3V5H1V2h4v2h2v3h2V5h2V2h4v3h-2v2h-3v6h3v2H4v-2h3z" fill="${ink}"/><path d="M2 3h2v1H2zm10 0h2v1h-2zM8 8h1v5H8z" fill="${pale}"/>`,
     team: `<path d="M1 5h3V2h3v3h2V2h3v3h3v6h-3v3H9v-3H7v3H4v-3H1z" fill="${ink}"/><path d="M3 7h3v2H3zm7 0h3v2h-3zM7 6h2v4H7z" fill="${pale}"/>`,
@@ -35,15 +37,15 @@ function glyph(skill) {
 }
 
 function layout(skills,isLegacy) {
-  const width = isLegacy ? 1280 : 1760, height = isLegacy ? 1120 : 1520;
+  const width = isLegacy ? 1280 : 1880, height = isLegacy ? 1120 : 1640;
   const center = {x:width/2,y:height/2};
   const points = new Map();
   const shifts = [0,6,-8,10,-6,5];
   for (const skill of skills) {
     const branch = isLegacy ? Math.floor(skills.indexOf(skill)/4) : disciplines.findIndex(item => item.id === skill.branch);
     const tier = skill.tier-1;
-    const radius = isLegacy ? [130,265,410,555][tier] : [165,295,425,555,685,815][tier];
-    const base = isLegacy ? [-150,-30,90][branch] : -90+branch*45;
+    const radius = isLegacy ? [130,265,410,555][tier] : [220,350,480,610,740,870][tier];
+    const base = isLegacy ? -135+branch*360/(legacy.length/4) : -90+branch*360/disciplines.length;
     const degrees = base + shifts[tier] * (branch%2 ? -1 : 1);
     const angle = degrees*Math.PI/180;
     points.set(skill.id,{x:center.x+Math.cos(angle)*radius,y:center.y+Math.sin(angle)*radius*(isLegacy ? .8 : .82)});
@@ -209,7 +211,7 @@ class SkillMap {
 }
 
 export function initializeResearch(){
-  $('#research-branches').innerHTML=`<button data-research-branch="all" aria-pressed="true">All paths <span>48</span></button>`+disciplines.map((branch,index)=>`<button data-research-branch="${branch.id}" aria-pressed="false" style="--branch-color:${colors[index]}"><i></i>${safe(branch.name)}<span id="branch-count-${branch.id}">0</span></button>`).join('');
+  $('#research-branches').innerHTML=`<button data-research-branch="all" aria-pressed="true">All paths <span>${research.length}</span></button>`+disciplines.map((branch,index)=>`<button data-research-branch="${branch.id}" aria-pressed="false" style="--branch-color:${colors[index]}"><i></i>${safe(branch.name)}<span id="branch-count-${branch.id}">0</span></button>`).join('');
   mainMap=new SkillMap('#research-map','#research-inspector',research);
   legacyMap=new SkillMap('#legacy-map','#legacy-inspector',legacy,true);
   $('#research-branches').addEventListener('click',event=>{const button=event.target.closest('[data-research-branch]');if(!button)return;selectedBranch=button.dataset.researchBranch;query='';$('#research-search').value='';lastSignature='';renderResearch(lastPlayer,lastState,lastUsable);
@@ -222,7 +224,7 @@ export function initializeResearch(){
 export function renderResearch(player,state,usable){
   lastPlayer=player;lastState=state;lastUsable=usable;if(!state||!mainMap)return;
   mainMap.ensureCamera();legacyMap.ensureCamera();
-  const signature=JSON.stringify([player?.id,player?.skills,player?.skillPoints,player?.prestigePoints,player?.totalPrestige,player?.prestigeCount,player?.highestOrb,player?.completedRounds,state.phase,state.mode,usable,selectedBranch,query,availableOnly,mainMap.selected,legacyMap.selected]);
+  const signature=JSON.stringify([player?.id,player?.skills,player?.skillPoints,player?.prestigePoints,player?.totalPrestige,player?.prestigeCount,player?.highestOrb,player?.completedRounds,getFarmUnlocked(player),state.phase,state.mode,usable,selectedBranch,query,availableOnly,mainMap.selected,legacyMap.selected]);
   if(signature===lastSignature)return;lastSignature=signature;
   const owned=research.reduce((sum,skill)=>sum+(player?.skills[skill.id]||0),0),total=research.reduce((sum,skill)=>sum+skill.maxRank,0);
   $('#research-progress').textContent=`${count(owned)} / ${count(total)} ranks · ${research.length} nodes`;
@@ -235,6 +237,6 @@ export function renderResearch(player,state,usable){
   $('#research-branch-title').textContent=query?'Search the circuit':branch?.name||'Follow the light';
   $('#research-branch-description').textContent=query?'Matching nodes are lit. Their connections stay visible.':branch?.description||'Choose a node to inspect its upgrades. Bright lines trace its prerequisites.';
   const matches=mainMap.render(player,state,usable);legacyMap.render(player,state,usable);
-  $('#research-branch-progress').textContent=query||availableOnly||branch?`${matches} highlighted`:'8 disciplines';
+  $('#research-branch-progress').textContent=query||availableOnly||branch?`${matches} highlighted`:`${disciplines.length} disciplines`;
   $('#research-empty').hidden=matches!==0;
 }

@@ -1,6 +1,8 @@
+import { getFarmStats } from '../src/farm.js';
 import test from 'node:test';
+import { compactGameState } from '../src/game.js';
 import assert from 'node:assert/strict';
-import { createGame, addPlayer, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, getOrb, getCoopDifficulty, generatorCost, generatorQuote, skillCost, skillAvailability, prestigeGain, prestigeNextThreshold, validateState, migrateState, SKILLS, SKILL_BRANCHES, RESEARCH_TOTAL_COST, RESEARCH_TOTAL_RANKS, MAX_SKILL_POINTS_PER_ROUND, ECONOMY_LIMIT, COMBAT_VERSION } from '../src/game.js';
+import { createGame, addPlayer, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, getOrb, getCoopDifficulty, generatorCost, generatorQuote, generatorAvailability, skillCost, skillAvailability, prestigeGain, prestigeNextThreshold, validateState, migrateState, GENERATORS, SKILLS, SKILL_BRANCHES, RESEARCH_TOTAL_COST, RESEARCH_TOTAL_RANKS, MAX_SKILL_POINTS_PER_ROUND, ECONOMY_LIMIT, COMBAT_VERSION } from '../src/game.js';
 const idOf = (key) => SKILLS.find((skill) => skill.key === key).id;
 
 function setup(count = 1) {
@@ -162,7 +164,7 @@ test('eight fully developed pilots fit the relay envelope; bad snapshots are rej
   }
   advance(state, 60);
   assert.equal(validateState(state), true);
-  assert.ok(Buffer.byteLength(JSON.stringify(state)) < 15000);
+  assert.ok(Buffer.byteLength(JSON.stringify(compactGameState(state))) < 15000);
   for (const change of [
     (copy) => { copy.players[0].lrc = Infinity; },
     (copy) => { copy.players[0].generators.mote = -1; },
@@ -587,10 +589,10 @@ test('analytical multi-orb combat matches an iterative oracle for partial, boss 
 test('research has functional breadth and a proven multi-day completion floor', () => {
   const research = SKILLS.filter((skill) => skill.currency === 'skill');
   const prestige = SKILLS.filter((skill) => skill.currency === 'prestige');
-  assert.equal(research.length, 48); assert.equal(prestige.length, 12);
-  assert.equal(SKILL_BRANCHES.filter((branch) => branch.currency === 'skill').length, 8);
-  assert.equal(new Set(SKILLS.map((skill) => skill.id)).size, 60);
-  assert.equal(RESEARCH_TOTAL_RANKS, 312);
+  assert.equal(research.length, 54); assert.equal(prestige.length, 16);
+  assert.equal(SKILL_BRANCHES.filter((branch) => branch.currency === 'skill').length, 9);
+  assert.equal(new Set(SKILLS.map((skill) => skill.id)).size, 70);
+  assert.equal(RESEARCH_TOTAL_RANKS, 351);
   const independentlySummedCost = research.reduce((total, skill) => total + Array.from({ length: skill.maxRank }, (_, i) => Math.ceil(skill.cost * skill.costGrowth ** i)).reduce((a, b) => a + b, 0), 0);
   assert.equal(RESEARCH_TOTAL_COST, independentlySummedCost);
   assert.ok(RESEARCH_TOTAL_COST / MAX_SKILL_POINTS_PER_ROUND / 1440 > 4);
@@ -600,8 +602,8 @@ test('research has functional breadth and a proven multi-day completion floor', 
   player.highestOrb = 200; player.combo = 10;
   for (const skill of SKILLS) {
     const full = player.skills[skill.id]; player.skills[skill.id] = 0;
-    const before = getStats(player, state); player.skills[skill.id] = 1;
-    assert.notDeepEqual(getStats(player, state), before, `${skill.name} must have a functional effect`);
+    const before = {orbit:getStats(player, state),garden:getFarmStats(player)}; player.skills[skill.id] = 1;
+    assert.notDeepEqual({orbit:getStats(player, state),garden:getFarmStats(player)}, before, `${skill.name} must have a functional effect`);
     player.skills[skill.id] = full;
   }
   advance(state, 60);
@@ -673,12 +675,19 @@ test('eight fully ranked builds with long identities fit the relay and huge fini
   for (let i = 0; i < 8; i++) {
     const player = addPlayer(state, { id: `${i}${'x'.repeat(99)}`, name: '界'.repeat(40) });
     player.skills = Object.fromEntries(SKILLS.map((skill) => [skill.id, skill.maxRank]));
-    player.generators = { mote: 1000, satellite: 1000, prism: 1000, star: 1000, nova: 1000 };
+    player.generators = Object.fromEntries(GENERATORS.map((generator) => [generator.id, 1000]));
     player.totalPrestige = 1000; player.highestOrb = 200; player.completedRounds = 1000; player.prestigeCount = 10;
   }
   start(state); advance(state, 60);
-  const bytes = Buffer.byteLength(JSON.stringify(state));
+  const bytes = Buffer.byteLength(JSON.stringify(compactGameState(state)));
   assert.ok(bytes < 15000, `Full progression state is ${bytes} bytes`);
+  assert.equal(validateState(state), true);
+  for (const player of state.players) {
+    player.arsenalClock = [0.12345678901234567, 0.23456789012345678, 0.34567890123456789, 0.4567890123456789];
+    player.arsenalShots = [123456789012345, 234567890123456, 345678901234567, 456789012345678];
+    player.autoClicks = Number.MAX_SAFE_INTEGER;
+  }
+  assert.ok(Buffer.byteLength(JSON.stringify(compactGameState(state))) < 15000, 'Fractional Arsenal clocks and large lifetime counters fit too');
   assert.equal(validateState(state), true);
   const player = state.players[0]; fund(player, 1e100); state.sharedLrc = 1e100;
   assert.equal(getBalance(player, state), 1e100);
@@ -843,4 +852,155 @@ test('combat migration retains legacy damage fractions, rejects corrupt cores an
   addPlayer(migrated, { id: 'join', name: 'Join' });
   assert.equal(migrated.sharedOrb.hp, 1e149, 'At the finite HP ceiling, roster changes still preserve damage');
   assert.equal(validateState(migrated), true);
+});
+
+test('all four Arsenal machines require their own milestones and research before the host permits a purchase', () => {
+  assert.deepEqual(GENERATORS.filter((g) => g.category === 'arsenal').map((g) => g.id), ['mouse', 'laser', 'probe', 'gate']);
+  assert.equal(GENERATORS.filter((g) => g.category === 'workshop').length, 5);
+  for (const generator of GENERATORS.filter((g) => g.category === 'arsenal')) {
+    const state = setup(); start(state); const player = state.players[0]; fund(player, 1e10);
+    const before = structuredClone(state);
+    assert.equal(generatorAvailability(player, generator.id, state).unlocked, false);
+    assert.match(generatorAvailability(player, generator.id, state).reason, /Reach orb/);
+    for (const quantity of [1, 10, 'max']) assert.equal(applyAction(state, player.id, { type: 'buyGenerator', id: generator.id, quantity }).ok, false);
+    assert.deepEqual(state, before, 'Forged locked shop actions never spend currency or create a machine');
+    player.highestOrb = generator.unlock.orb;
+    if (generator.id === 'gate') {
+      assert.match(generatorAvailability(player, generator.id, state).reason, /120 rounds/);
+      player.completedRounds = 120;
+      assert.match(generatorAvailability(player, generator.id, state).reason, /Prestige 1/);
+      player.prestigeCount = 1;
+    }
+    assert.match(generatorAvailability(player, generator.id, state).reason, /Requires/);
+    Object.assign(player.skills, generator.unlock.skills);
+    assert.deepEqual(generatorAvailability(player, generator.id, state), { unlocked: true, available: true, reason: 'Ready to build.' });
+    assert.equal(applyAction(state, player.id, { type: 'buyGenerator', id: generator.id }).ok, true);
+    assert.equal(player.generators[generator.id], 1);
+    assert.equal(player.lrc, 1e10 - generator.baseCost);
+    assert.equal(generatorCost(player, generator.id), Math.ceil(generator.baseCost * 1.17));
+    player.lrc = 0;
+    assert.equal(generatorAvailability(player, generator.id, state).unlocked, true);
+    assert.equal(generatorAvailability(player, generator.id, state).available, false);
+    assert.equal(validateState(state), true);
+  }
+});
+
+test('Arsenal bulk purchases are atomic, spend the shared wallet, and never borrow another pilot research unlock', () => {
+  const state = setup(2); applyAction(state, 'pilot-0', { type: 'setMode', mode: 'coop' }); start(state);
+  const [a, b] = state.players;
+  a.highestOrb = 5; a.skills.au1 = 2;
+  state.sharedLrc = 1e6;
+  assert.equal(generatorAvailability(b, 'mouse', state).unlocked, false);
+  assert.equal(applyAction(state, b.id, { type: 'buyGenerator', id: 'mouse' }).ok, false);
+  const quote = generatorQuote(a, 'mouse', 10, state);
+  const expected = Array.from({ length: 10 }, (_, owned) => Math.ceil(2400 * 1.17 ** owned)).reduce((x, y) => x + y, 0);
+  assert.equal(quote.cost, expected);
+  state.sharedLrc = expected - 1;
+  assert.equal(applyAction(state, a.id, { type: 'buyGenerator', id: 'mouse', quantity: 10 }).ok, false);
+  assert.equal(a.generators.mouse, undefined); assert.equal(state.sharedLrc, expected - 1);
+  state.sharedLrc = expected;
+  assert.equal(applyAction(state, a.id, { type: 'buyGenerator', id: 'mouse', quantity: 10 }).quantity, 10);
+  assert.equal(state.sharedLrc, 0); assert.equal(a.lrc, 0); assert.equal(b.lrc, 0);
+  assert.equal(a.generators.mouse, 10);
+  state.sharedLrc = 100000;
+  const maximum = generatorQuote(a, 'mouse', 'max', state);
+  assert.equal(applyAction(state, a.id, { type: 'buyGenerator', id: 'mouse', quantity: 'max' }).quantity, maximum.quantity);
+  assert.equal(state.sharedLrc, 100000 - maximum.cost);
+  assert.ok(state.sharedLrc < generatorCost(a, 'mouse'));
+  assert.equal(validateState(state), true);
+});
+
+test('AI Mouse makes guaranteed paid clicks without consuming manual inputs or creating manual crits and combos', () => {
+  const state = setup(); start(state); const player = state.players[0];
+  player.generators.mouse = 1;
+  player.skills[idOf('light-press')] = 2;
+  player.skills['lucky-photon'] = 8;
+  const profile = getStats(player, state).autoProfiles.find((entry) => entry.id === 'mouse');
+  assert.equal(profile.rate, 2); assert.equal(profile.damage, 2); assert.equal(profile.mint, 1.25);
+  assert.equal(getStats(player, state).idleRate, 3.5);
+  const rng = state.rng;
+  advance(state, 0.25);
+  assert.equal(player.arsenalClock[0], 0.5); assert.equal(player.autoClicks, 0); assert.equal(player.lrc, 0.25);
+  advance(state, 0.75);
+  assert.equal(player.arsenalClock[0], 0); assert.equal(player.arsenalShots[0], 2); assert.equal(player.autoClicks, 2);
+  assert.equal(player.lrc, 3.5); assert.equal(player.orb.hp, 1996);
+  assert.equal(player.clicks, 0); assert.equal(player.roundClicks, 0); assert.equal(player.combo, 0);
+  assert.equal(player.clickTokens, 3); assert.equal(state.rng, rng);
+  assert.equal(getStats(player, state).autoProfiles.find((entry) => entry.id === 'mouse').shots, 2);
+  assert.equal(validateState(state), true);
+});
+
+test('Lazer, Starlink and gates fire their advertised heavy pulses and hybrid income follows production research', () => {
+  for (const [id, seconds, damage, income] of [['laser', 5, 40, 1], ['probe', 2, 6, 1201], ['gate', 10, 200, 10001]]) {
+    const state = setup(); start(state); const player = state.players[0]; player.generators[id] = 1;
+    const before = getStats(player, state), profile = before.autoProfiles.find((entry) => entry.id === id);
+    assert.equal(profile.rate, 1 / seconds); assert.equal(profile.damage, damage); assert.equal(profile.mint, 0);
+    assert.equal(before.passiveRate, income);
+    advance(state, seconds - 0.25);
+    assert.equal(player.autoClicks, 0); assert.equal(player.orb.hp, 2000);
+    advance(state, 0.25);
+    assert.equal(player.autoClicks, 1); assert.equal(player.orb.hp, 2000 - damage);
+    assert.equal(player.lrc, seconds * income);
+    assert.equal(getStats(player, state).autoProfiles.find((entry) => entry.id === id).shots, 1);
+    assert.equal(validateState(state), true);
+  }
+  const state = setup(); start(state); const player = state.players[0];
+  player.generators = { probe: 1, gate: 1, star: 2 };
+  player.skills.perpetuity = 1;
+  const stats = getStats(player, state);
+  assert.ok(Math.abs(stats.passiveRate - (1 + 11200 * 1.12) * 1.2) < 1e-9);
+  assert.ok(Math.abs(stats.autoRate - 0.6 * 1.12) < 1e-12);
+  assert.equal(stats.autoDamage, 2.4);
+  assert.ok(Math.abs(stats.autoDps - (0.5 * 3 + 0.1 * 100) * 1.12 * 2.4) < 1e-10);
+});
+
+test('per-type profiles and minting aggregate correctly through surge and deterministic catch-up', () => {
+  const long = setup(), split = setup(); start(long); start(split);
+  for (const state of [long, split]) {
+    const player = state.players[0];
+    player.generators = { mote: 1, mouse: 1, laser: 1, probe: 1, gate: 1 };
+    player.skills[idOf('autonomous-mint')] = 1;
+  }
+  const stats = getStats(long.players[0], long);
+  assert.ok(Math.abs(stats.autoRate - 3.3) < 1e-12);
+  assert.equal(stats.autoDps, 36);
+  assert.ok(Math.abs(stats.idleRate - (11201 + 2 * 0.25 + 1.3 * 0.025)) < 1e-9);
+  advance(long, 60); advance(split, 50); advance(split, 10);
+  assert.deepEqual(long, split);
+  const player = long.players[0], profiles = getStats(player, long).autoProfiles;
+  assert.deepEqual(profiles.map((profile) => profile.shots), [30, 120, 12, 30, 6]);
+  assert.equal(player.autoClicks, 198); assert.equal(player.clicks, 0);
+  assert.equal(player.orbsDestroyed, 1);
+  assert.ok(player.lrc > 11201 * 60 + 300);
+  assert.equal(validateState(long), true);
+});
+
+test('Arsenal prestige, restore and handover retain lifetime shots but reset only the choosing pilot machines and charge', () => {
+  const state = setup(2); applyAction(state, 'pilot-0', { type: 'setMode', mode: 'coop' }); start(state);
+  const [a, b] = state.players;
+  a.generators = { mouse: 1, laser: 1, probe: 1, gate: 1 };
+  a.highestOrb = 60; a.completedRounds = 120; a.prestigeCount = 1; a.skills = { au1: 2, au2: 2, au3: 2, perpetuity: 1 };
+  advance(state, 60);
+  const shots = structuredClone(a.arsenalShots), count = a.autoClicks, shared = structuredClone(state.sharedOrb), bank = state.sharedLrc;
+  const restored = migrateState(JSON.parse(JSON.stringify(state)));
+  assert.deepEqual(restored, state);
+  assert.equal(applyAction(state, a.id, { type: 'prestige' }).ok, true);
+  assert.deepEqual(a.generators, {}); assert.deepEqual(a.arsenalClock, [0, 0, 0, 0]);
+  assert.deepEqual(a.arsenalShots, shots); assert.equal(a.autoClicks, count);
+  assert.deepEqual(state.sharedOrb, shared); assert.equal(state.sharedLrc, bank);
+  assert.equal(generatorAvailability(a, 'gate', state).unlocked, true);
+  reconcilePlayers(state, [{ id: b.id, name: b.name }, { id: a.id, name: a.name }]);
+  assert.deepEqual(state.players[1].arsenalShots, shots);
+  const old = setup(); delete old.players[0].arsenalClock; delete old.players[0].arsenalShots;
+  old.players[0].autoClicks = 123; old.players[0].autoClock = 0.75;
+  const migrated = migrateState(old);
+  assert.ok(migrated); assert.deepEqual(migrated.players[0].arsenalClock, [0, 0, 0, 0]);
+  assert.deepEqual(migrated.players[0].arsenalShots, [0, 0, 0, 0]);
+  assert.equal(migrated.players[0].autoClicks, 123); assert.equal(migrated.players[0].autoClock, 0.75);
+  assert.equal(getStats(migrated.players[0], migrated).autoProfiles[0].shots, 123);
+  for (const [field, value] of [['arsenalClock', [0, 0, 0, 2]], ['arsenalShots', [0, 0, -1, 0]], ['arsenalClock', []], ['arsenalShots', null]]) {
+    const corrupt = structuredClone(migrated); corrupt.players[0][field] = value;
+    assert.equal(validateState(corrupt), false); assert.equal(migrateState(corrupt), null);
+  }
+  assert.equal(validateState(state), true);
 });

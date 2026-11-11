@@ -61,7 +61,7 @@ Joining, leaving and host handover preserve **remaining HP as a fraction of maxi
 
 Manual hits have a base 5% critical chance and a 3× critical damage multiplier. Research adds critical chance, critical multiplier, a chance of an extra hit, and combo damage. Critical chance is capped at 80%; extra-hit chance is capped at 90%. A successful bonus-hit roll adds a second hit to the same input. Holding a key does not create repeated input in the UI, and the host's token bucket allows 15 accepted manual inputs per second with a burst of three.
 
-Consecutive manual hits build a combo, initially capped at ten. The combo expires after two seconds without a manual hit. Combo research gives those stacks a damage effect; Fortune loop also increases capacity. The simulation splits long time steps at combo expiry and the surge boundary so an expired effect does not apply for a whole delayed frame.
+Consecutive manual hits build a combo, initially capped at ten. The combo expires after two seconds without a manual hit. Combo research gives those stacks a damage effect; Fortune loop also increases capacity. The simulation splits long time steps at combo expiry, Beam's meal expiry and the surge boundary so an expired effect does not apply for a whole delayed frame.
 
 Orb drops belong to the pilot whose attack shatters the orb. In co-op those drops enter the pool and that pilot's contribution record. All active co-op pilots share the highest orb reached for research gates. `getOrb(player,state).reward` previews the **personalized manual destruction reward**, including that pilot's research and prestige. Automatic-only drop modifiers can change an automatic kill's payout.
 
@@ -77,17 +77,61 @@ Large attacks use capped geometric sums and a binary search for the number of fu
 | Refractometer | 4,500 | +10% personal damage and all LRC production |
 | Pocket star | 12,000 | 300 base continuous LRC/second |
 
+The Workshop keeps these five machines. The Arsenal adds four purchasable devices with permanent-progress unlocks:
+
+| Arsenal device | Initial price | Base effect per unit | Unlock requirements |
+| --- | ---: | --- | --- |
+| AI Mouse | 2,400 | Two automatic clicks per second; each deals one automatic hit and mints the normal guaranteed click income | Highest orb 5; Clockwork core rank 2 |
+| Lazer cannon | 35,000 | One beam every five seconds, dealing 20 times an automatic hit | Highest orb 15; Servo lenses rank 2 |
+| Starlink probe | 250,000 | A pulse every two seconds dealing three times an automatic hit, plus 1,200 base continuous LRC/second | Highest orb 30; Perpetual motion rank 1 |
+| Star gate | 5,000,000 | A strike every ten seconds dealing 100 times an automatic hit, plus 10,000 base continuous LRC/second | Highest orb 60; 120 completed rounds; one prestige; Parallel beams rank 2 |
+
+The Lazer cannon's flavor line is “Immah firin mah lazor BWAAAH.” Its heavy strike is one attack, not twenty separate paid clicks. The AI Mouse is the exception to ordinary automatic minting: it always earns the owner's guaranteed `clickIncome` per pulse, without a manual critical roll, bonus hit, combo increment, or input-token cost. Other devices mint only the amount granted by automatic-mint research. Existing damage and surge buffs apply to every automatic device. Probe and gate income receives ordinary machine-production, passive-income and personal-power modifiers.
+
+`generatorAvailability(player,id,state)` returns `{unlocked,available,reason}`. `unlocked` covers the purchaser's own highest orb, completed rounds, prestige count and research requirements. `available` additionally checks phase, capacity and funds for the next single unit. Shared money cannot bypass another pilot's personal unlock. The host checks availability before every purchase; hiding a disabled button is not the enforcement mechanism. Price quotes remain readable for locked devices and do not grant purchase permission.
+
 Each successive unit costs `ceil(base price × 1.17^owned)`. **Buy 1** buys the next unit. **Buy 10** requires the full next-ten-unit price and capacity; it never buys a partial bundle. **Buy Max** buys the largest affordable prefix, up to the 1,000-unit capacity per machine. The bundle price is the sum of each individually rounded unit price. Quotes do not mutate balances; the host validates and deducts the entire purchase atomically.
 
 Machine spending never reduces run or lifetime earnings. Co-op purchases deduct only the shared bank, while personal contribution counters remain intact.
 
-Automatic strikes are actual pulses. Fractional pulse progress is stored in `autoClock`; completed pulses increment lifetime `autoClicks`. They damage the orb and receive destruction rewards, but never consume manual input tokens or increment manual click counters. They do not roll critical hits or bonus hits. Damage research, prestige, Refractometers, and surge affect their damage; automation research adds independent speed, damage, minting, and drop bonuses. Clockwork core can supply a small automatic rate even before a machine is owned.
+Automatic strikes are actual pulses. The original clicker and Clockwork core share `autoClock`; four compact `arsenalClock` entries track the Mouse, Lazer, probe and gate independently. Matching `arsenalShots` entries retain lifetime per-type shots, while `autoClicks` remains the lifetime total of all automatic attacks. A type with multiple units has their combined attack cadence. The simulation aggregates each type's pulses without iterating over individual owned machines. They damage the orb and receive destruction rewards, but never consume manual input tokens or increment manual click counters. They do not roll critical hits or bonus hits. Damage research, prestige, Refractometers, and surge affect their damage; automation research adds independent speed, damage, minting, and drop bonuses. Clockwork core can supply a small automatic rate even before a machine is owned.
+
+`getStats().autoProfiles` exposes five entries in the order `mote`, `mouse`, `laser`, `probe`, `gate`. Each has `{id,owned,rate,damage,mint,shots,progress}`. Rate means the **total owned-type attacks per second**, including automation-speed modifiers. Damage and mint are per pulse; shots are lifetime confirmed attacks; progress is the fraction toward that type's next pulse. Visuals can therefore follow actual confirmed attacks while using the same timing information as the simulation. Prestige removes machines and resets fractional charges, while retaining research, unlock milestones and lifetime attack counts. Older saves receive zeroed Arsenal arrays without changing their existing clicker charge or lifetime count.
 
 `idleRate` means projected **continuous LRC plus automatic minting**. It excludes uncertain orb-destruction rewards. `autoDps` reports automated damage separately. This prevents an HP-damaging auto clicker from being advertised as guaranteed continuous LRC production.
 
+## Beam's Garden
+
+The first `satellite` purchase permanently unlocks the Farm tab. [`src/farm.js`](../src/farm.js) owns the catalogues and farm rules; [`src/farm-view.js`](../src/farm-view.js) renders the greenhouse. Each player's named `farm` state contains `unlocked`, `plots`, `crops`, `inventory`, `upgrades`, `fedSeconds` and lifetime `meals`. A fresh farm has one empty bed and carrot seeds. Each plot is `{crop,progress}`, with `crop:null` for an empty bed and progress from 0 to 1.
+
+| Crop | Seed unlock LRCs | Base growth seconds | Base meal seconds |
+| --- | ---: | ---: | ---: |
+| Carrot | 0 | 30 | 30 |
+| Lettuce | 180 | 45 | 45 |
+| Tomato | 650 | 60 | 70 |
+| Pumpkin | 2,200 | 90 | 110 |
+
+Planting unlocked seeds is free. A ready bed must be harvested manually; harvesting puts vegetables into inventory and clears the bed. Feeding consumes one vegetable and extends Beam's meal timer, capped at **300 active seconds**. While fed, the owner's personal income and hit damage gain a base **25%** multiplier bonus. The bonus applies to passive income, minting, orb rewards, and manual and automatic damage; it does not increase attack cadence. The companion's portrait and poke action remain cosmetic.
+
+The garden expands to six beds. The next bed costs `ceil(120 × 2.2^(owned beds − 1) × (1 − discount))`. Grow lights, hydroponics and fertiliser each have three levels, starting at 250, 600 and 400 LRCs respectively; their next level costs `ceil(base cost × 2.5^owned level × (1 − discount))`. Seed costs use the same discount. `getFarmStats(player)` exposes these combined effects:
+
+```text
+growthRate = 1 + 0.25 × grow lights + 0.35 × hydroponics + cropSpeed research
+yield = 1 + fertiliser + floor(cropYield research)
+feedMultiplier = 1 + mealDuration research
+feedBonus = 0.25 + beamBoost research
+discount = min(0.75, farmDiscount research)
+```
+
+`advanceFarm(player,seconds)` increases each planted bed's progress by `seconds × growthRate / crop.growTime`, up to 1, and decreases the meal timer. The game calls it only during active rounds, splitting at meal expiry before recalculating production. Growth and meals pause during intermissions; there is no offline progress. The scene draws every purchased bed, each crop's growth stage, one lamp per grow-light level, additional tanks and pipes for hydroponics, and one sack per fertiliser level.
+
+`applyAction` routes `unlockCrop`, `buyFarmPlot`, `buyFarmUpgrade`, `plantCrop`, `harvestCrop` and `feedBeam` to `applyFarmAction(player,action,balance,spend)`. All require an unlocked farm and either a round or intermission. The host checks seed ownership, plot indices, maturity, inventory, equipment capacity and affordability before committing. `farmCropCost`, `farmPlotCost` and `farmUpgradeCost` supply the same prices to the view and engine. Co-op purchases use the shared bank, but the farm, produce and meal bonus remain personal; boosted earnings feed the pool. Inventories cap at 999,999 per vegetable, and a full pantry rejects harvesting without clearing the bed.
+
+`resetFarm(player)` preserves garden access, unlocked seeds and lifetime meals. Prestige resets the garden to one empty bed and clears equipment, harvested produce and the meal timer. Research remains on the player and continues to improve the next garden.
+
 ## Persistent research
 
-There are **48 regular research nodes in eight branches**, plus **12 permanent prestige disciplines**. All research ranks survive prestige. The full regular tree has **312 ranks**.
+There are **54 regular research nodes in nine branches**, plus **16 permanent prestige disciplines**. All research ranks survive prestige. The full regular tree has **351 ranks**.
 
 | Branch | Main systems |
 | --- | --- |
@@ -99,6 +143,7 @@ There are **48 regular research nodes in eight branches**, plus **12 permanent p
 | Luminous mint | Income per manual click, machine dividends, surge minting |
 | Prism fortune | Critical multipliers, extra hits, critical minting and combo capacity |
 | Long horizon | Research insight and long-term cross-discipline bonuses |
+| Beam's garden | Vegetable growth, meal duration and strength, harvest yield, garden purchase discounts |
 
 Each branch has six tiers:
 
@@ -113,9 +158,11 @@ Each branch has six tiers:
 
 The next regular rank costs `ceil(base cost × 1.38^current rank)`. Exact prerequisites, effects, and milestone gates live in `src/skills.js`; the interface displays them from the same catalog. Gate explanations take priority over phase/funds messages so a pilot can inspect future research during a round.
 
+Beam's garden follows Seed science → Long lunch → Garden planning → Abundant harvest → Photosynthetic feast → Orbital ecosystem. Its later cross-branch requirements connect to Living light. All six nodes also require an unlocked garden; adding the branch preserves the previously shipped branches' prerequisite links.
+
 Event horizon grants +1 SP once any rank is owned. Deep research, Chrono archive, Universal theory, Keeper's insight, and Infinite library add fractional **research insight**. Every whole accumulated insight gives +1 SP per completed round. Maximum regular insight is 4.2 and permanent insight is 2; with the base award, milestone, and Event horizon, the hard maximum is 10 SP.
 
-The entire regular tree costs **59,816 SP**. Even granting the maximum 10 SP from the first round, ignoring every milestone gate and every intermission, completion requires at least **5,982 rounds: 99.7 active hours, or 4.154 days of harvesting**. Actual completion takes longer because early rounds grant fewer points and intermissions require decisions. This is a mathematical lower bound, not a claim that an unattended session completes the tree in four days. The balance audit in `scripts/balance.mjs` measures representative legal purchase/research policies separately.
+The entire regular tree costs **67,293 SP**. Even granting the maximum 10 SP from the first round, ignoring every milestone gate and every intermission, completion requires at least **6,730 rounds: 112.17 active hours, or 4.67 days of harvesting**. Actual completion takes longer because early rounds grant fewer points and intermissions require decisions. This is a mathematical lower bound, not an unattended completion estimate. The balance audit in `scripts/balance.mjs` measures representative legal purchase/research policies separately; its current policies buy machines and research but do not actively garden or feed Beam.
 
 ## Prestige and permanent disciplines
 
@@ -138,13 +185,16 @@ The logarithmic award prevents the prestige/reinvestment feedback loop from reac
 
 Each lifetime earned PP adds 10% to the prestige multiplier. Spendable PP can buy permanent disciplines without reducing that lifetime multiplier. Prestige resets only the choosing pilot's personal wallet/run earnings, machines, personal orb, fractional auto-strike progress, and combo. It **preserves all research, unspent SP, lifetime earnings, manual/automatic click counts, highest orb, destruction count, completed rounds, and prestige history**. In co-op it also preserves the shared bank and shared orb exactly. Other pilots retain their builds.
 
-The twelve prestige disciplines form three chains:
+Garden access, unlocked seeds and lifetime meal counts also survive. The choosing pilot's garden returns to one empty bed with no equipment, inventory or active meal bonus.
+
+The sixteen prestige disciplines form four chains:
 
 - Eternal spark → Crown of rays → Stellar heart → Source of light
 - Enduring orbit → Timeless machinery → Recursive light → Everlight
 - Prism memory → Keeper's insight → Eternal record → Infinite library
+- Evergreen roots → Heirloom harvest → Endless lunch → Beam's bounty
 
-Each has five ranks. The four tiers start at 1, 3, 8, and 20 PP, with costs growing by `1.65^current rank`. Later nodes require two ranks in the prior discipline and higher orb, completed-round, and lifetime-PP milestones. The top tier requires orb 150, 720 completed rounds, and 100 lifetime PP. Effects improve damage, production, automation, drops, research insight, and co-op frequency.
+Each has five ranks. The four tiers start at 1, 3, 8, and 20 PP, with costs growing by `1.65^current rank`. Later nodes require two ranks in the prior discipline and higher orb, completed-round, and lifetime-PP milestones. The top tier requires orb 150, 720 completed rounds, and 100 lifetime PP. Effects improve damage, production, automation, drops, research insight, and co-op frequency. The fourth chain requires garden access and adds permanent crop speed, harvest yield, meal duration and meal strength respectively.
 
 ## Production formulas
 
@@ -153,9 +203,10 @@ The shared frequency sum includes only the owner in scoreboard and all active pi
 ```text
 power multiplier = (1 + 0.10 × lifetime PP)
   × (1 + frequency) × (1 + personal-power research)
-  × (1 + 0.10 × refractometers)
+  × (1 + 0.10 × refractometers) × (1 + active Beam meal bonus)
 
-hit damage = (2 + flat-damage research) × (1 + damage research)
+hit damage = (2 + flat-damage research + 4 × wormhole generators)
+  × (1 + damage research + 0.20 × quantum foamers)
   × power multiplier × (1 + combo stacks × combo research)
   × (2 during surge, otherwise 1)
 
@@ -166,7 +217,7 @@ manual mint = (0.25 + flat-mint research) × (1 + mint research)
 
 Farm, array, and star output use their separate research multipliers. Farm horticulture adds yield based on owned arrays; Dyson crown adds machine yield based on total machine count. Their sum is enhanced by machine-production research, then added to the baseline 1 LRC/second and flat passive research before the general passive and power multipliers apply.
 
-Automatic rate is `(0.5 × auto clickers + flat automatic research) × (1 + automatic-speed research + shared automation)`. Each strike uses hit damage times its automatic-damage modifier. Autonomous mint pays a fraction of manual-mint income per strike. Projected idle income is continuous production plus automatic rate times automatic mint.
+The original automatic rate is `(0.5 × auto clickers + flat automatic research) × (1 + automatic-speed research + shared automation)`. Each Arsenal type adds `owned × catalog rate × the same speed factor`. Each strike uses hit damage times its automatic-damage modifier and the device's attack multiplier. Autonomous mint pays a fraction of manual-mint income per non-Mouse strike; Mouse strikes earn the full guaranteed manual-mint income. Projected idle income is continuous production plus the sum of every type's rate times its own mint amount. Total automated DPS is the sum of every type's rate times its hit damage.
 
 Orb drops combine the geometric base reward, boss reward modifiers, flat drop research, the power multiplier, drop research, and highest-orb research. Automatic-only drop research applies to automatic kills. Long catch-up batches use the stats at the start of each segment; orb-level scaling updates for subsequent segments. Normal simulation advances on short timer ticks.
 
@@ -180,8 +231,16 @@ The engine migrates older saves by adding missing orb/counter fields and preserv
 
 The original nine skill IDs remain stable; compact IDs for newer nodes keep large multiplayer snapshots within the relay envelope. Readable catalog keys and names remain available for UI and audits.
 
+The simulation and local/session-storage saves keep named fields. `compactGameState(state)` creates the relay representation without mutating the live state and strips avatar URLs, which come from the roster. Compact fields are:
+
+- `player.skills`: comma-separated `id:rank` entries, or an empty string for no ranks.
+- `player.farm`: `packFarm` returns `[unlockedFlag, seedMask, plots, inventory, upgrades, fedSeconds, meals]`. `unlockedFlag` is 0 or 1. The seed bitmask and four inventory slots follow `CROPS` order: carrot, lettuce, tomato, pumpkin. Plot pairs are `[cropNumber, progress]`, using 0 for empty or the one-based crop index. The three upgrade slots follow `FARM_UPGRADES`: grow lights, hydroponics, fertiliser. A null inventory or upgrade slot represents an absent named property.
+- `lastRound.players`: rows `[playerIndexOrId, lrc, clicks, skillPoints]`. Active pilots use their index in the snapshot's player array; a departed pilot keeps their string ID so the completed-round summary survives roster changes.
+
+`migrateState` clones and decodes either the named or compact representation, including `unpackFarm` and strict skill decoding, then applies full `validateState` checks. Malformed array shapes, duplicate or unknown skill IDs, out-of-range values and invalid summary indices are rejected. The activity bridge uses this same validated decoder for received snapshots, and the UI uses its named result. Old named saves gain an empty garden, unlocked if they already own a `satellite`; no existing crop state is overwritten.
+
 - Monetary values and damage are finite and capped at `10^150`; integer counters use the safe-integer ceiling.
 - Machines cap at 1,000 of each kind. Orb level has a finite implementation limit of one million; saturated HP/rewards remain finite.
-- Snapshots must remain below 15,000 UTF-8 bytes, leaving room for the 16 KiB relay envelope. Avatar URLs are supplied separately from the roster. Tests cover eight fully ranked builds with long IDs and Unicode names.
-- Validation covers malformed numbers, catalog ranks, duplicate IDs, phase fields, orb HP, and payload size. Save migration is never used to accept network state.
+- Compact snapshots must remain below 15,000 UTF-8 bytes, leaving room for the 16 KiB relay envelope. `validateState` measures the compact representation even when validating named state. Tests cover eight fully ranked, fully equipped gardens with long IDs, Unicode names and completed-round summaries.
+- Validation covers malformed numbers, catalog ranks, duplicate IDs, phase fields, orb HP, farm ownership and inventory, compact encodings, and payload size. Both saved and received state must pass full validation after decoding.
 - Automated checks include 250 independent combat-oracle cases across personal and scaled co-op cores, the 100-hit first-fracture threshold, roster changes and legacy health-fraction migration, atomic bulk purchases, mode isolation, pooled state retention, research gates/effects, reward caps, multi-day cost bounds, persistence, and host handover.
