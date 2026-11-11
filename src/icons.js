@@ -6,7 +6,7 @@ export const PIXEL_PALETTE = Object.freeze({
   blue: '#4d718b', red: '#a35b50', pink: '#d3917c', purple: '#a491b1',
 });
 
-export const GENERATOR_IDS = Object.freeze(['mote', 'satellite', 'prism', 'star', 'nova', 'mouse', 'laser', 'probe', 'gate']);
+export const GENERATOR_IDS = Object.freeze(['mote', 'satellite', 'prism', 'star', 'nova', 'mouse', 'laser', 'probe', 'gate', 'wormhole', 'foamer', 'string']);
 const IDS = GENERATOR_IDS;
 
 function sprite(id, phase = 0.5, running = false) {
@@ -136,6 +136,39 @@ function sprite(id, phase = 0.5, running = false) {
     r(14, 11, 4, 10, 'sky'); r(11, 14, 10, 4, 'sky'); r(14, 14, 4, 4, 'cream');
     for (const [x, y] of [[14,4],[4,14],[26,14],[14,24]]) { r(x, y, 3, 3, 'ink'); r(x+1, y+1, 1, 1, 'cream'); }
     if (running) { const shift = Math.floor(phase * 3); r(10 + shift, 11, 2, 1, 'paper'); r(19 - shift, 20, 2, 1, 'paper'); }
+  }
+  if (id === 'wormhole') {
+    // Twin offset apertures linked by a brass field coil.
+    r(2,26,28,5,'ink'); r(4,27,24,2,'wood');
+    for (const [x,y] of [[3,5],[16,11]]) {
+      r(x+3,y,8,3,'ink'); r(x,y+3,14,12,'ink'); r(x+3,y+15,8,3,'ink');
+      r(x+3,y+2,8,3,'purple'); r(x+2,y+5,10,8,'purple'); r(x+3,y+13,8,3,'blue');
+      r(x+5,y+5,4,8,'ink'); r(x+4,y+6,6,6,'ink');
+      r(x+3,y+4,2,5,'sky'); r(x+7,y+3,2,2,'cream');
+    }
+    const offset = running ? Math.floor(phase*4) : 2;
+    r(12+offset,14,3,2,'yellow'); r(10+offset,17,3,2,'cream');
+  } else if (id === 'foamer') {
+    // A pressure vessel spilling luminous vacuum bubbles.
+    r(5,14,22,16,'ink'); r(7,16,18,12,'blue'); r(8,17,3,10,'sky');
+    r(5,12,22,4,'ink'); r(7,13,18,2,'yellow'); r(14,20,8,5,'ink');
+    r(15,21,6,3,'sage'); r(17,21,2,2,'cream');
+    for (const [x,y,n] of [[9,5,6],[18,3,7],[14,9,5]]) {
+      const lift=running?Math.floor(phase*2):0;
+      r(x,y-lift,n,n,'ink'); r(x+1,y+1-lift,n-2,n-2,'sky'); r(x+1,y+1-lift,2,1,'cream');
+    }
+    r(2,19,3,7,'ink'); r(27,17,3,9,'ink'); r(28,18,2,6,'orange');
+  } else if (id === 'string') {
+    // A tiny string loom that unravels impossible equations.
+    r(3,27,26,4,'ink'); r(5,28,22,2,'wood');
+    r(4,4,4,23,'ink'); r(24,4,4,23,'ink'); r(6,2,20,4,'ink');
+    r(6,6,2,20,'orange'); r(24,6,2,20,'orange'); r(8,4,16,2,'yellow');
+    for (let i=0;i<4;i++) {
+      const x=10+i*3,bend=running?Math.floor(phase*3+i)%3:1;
+      r(x,7,1,6,'purple'); r(x-bend,13,1,7,'sky'); r(x,20,1,5,'yellow');
+      r(x-bend,13,bend+1,1,'cream'); r(x-bend,19,bend+1,1,'cream');
+    }
+    r(1,15,4,4,'ink'); r(0,16,3,2,'yellow');
   }
   return shapes;
 }

@@ -27,8 +27,13 @@ const LINES = {
   skill: 'A new idea! Peer-reviewed by me. Just me.',
   prestige: 'New orbit. Same Beam. Extremely fancy little crown.',
   poke: 'Highly scientific finding: that tickles.',
+  meal: 'Fresh vegetables! Converting lunch into extremely productive vibes.',
+  fed: 'Garden-powered Beam. The science is delicious.',
 };
 const MACHINE_LINES = {
+  wormhole: 'A shortcut through spacetime. Finally, a shorter commute.',
+  foamer: 'Quantum bubbles. Please do not use them for washing up.',
+  string: 'String detheory. We have scientifically untangled a knot.',
   mote: 'Tiny clicker. Enormous career prospects.',
   satellite: 'An orb farm! Please remember to water it with light.',
   prism: 'More wavelengths. Fewer sensible electricity bills.',
@@ -42,6 +47,7 @@ const MACHINE_LINES = {
 const EVENTS = {
   welcome: {mood:'greeting',priority:0,duration:6500},
   poke: {mood:'cheer',priority:1,duration:2600},
+  meal: {mood:'cheer',priority:4,duration:6000},
   machine: {mood:'cheer',priority:2,duration:6000},
   skill: {mood:'cheer',priority:2,duration:5500},
   boss: {mood:'boss',priority:3,duration:5000},
@@ -114,7 +120,7 @@ export class BeamCompanion {
   render(state, selfId, now = performance.now()) {
     const visible = !document.hidden && this.root.getClientRects().length > 0;
     if (this.active && this.active.until > this.clock &&
-        ['machine','skill','roundend','prestige'].includes(this.active.type) && (!visible || !this.visible)) {
+        ['machine','skill','meal','roundend','prestige'].includes(this.active.type) && (!visible || !this.visible)) {
       // Keep the one current milestone while research occupies the screen. This
       // is not a queue: later higher-priority milestones replace it in place.
       this.active.until += Math.max(0, now - this.clock);
@@ -128,6 +134,7 @@ export class BeamCompanion {
       boss:orb?.level > 0 && orb.level % 10 === 0 ? orb.level : 0,
       surge:state?.phase === 'round' && state.remaining > 0 && state.remaining <= 10,
       generators:{...player?.generators}, skills:sum(player?.skills), prestige:player?.prestigeCount || 0,
+      meals:player?.farm?.meals || 0, fed:player?.farm?.fedSeconds > 0,
     };
     const hour = new Date().getHours();
     this.root.dataset.time = hour >= 7 && hour < 19 ? 'day' : 'night';
@@ -137,6 +144,8 @@ export class BeamCompanion {
       this.context = {mood:'surge',line:LINES.surge};
     } else if (next.phase === 'round' && next.boss) {
       this.context = {mood:'boss',line:LINES.boss};
+    } else if (next.fed) {
+      this.context = {mood:'cheer',line:LINES.fed};
     } else if (next.phase === 'round') {
       this.context = {mood:'idle',line:LINES[state.mode === 'coop' ? 'coop' : 'idle']};
     } else {
@@ -146,6 +155,7 @@ export class BeamCompanion {
     if (previous && previous.id === next.id && next.id && next.round >= previous.round) {
       // Choose the highest-value event from a snapshot: never emit one bark per click.
       if (next.prestige > previous.prestige) this.react('prestige');
+      else if (next.meals > previous.meals) this.react('meal');
       else if (next.phase === 'intermission' && previous.phase !== 'intermission') this.react('roundend');
       else if (next.surge && !previous.surge) this.react('surge');
       else if (next.phase === 'round' && next.boss && next.boss !== previous.boss) this.react('boss');

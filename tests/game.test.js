@@ -1,4 +1,6 @@
+import { getFarmStats } from '../src/farm.js';
 import test from 'node:test';
+import { compactGameState } from '../src/game.js';
 import assert from 'node:assert/strict';
 import { createGame, addPlayer, reconcilePlayers, applyAction, advance, getStats, getBalance, getTeamStats, getRoundTarget, getOrb, getCoopDifficulty, generatorCost, generatorQuote, generatorAvailability, skillCost, skillAvailability, prestigeGain, prestigeNextThreshold, validateState, migrateState, GENERATORS, SKILLS, SKILL_BRANCHES, RESEARCH_TOTAL_COST, RESEARCH_TOTAL_RANKS, MAX_SKILL_POINTS_PER_ROUND, ECONOMY_LIMIT, COMBAT_VERSION } from '../src/game.js';
 const idOf = (key) => SKILLS.find((skill) => skill.key === key).id;
@@ -162,7 +164,7 @@ test('eight fully developed pilots fit the relay envelope; bad snapshots are rej
   }
   advance(state, 60);
   assert.equal(validateState(state), true);
-  assert.ok(Buffer.byteLength(JSON.stringify(state)) < 15000);
+  assert.ok(Buffer.byteLength(JSON.stringify(compactGameState(state))) < 15000);
   for (const change of [
     (copy) => { copy.players[0].lrc = Infinity; },
     (copy) => { copy.players[0].generators.mote = -1; },
@@ -587,10 +589,10 @@ test('analytical multi-orb combat matches an iterative oracle for partial, boss 
 test('research has functional breadth and a proven multi-day completion floor', () => {
   const research = SKILLS.filter((skill) => skill.currency === 'skill');
   const prestige = SKILLS.filter((skill) => skill.currency === 'prestige');
-  assert.equal(research.length, 48); assert.equal(prestige.length, 12);
-  assert.equal(SKILL_BRANCHES.filter((branch) => branch.currency === 'skill').length, 8);
-  assert.equal(new Set(SKILLS.map((skill) => skill.id)).size, 60);
-  assert.equal(RESEARCH_TOTAL_RANKS, 312);
+  assert.equal(research.length, 54); assert.equal(prestige.length, 16);
+  assert.equal(SKILL_BRANCHES.filter((branch) => branch.currency === 'skill').length, 9);
+  assert.equal(new Set(SKILLS.map((skill) => skill.id)).size, 70);
+  assert.equal(RESEARCH_TOTAL_RANKS, 351);
   const independentlySummedCost = research.reduce((total, skill) => total + Array.from({ length: skill.maxRank }, (_, i) => Math.ceil(skill.cost * skill.costGrowth ** i)).reduce((a, b) => a + b, 0), 0);
   assert.equal(RESEARCH_TOTAL_COST, independentlySummedCost);
   assert.ok(RESEARCH_TOTAL_COST / MAX_SKILL_POINTS_PER_ROUND / 1440 > 4);
@@ -600,8 +602,8 @@ test('research has functional breadth and a proven multi-day completion floor', 
   player.highestOrb = 200; player.combo = 10;
   for (const skill of SKILLS) {
     const full = player.skills[skill.id]; player.skills[skill.id] = 0;
-    const before = getStats(player, state); player.skills[skill.id] = 1;
-    assert.notDeepEqual(getStats(player, state), before, `${skill.name} must have a functional effect`);
+    const before = {orbit:getStats(player, state),garden:getFarmStats(player)}; player.skills[skill.id] = 1;
+    assert.notDeepEqual({orbit:getStats(player, state),garden:getFarmStats(player)}, before, `${skill.name} must have a functional effect`);
     player.skills[skill.id] = full;
   }
   advance(state, 60);
@@ -677,14 +679,15 @@ test('eight fully ranked builds with long identities fit the relay and huge fini
     player.totalPrestige = 1000; player.highestOrb = 200; player.completedRounds = 1000; player.prestigeCount = 10;
   }
   start(state); advance(state, 60);
-  const bytes = Buffer.byteLength(JSON.stringify(state));
+  const bytes = Buffer.byteLength(JSON.stringify(compactGameState(state)));
   assert.ok(bytes < 15000, `Full progression state is ${bytes} bytes`);
+  assert.equal(validateState(state), true);
   for (const player of state.players) {
     player.arsenalClock = [0.12345678901234567, 0.23456789012345678, 0.34567890123456789, 0.4567890123456789];
     player.arsenalShots = [123456789012345, 234567890123456, 345678901234567, 456789012345678];
     player.autoClicks = Number.MAX_SAFE_INTEGER;
   }
-  assert.ok(Buffer.byteLength(JSON.stringify(state)) < 15000, 'Fractional Arsenal clocks and large lifetime counters fit too');
+  assert.ok(Buffer.byteLength(JSON.stringify(compactGameState(state))) < 15000, 'Fractional Arsenal clocks and large lifetime counters fit too');
   assert.equal(validateState(state), true);
   const player = state.players[0]; fund(player, 1e100); state.sharedLrc = 1e100;
   assert.equal(getBalance(player, state), 1e100);

@@ -18,6 +18,7 @@ const report = {
     research: 'Between rounds buy the cheapest currently legal research repeatedly. Every purchase uses skillAvailability and applyAction; no gates or resources are bypassed.',
     prestige: 'First prestige as soon as eligible at intermission. Subsequent prestige requires at least 15 completed rounds since the previous reset and a gain of at least 5 points. Research is retained.',
     unattended: 'The two long simulations automatically ready and shop between rounds. They model continuously managed play, not closed-tab or hands-free progress. A separate true-unattended check stops at the first intermission.',
+    gardening: 'No planting, harvesting, feeding or garden equipment purchases. Buying an orb farm unlocks legal garden research; this baseline receives no meal bonuses. All twelve machine types, including Click tech, participate in the investment policy.',
     precision: 'Zero-click simulation advances in 10-second segments; 2-click/sec uses 0.5-second steps. Milestone timing is accurate to the corresponding step, except eligibility may be recorded within the current round before prestige becomes selectable.',
     deepPush: `After 10,000 rounds, extended mode holds prestige for up to ${pushHours} additional active hours while continuing the same legal investment, research and clicking policy.`,
   },
@@ -71,7 +72,7 @@ for (const clicksPerSecond of [0,2]) {
   const state = game.createGame();
   const player = game.addPlayer(state,{id:'audit',name:'Audit pilot'});
   game.applyAction(state,player.id,{type:'start'});
-  const scenario={manualClicksPerSecond:clicksPerSecond,firstCrackSeconds:null,firstCoreClearedSeconds:null,firstBossClearedSeconds:null,firstPrestigeEligibleSeconds:null,firstPrestigeSeconds:null,checkpoints:[]};
+  const scenario={manualClicksPerSecond:clicksPerSecond,firstCrackSeconds:null,firstCoreClearedSeconds:null,firstBossClearedSeconds:null,firstPrestigeEligibleSeconds:null,firstPrestigeSeconds:null,firstOrb175Seconds:null,fullResearchSeconds:null,checkpoints:[]};
   let lastPrestigeRound=-Infinity,nextInvestment=10,steps=0;
   while(state.now<maxSeconds) {
     if(state.phase==='round') {
@@ -80,11 +81,13 @@ for (const clicksPerSecond of [0,2]) {
       if(scenario.firstCrackSeconds===null&&(player.orbsDestroyed>0||game.getOrb(player,state).fractureStage>=1))scenario.firstCrackSeconds=state.now;
       if(player.orbsDestroyed>0&&scenario.firstCoreClearedSeconds===null)scenario.firstCoreClearedSeconds=state.now;
       if(player.highestOrb>=11 && scenario.firstBossClearedSeconds===null) scenario.firstBossClearedSeconds=state.now;
+      if(player.highestOrb>=175 && scenario.firstOrb175Seconds===null) scenario.firstOrb175Seconds=state.now;
       if(game.prestigeGain(player)>=1 && scenario.firstPrestigeEligibleSeconds===null) scenario.firstPrestigeEligibleSeconds=state.now;
       if(state.now>=nextInvestment){invest(state,player);nextInvestment=state.now+10;}
     }
     if(state.phase==='intermission') {
       researchAllAvailable(state,player);
+      if(scenario.fullResearchSeconds===null && normalResearch.every(skill=>(player.skills[skill.id]||0)===skill.maxRank))scenario.fullResearchSeconds=state.now;
       const gain=game.prestigeGain(player);
       if(gain>=(player.prestigeCount===0?1:5) && (player.prestigeCount===0 || player.completedRounds-lastPrestigeRound>=15)) {
         assert.equal(game.applyAction(state,player.id,{type:'prestige'}).ok,true);
@@ -102,9 +105,9 @@ for (const clicksPerSecond of [0,2]) {
   assert.ok(player.totalPrestige<Number.MAX_SAFE_INTEGER,'Prestige does not saturate its safe integer counter');
   if(extended) {
     const pushStart=state.now;
-    const push={maximumHours:pushHours,orb175AfterHours:null,fullResearchAfterHours:null};
-    game.applyAction(state,player.id,{type:'ready'});
-    while(state.now<pushStart+pushHours*3600) {
+    const push={maximumHours:pushHours,orb175AfterHours:player.highestOrb>=175?0:null,fullResearchAfterHours:normalResearch.every(skill=>(player.skills[skill.id]||0)===skill.maxRank)?0:null};
+    if(push.fullResearchAfterHours===null)game.applyAction(state,player.id,{type:'ready'});
+    while(push.fullResearchAfterHours===null && state.now<pushStart+pushHours*3600) {
       if(clicksPerSecond)game.applyAction(state,player.id,{type:'click'});
       game.advance(state,clicksPerSecond?0.5:Math.min(10,state.remaining));
       if(state.now>=nextInvestment){invest(state,player);nextInvestment=state.now+10;}

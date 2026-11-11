@@ -12,7 +12,7 @@ The game uses a warm retro tabletop: chunky pixel borders, paper labels, a felt 
 
 The visual direction takes inspiration from the tactile incremental-game feel of [Gamblers Table](https://store.steampowered.com/app/3618390/Gamblers_Table/), [Scritchy Scratchy](https://store.steampowered.com/app/3948120/Scritchy_Scratchy/), and [Rusty's Retirement](https://store.steampowered.com/app/2666510/Rustys_Retirement/). The tabletop artwork and pixel-machine sprites were created for Refract Idlers; no sprites, sound recordings, or game assets from those titles are included. Refract branding and companion-project provenance remain listed in [CREDITS.md](CREDITS.md).
 
-**Beam, Refract's Chief Vibe Officer**, keeps a small pixel-art desk beside your orbit. He reacts to new machines, research, bosses, the solar surge, round breaks and prestige. His crystal appearance, playful confidence, daytime boat and nighttime armchair come from the existing Refract companion. The dialogue and game reactions are new adaptations; [Beam's source notes](docs/BEAM-LORE.md) separate established characterization from this game's additions. You can greet or minimize him. Beam is a cosmetic companion, never the orb you attack, and changes no game statistics.
+**Beam, Refract's Chief Vibe Officer**, keeps a small pixel-art desk beside your orbit. He reacts to new machines, research, bosses, the solar surge, round breaks, garden meals and prestige. His crystal appearance, playful confidence, daytime boat and nighttime armchair come from the existing Refract companion. The dialogue, garden and game reactions are new adaptations; [Beam's source notes](docs/BEAM-LORE.md) separate established characterization from this game's additions. Greeting or minimizing his portrait is cosmetic. Feeding him vegetables through the Farm grants an income and damage bonus. Beam is never the orb you attack.
 
 ## Run locally
 
@@ -42,6 +42,8 @@ It uses installed Microsoft Edge on Windows by default. Set `BROWSER_EXECUTABLE`
 Use `npm run test:browser -- --graph-only` for focused desktop frame and research-map checks, or `--sidebar-only` for the maximum-size Scoreboard and Co-op rosters. Release checks target desktop play.
 
 Use `npm run test:browser -- --fleet-only` for Arsenal unlocks, bulk-fleet growth, firing paths, dense-fleet performance, reduced motion and host validation. Frame timing is recorded in `test-results/fleet-performance.json`.
+
+With the development server running, `node tests/farm-browser.mjs` checks garden purchases, visible equipment, planting, harvesting, feeding, save reloads and prestige at both desktop sizes.
 
 ## The game loop
 
@@ -106,9 +108,46 @@ Refractometer bonuses add together before multiplying your own production: five 
 
 Each owned unit adds a sprite to the fleet. The renderer draws up to **256 detailed units plus 512 small units** individually; larger holdings add a density field, with purchase flashes still marking new units. This bounds rendering work while keeping every owned unit in the economy. Scoreboard shows your fleet; Co-op combines active pilots' machines. Actual attack events drive projectiles and beams that reach the center of the orb through a transparent, click-through effects layer. Up to 96 visual shots are active at once. Intermissions and reduced motion suppress moving attack effects.
 
+### Click technology
+
+The workshop's **Click tech** catalogue buys equipment with LRCs. Each purchase appears in the orbit, uses the same escalating prices and bulk controls as other machines, and resets on prestige.
+
+| Device | First purchase | Effect per owned unit |
+| --- | ---: | --- |
+| Wormhole generator | 600 LRCs | +4 base damage to manual and automatic hits |
+| Quantum foamer | 3,500 LRCs | +20% hit damage, additive with damage research |
+| String detheory | 18,000 LRCs | +1 percentage point of manual critical chance and +0.1 critical multiplier |
+
+Total critical chance caps at 80%. Automatic attacks still do not roll critical hits.
+
+### Beam's Garden
+
+Buying your first **Refract orb farm** opens the **Farm** tab with one planting bed and free carrot seeds. Choose a vegetable, plant an empty bed, then harvest it when ready. Each harvest produces one vegetable before fertiliser and research bonuses; planting unlocked seeds costs nothing.
+
+| Vegetable | Seed unlock | Base growing time | Meal duration per vegetable |
+| --- | ---: | ---: | ---: |
+| Carrot | Free | 30 seconds | 30 seconds |
+| Lettuce | 180 LRCs | 45 seconds | 45 seconds |
+| Tomato | 650 LRCs | 60 seconds | 70 seconds |
+| Pumpkin | 2,200 LRCs | 90 seconds | 110 seconds |
+
+Feed a harvested vegetable to Beam for **+25% personal income and hit damage**. This includes passive production, click minting, orb rewards, and manual and automatic damage. Meals add duration up to **300 active seconds**; research can improve their duration and strength. Growth and meal timers advance only during active rounds, pause between rounds, and make no offline progress. Planting, harvesting, feeding and purchases are also available between rounds.
+
+Expand to **six planting beds**. The next bed starts at 120 LRCs, with subsequent prices growing by 2.2×. Each equipment type has three levels:
+
+| Equipment | First level | Effect per level | Visible installation |
+| --- | ---: | --- | --- |
+| Grow lights | 250 LRCs | +25% growth speed | Another overhead lamp |
+| Hydroponics | 600 LRCs | +35% growth speed | Another water tank and additional pipes |
+| Fertiliser | 400 LRCs | +1 vegetable per harvest | Another fertiliser sack |
+
+Equipment prices grow by 2.5× per level. Growth bonuses add together; farm research discounts seed, bed and equipment purchases. The scene shows each unlocked bed, its crop's growth stage, and every purchased equipment level.
+
+In Co-op, garden purchases use the shared bank; beds, equipment, produce and Beam's meal bonus belong to the purchasing pilot. Their boosted earnings enter the shared bank. Prestige keeps garden access, unlocked seeds and research, but returns the garden to one empty bed and clears equipment, produce and the active meal.
+
 ### Research
 
-The research atlas has **48 connected normal nodes across eight branches**, with six tiers per branch, plus a **12-node permanent prestige graph**. Research ranks and unspent skill points survive every prestige. Pan and zoom the map, select a node to inspect its costs and requirements, and follow prerequisite links across branches. Search and availability highlights help find the next investment while keeping the surrounding graph visible. Expand the map for more space; Escape closes the expanded view. Touch dragging and the zoom controls work on mobile.
+The research atlas has **54 connected normal nodes across nine branches**, with six tiers per branch, plus a **16-node permanent prestige graph**. Research ranks and unspent skill points survive every prestige. Pan and zoom the map, select a node to inspect its costs and requirements, and follow prerequisite links across branches. Search and availability highlights help find the next investment while keeping the surrounding graph visible. Expand the map for more space; Escape closes the expanded view. Touch dragging and the zoom controls work on mobile.
 
 | Tier | Rank cap | Starting SP cost | Orb milestone | Completed rounds |
 | --- | ---: | ---: | ---: | ---: |
@@ -123,28 +162,34 @@ Rank prices grow as `ceil(starting cost × 1.38^current rank)`. Later research a
 
 The board supports long-term development over many runs: stronger clicks, automation, orb hunting, production, shared bonuses and research interact. Co-op's crew bonuses apply to the active crew, while Scoreboard keeps each pilot's research benefits personal. Buying research is an intermission action so the crew can compare builds before starting the next round.
 
+The six **Beam's garden** nodes improve growth speed, meal duration, purchase discounts, harvest yield and meal strength. Four permanent farm nodes—**Evergreen roots**, **Heirloom harvest**, **Endless lunch** and **Beam's bounty**—retain those improvements across runs. Both farm research paths require an unlocked garden as well as their displayed prerequisites and milestones.
+
 ### Progression audit
 
 Run `npm run balance` for the reproducible 1-hour, 6-hour and 24-hour pacing report. `node scripts/balance.mjs --extended` also checks 10,000 rounds and up to 24 additional active hours without prestige. Add `--push-hours=168` to reproduce the full deep-gate audit. These commands write `test-results/balance.json`.
 
-Maxing normal research costs **59,816 SP across 312 ranks**. Even at the maximum **10 SP per 60-second round**, it requires at least **5,982 completed rounds**, or **4.15 active days**, before intermission time and milestone gates. This is an optimistic lower bound, not an expected completion time.
+Maxing normal research costs **67,293 SP across 351 ranks**. Even at the maximum **10 SP per 60-second round**, it requires at least **6,730 completed rounds**, or **4.67 active days**, before intermission time and milestone gates. This is an optimistic lower bound, not an expected completion time.
 
 The audit compares no manual clicks with two clicks per second. Both scripted policies invest every ten seconds, choosing the unlocked and affordable machine type with the highest base cost first, then cheaper types. They automatically ready between rounds, buy the cheapest legal research, and prestige for at least five points after fifteen completed rounds since the last reset; the first prestige happens as soon as eligible. No resources, research gates or Arsenal unlocks are bypassed.
 
+The current audit includes the expanded machine and research catalogues. Its policies do not plant, harvest or feed Beam, so these measurements provide a conservative **no-gardening baseline**, without meal bonuses.
+
 | Managed play policy | First core broken | First boss cleared | First prestige |
 | --- | ---: | ---: | ---: |
-| No manual clicks | 5 min | 14 min 20 sec | 6 min |
-| Two clicks per second | 3 min 22 sec | 12 min | 5 min |
+| No manual clicks | 5 min | 11 min 50 sec | 6 min |
+| Two clicks per second | 3 min 22 sec | 9 min 52 sec | 5 min |
 
-Both policies reach **32 normal nodes / 215 ranks** after 24 active hours. Ten thousand rounds remain finite without saturating the prestige counter. After that checkpoint, holding prestige reaches orb 175 after another **5.10 active hours without manual clicks**, or **1.43 hours at two clicks per second**. All normal research completes at the following intermission: about **171.78** or **168.10 total active hours**, respectively. These Arsenal-enabled results describe the stated policies, not optimal completion times.
+Both policies reach **36 normal nodes / 241 ranks** and a highest orb of **171** after 24 active hours. Orb 175 is first reached at **30.35 active hours without manual clicks**, or **29.31 hours at two clicks per second**. All **54 normal nodes / 351 ranks** finish at **147.03** and **147.02 active hours**, respectively, without changing the prestige policy. Both simulations remain finite through 10,000 rounds, with 667 prestiges and fewer than 38,000 lifetime prestige points. These measurements replace the earlier eight-branch, nine-machine benchmarks and describe the stated policies rather than optimal completion times.
 
-These figures describe continuously managed sessions. An unattended session stops at its first intermission after 60 seconds, and there is no offline income. Frequent prestige resets also restart personal orb progression; reaching the deepest orb gates requires deliberately keeping a run going longer under these policies.
+These figures describe continuously managed sessions. An unattended session stops at its first intermission after 60 seconds, and there is no offline income. Prestige restarts the personal orb, while the highest-orb milestone and research remain recorded across runs.
 
 ### Prestige
 
 Earn **2,500 LRCs in your run** to unlock your first prestige. The award is `floor(log2(1 + run LRCs / 2500))`: 2,500 earns 1 point, 7,500 earns 2, and 17,500 earns 3. Spending LRCs does not reduce your run total. Logarithmic awards keep repeated prestige resets from rapidly overwhelming the long-term economy.
 
 Each earned prestige point permanently adds **10% to your production**. Prestiging resets **your** personal spendable LRCs, run income, generators and personal orb. It preserves all research ranks, unspent skill points, lifetime income and prestige totals. In Co-op, the shared bank and shared orb are preserved in full. Other pilots keep their builds, and the shared round number continues. The permanent production bonus uses total earned prestige points, so spending available points on prestige research does not remove that bonus.
+
+Your garden remains unlocked with its seed collection and farm research. Rebuild from one empty bed: purchased beds, equipment, harvested vegetables and Beam's current meal bonus reset.
 
 ## Multiplayer
 
@@ -174,13 +219,15 @@ The Pages workflow checks syntax, runs unit tests, and builds on pull requests a
 
 | File | Responsibility |
 | --- | --- |
-| `src/game.js` | Round rules, LRC economy, skills, prestige, snapshot validation |
-| `src/skills.js` | Research catalog, rank costs and milestone gates |
+| [src/game.js](src/game.js) | Round rules, LRC economy, skills, prestige, snapshot validation |
+| [src/skills.js](src/skills.js) | Research catalog, rank costs and milestone gates |
+| [src/farm.js](src/farm.js) | Garden economy, crop growth, meal bonuses and farm snapshot validation |
+| [src/farm-view.js](src/farm-view.js), [src/farm.css](src/farm.css) | Interactive garden scene, seed shop, equipment and harvest basket |
 | `src/main.js` | Interface, input, local saves, simulation and relay wiring |
 | `src/research.js` | Connected research maps, pan/zoom and selected-node inspectors |
 | `src/research.css` | Research nodes, prerequisite edges and map layout |
 | `src/frame.css` | Fixed desktop game frame and compact panels |
-| `src/beam.js`, `src/beam.css` | Cosmetic pixel companion, reactions and motion |
+| [src/beam.js](src/beam.js), [src/beam.css](src/beam.css) | Cosmetic pixel companion rendering, milestone reactions and motion |
 | `docs/BEAM-LORE.md` | Source-grounded Beam notes and adaptation boundaries |
 | `src/arena.js` | Canvas orbit, participant avatars, visual feedback |
 | `src/activity.js` | Authenticated Refract relay and host election |

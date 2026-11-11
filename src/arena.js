@@ -13,7 +13,7 @@ const compact = (amount) => amount >= 1e12 ? `${(amount / 1e12).toFixed(1)}t`
       : amount >= 1000 ? `${(amount / 1000).toFixed(1)}k` : String(Number(amount.toFixed(1)));
 
 const ATTACK_IDS = ['mote','mouse','laser','probe','gate'];
-const FLEET_COLORS = {mote:P.yellow,satellite:P.sky,prism:P.cream,star:P.purple,nova:P.yellow,mouse:P.paper,laser:P.red,probe:P.sky,gate:P.purple};
+const FLEET_COLORS = {mote:P.yellow,satellite:P.sky,prism:P.cream,star:P.purple,nova:P.yellow,mouse:P.paper,laser:P.red,probe:P.sky,gate:P.purple,wormhole:P.purple,foamer:P.sky,string:P.yellow};
 const SHOT_DURATION = {mote:.38,mouse:.62,laser:.48,probe:.58,gate:.72};
 const FLEET_LIMIT = 256, OVERFLOW_LIMIT = 512, SHOT_LIMIT = 96;
 

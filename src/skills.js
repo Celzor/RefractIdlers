@@ -8,6 +8,7 @@ export const SKILL_BRANCHES = Object.freeze([
   { id: 'mint', name: 'Luminous mint', description: 'Earn LRC with every manual press.', currency: 'skill' },
   { id: 'fortune', name: 'Prism fortune', description: 'Critical multipliers, extra hits and longer combos.', currency: 'skill' },
   { id: 'mastery', name: 'Long horizon', description: 'Long-term research income and cross-discipline growth.', currency: 'skill' },
+  { id: 'farm', name: 'Beam’s garden', description: 'Faster vegetables, richer harvests and stronger meals for Beam.', currency: 'skill' },
   { id: 'ascension', name: 'Eternal light', description: 'Spend prestige points on permanent disciplines.', currency: 'prestige' },
 ]);
 
@@ -77,6 +78,14 @@ const lines = {
     ['universal-theory', 'Universal theory', '+5% personal income/damage and +0.5 research insight.', { personalPct: 0.05, insight: 0.5 }],
   ],
 };
+lines.farm = [
+  ['seed-science', 'Seed science', '+10% vegetable growth speed per rank.', { cropSpeed: 0.1 }],
+  ['long-lunch', 'Long lunch', '+10% Beam meal duration per rank.', { mealDuration: 0.1 }],
+  ['garden-planning', 'Garden planning', 'Beds, equipment and new seeds cost 3% less per rank; total discount caps at 75%.', { farmDiscount: 0.03 }],
+  ['abundant-harvest', 'Abundant harvest', '+1 vegetable in every harvested bed per rank.', { cropYield: 1 }],
+  ['photosynthetic-feast', 'Photosynthetic feast', 'Meals add another 3 percentage points of income and damage per rank.', { beamBoost: 0.03 }],
+  ['orbital-ecosystem', 'Orbital ecosystem', '+20% crop growth speed and +10% meal duration per rank.', { cropSpeed: 0.2, mealDuration: 0.1 }],
+];
 const tiers = [1, 4, 15, 50, 180, 600];
 const maxRanks = [8, 8, 8, 6, 5, 4];
 const orbGates = [0, 10, 25, 50, 100, 175];
@@ -87,13 +96,14 @@ const research = branchIds.flatMap((branch, branchIndex) => lines[branch].map(([
   const requires = tier ? [lines[branch][tier - 1][0]] : [];
   const requiredRanks = tier ? { [requires[0]]: tier < 3 ? tier + 1 : 2 } : {};
   if (tier >= 3) {
-    const cross = lines[branchIds[(branchIndex + 1) % branchIds.length]][tier - 2][0];
+    // Keep shipped cross-branch prerequisites stable when adding disciplines.
+    const cross = lines[branch === 'farm' ? 'idle' : branchIds[(branchIndex + 1) % 8]][tier - 2][0];
     requires.push(cross); requiredRanks[cross] = tier >= 5 ? 1 : 2;
   }
   return { id, name, branch, description, effects, cost: tiers[tier], costGrowth: 1.38,
     maxRank: maxRanks[tier], requires, requiredRanks, currency: 'skill', tier: tier + 1,
-    gates: { orb: orbGates[tier], rounds: roundGates[tier], prestiges: tier >= 4 ? 3 : tier >= 3 ? 1 : 0, prestige: tier === 5 ? 10 : 0 },
-    icon: icons[branchIndex] };
+    gates: { orb: orbGates[tier], rounds: roundGates[tier], prestiges: tier >= 4 ? 3 : tier >= 3 ? 1 : 0, prestige: tier === 5 ? 10 : 0, ...(branch === 'farm' ? {farm:true} : {}) },
+    icon: icons[branchIndex] || '♧' };
 }));
 
 const eternalLines = [
@@ -116,11 +126,17 @@ const eternalLines = [
     ['infinite-library', 'Infinite library', '+0.2 research insight and +5% personal power per rank.', { insight: 0.2, personalPct: 0.05 }],
   ],
 ];
-const prestige = eternalLines.flatMap((line) => line.map(([id, name, description, effects], tier) => ({
+eternalLines.push([
+  ['evergreen-roots', 'Evergreen roots', '+15% vegetable growth speed per rank, across every prestige.', { cropSpeed: 0.15 }],
+  ['heirloom-harvest', 'Heirloom harvest', '+1 vegetable per harvested bed per rank, across every prestige.', { cropYield: 1 }],
+  ['endless-lunch', 'Endless lunch', '+20% meal duration per rank, across every prestige.', { mealDuration: 0.2 }],
+  ['beams-bounty', 'Beam’s bounty', 'Meals add 5 percentage points of income and damage per rank, permanently.', { beamBoost: 0.05 }],
+]);
+const prestige = eternalLines.flatMap((line, lineIndex) => line.map(([id, name, description, effects], tier) => ({
   id, name, description, effects, branch: 'ascension', currency: 'prestige', tier: tier + 1,
   cost: [1, 3, 8, 20][tier], costGrowth: 1.65, maxRank: 5,
   requires: tier ? [line[tier - 1][0]] : [], requiredRanks: tier ? { [line[tier - 1][0]]: 2 } : {},
-  gates: { orb: [0, 30, 80, 150][tier], rounds: [0, 30, 180, 720][tier], prestiges: 1, prestige: [1, 5, 20, 100][tier] }, icon: '✧',
+  gates: { orb: [0, 30, 80, 150][tier], rounds: [0, 30, 180, 720][tier], prestiges: 1, prestige: [1, 5, 20, 100][tier], ...(lineIndex === 3 ? {farm:true} : {}) }, icon: '✧',
 })));
 
 // Compact new IDs keep eight completed builds inside Refract's relay envelope.

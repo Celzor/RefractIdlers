@@ -19,7 +19,7 @@ This research used the author-provided `refract/oasis-core` checkout on 10 Novem
 
 The concept sheet uses the earlier name **Flick** and the line “A little light. A lot of personality.” The current source calls the character **Beam** and retains an old `flickEnabled` preference for compatibility (`docs/beam/README.md:7`). The old name is development history, not evidence of a second character.
 
-The source provides a well-defined personality and visual identity. The materials reviewed do not establish a creation myth, an LRC origin story, a crystal civilization or a relationship between Beam and destructible game orbs. Idlers does not present those ideas as official Refract lore.
+The source provides a well-defined personality and visual identity. The materials reviewed do not establish a creation myth, an LRC origin story, a crystal civilization or a relationship between Beam and destructible game orbs. Vegetable gardening and feeding Beam are new Idlers mechanics; the reviewed source does not establish a vegetable diet or food-powered abilities. Idlers does not present these additions as official Refract lore.
 
 ## Expressions and their game interpretation
 
@@ -46,12 +46,16 @@ The stepped shapes, pixel shading, game-sized furniture and gold prestige crown 
 
 Beam is affectionate, lightly absurd and more confident in his research methods than those methods warrant. The **Chief Vibe Officer** title is sourced; all dialogue in [`src/beam.js`](../src/beam.js), including “A new idea! Peer-reviewed by me. Just me.”, is newly written for Idlers. Game references to photons, LRCs, machines and prestige describe this game's mechanics rather than expand official Refract canon.
 
-The companion reads local game snapshots and reacts to selected milestones: arrival, the first purchase of each machine type, research, a boss, a surge, a round ending or prestige. He does not speak on each click. Event priorities and cooldowns prevent a queue of interruptions. A major milestone remains available while research hides the companion, then receives its remaining display time when the player returns. Only the current reaction is retained; later higher-priority milestones replace it, and a new build idea can replace an unseen round-end greeting. The welcome and rest poses remain quiet between milestones.
+The companion reads local game snapshots and reacts to selected milestones: arrival, the first purchase of each machine type, research, a boss, a surge, a round ending, a garden meal or prestige. He does not speak on each click. Event priorities and cooldowns prevent a queue of interruptions. A major milestone remains available while research hides the companion, then receives its remaining display time when the player returns. Only the current reaction is retained; later higher-priority milestones replace it, and a new build idea can replace an unseen round-end greeting. The welcome and rest poses remain quiet between milestones.
 
 Beam can be greeted with a harmless poke, limited to once every three seconds, or minimized with a persistent local preference. Reduced-motion settings disable sprite movement, and hidden tabs pause it. He stays inside his reserved UI space and creates no popups. Poking him changes no health, income, score, prestige or network state. He is the player's companion, never the destructible orb.
+
+The first Refract orb farm opens **Beam's Garden**. Players grow carrots, lettuce, tomatoes and pumpkins, harvest them, then use the Farm's **Feed** controls. Feeding consumes produce through the host-authoritative game engine and grants a base **+25% personal income and hit damage** bonus. Meals stack to 300 active seconds; crop growth and meal timers pause between rounds. Farming research improves the garden and its meals. These systems and Beam's snack dialogue are specific to Idlers. His portrait, animations, greetings and reactions remain cosmetic; hiding the companion does not remove an earned meal bonus.
 
 ## Implementation contract
 
 [`src/beam.js`](../src/beam.js) exports `BeamCompanion`. Construct it with a mounted element, call `render(state, selfId)` with current snapshots, and call `destroy()` before removing it. The optional third render argument is a monotonic millisecond timestamp. `react(type, detail)` supports explicit cosmetic reactions; normal milestones are already detected by `render`.
 
 [`src/beam.css`](../src/beam.css) owns the compact character presentation and motion. [`CREDITS.md`](../CREDITS.md) records source and artwork provenance.
+
+[`src/farm.js`](../src/farm.js) owns crop state, purchases and meal effects, with actions and simulation integrated into [`src/game.js`](../src/game.js). [`src/farm-view.js`](../src/farm-view.js) and [`src/farm.css`](../src/farm.css) render the garden and send actions. The companion renderer observes meal milestones; it does not award or expire the gameplay bonus itself.

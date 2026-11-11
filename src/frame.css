@@ -38,6 +38,11 @@ main{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 254px;gr
 .shop-catalogs button[aria-pressed=true]{border-color:#59432e;background:var(--gold);color:var(--ink)}
 .shop-catalogs button:hover{background:#f3d48a}.shop-catalogs small{font:14px/1 Terminal,monospace}
 .generator-panel[data-catalog=arsenal] .generators{grid-template-rows:repeat(4,minmax(0,1fr))}
+.generator-panel[data-catalog=click] .generators{grid-template-rows:repeat(3,minmax(0,1fr))}
+.generator-panel[data-catalog=click] .generator-description{font-size:18px;line-height:1.2}
+.shop-catalogs button{gap:4px;padding-inline:4px}
+.navigation-cluster{gap:12px}.tabs{gap:5px}.tab{padding-inline:9px;font-size:7px}
+.research-branches>button{font-size:15px;padding-inline:4px}
 .generator-unlock{display:block;font:14px/1.1 Terminal,monospace;color:#815a3d;border-top:1px dashed #b79e73;padding-top:4px;margin-top:5px}
 .generator.is-locked .generator-symbol{opacity:.55;filter:grayscale(.7)}
 .generator.is-locked button{font:13px/1.4 Terminal,monospace}

@@ -22,7 +22,7 @@ The Refract name and brand mark remain with their owner. Their inclusion does no
 
 ## Refract Idlers
 
-The LRC economy, incremental generators, orb combat, round rewards, 48-node research tree across eight disciplines, 12-node legacy tree, personal prestige rules, and game interface are implemented for Refract Idlers.
+The LRC economy, incremental generators, orb combat, round rewards, 54-node research tree across nine disciplines, 16-node legacy tree, personal prestige rules, garden, and game interface are implemented for Refract Idlers.
 
 ## Beam, the Refract companion
 
