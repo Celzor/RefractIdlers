@@ -494,12 +494,7 @@ dialog .dialog-danger{padding:12px;background:#e7c5a8;border-left:4px solid #a35
 .flight-result{position:absolute;inset:auto 0 42%;display:grid;gap:6px;justify-items:center;padding:12px;background:#201d1aee;border-top:2px solid #a07750;border-bottom:2px solid #a07750}
 .flight-result strong{font:9px/1.5 Pixel,monospace;color:#bad797}.flight-result[data-outcome=crashed] strong{color:#e0876f}.flight-result span{font:17px/1.2 Terminal,monospace;color:#d9c7a2}
 
-/* Session dialog tabs: the Scoreboard (or Crew) beside this pilot's Achievements. */
-.dialog-tabs{display:flex;gap:6px;margin:0 36px 0 0;padding-bottom:12px;border-bottom:2px solid #a68d65}
-.dialog-tab{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:8px 12px 7px;background:#c4af81;color:#554333;border:2px solid var(--ink);font:7px/1.5 Pixel,monospace;box-shadow:2px 2px #211d1d;white-space:nowrap}
-.dialog-tab[aria-selected=true]{background:var(--gold);color:var(--ink)}
-.dialog-tab:hover{background:#f3d48a;color:var(--ink)}
-.dialog-tab small{font:14px/1 Terminal,monospace;color:inherit}
+/* Achievements: this pilot's badges, opened by the button beside the Scoreboard. */
 .achievements-panel{margin-top:16px;padding:19px 21px}
 .achievements-panel .section-heading{align-items:center}
 .achievements-panel h2{font-size:11px}
@@ -530,4 +525,4 @@ dialog .dialog-danger{padding:12px;background:#e7c5a8;border-left:4px solid #a35
 .lens-label{background:#dcc3f0;border-color:#3d2a52;color:#2a1b3b}
 .comet-label.is-forecast{background:#243d4d;border-color:#9fd3e0;color:#cfe8f0}
 @media(max-width:760px){.achievements-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:540px){.achievements-grid{grid-template-columns:1fr}.dialog-tabs{margin-right:30px}.dialog-tab{font-size:6px;padding:7px 9px}}
+@media(max-width:540px){.achievements-grid{grid-template-columns:1fr}}

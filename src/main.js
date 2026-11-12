@@ -63,7 +63,6 @@ let crewMarkup = '';
 let scoreboardMarkup = '';
 let achievementsMarkup = '';
 let skyMarkup = '';
-let dialogTab = 'scoreboard';
 let previousVisualPlayer = null;
 let previousOrb = null;
 let orbImageKey = '';
@@ -469,15 +468,10 @@ function render(force = false) {
   if ($('#confirm-reset')) $('#confirm-reset').disabled = $('#reset-progress').disabled || !$('#reset-acknowledge').checked;
   $('#crew-count').textContent = `${state.players.length} / 8`;
   $('#crew-mode').textContent = bridge?.mode === 'refract' ? 'Shared Refract activity' : 'Invite your people through Refract';
-  // The session dialog has two tabs: the Scoreboard (the Crew in Co-op) and this pilot's Achievements.
-  const showScores = dialogTab === 'scoreboard';
-  $('#scoreboard-panel').hidden = coop || !showScores;
+  $('#scoreboard-panel').hidden = coop;
   $('#scoreboard-toggle').textContent = coop ? 'Crew' : 'Scoreboard';
-  $('#scoreboard-dialog').setAttribute('aria-label',coop ? 'Co-op crew, shared production and achievements' : 'Scoreboard and achievements');
-  $('[data-dialog-tab="scoreboard"]').textContent = coop ? 'Crew' : 'Scoreboard';
-  for (const button of document.querySelectorAll('[data-dialog-tab]')) { const selected = button.dataset.dialogTab === dialogTab; button.setAttribute('aria-selected',String(selected)); button.classList.toggle('active',selected); }
-  $('.session-desk').hidden = !coop || !showScores;
-  $('#achievements-panel').hidden = showScores;
+  $('#scoreboard-dialog').setAttribute('aria-label',coop ? 'Co-op crew and shared production' : 'Scoreboard');
+  $('.session-desk').hidden = !coop;
   renderAchievements(player,state);
   $('#coop-panel').hidden = !coop;
   $('#crew-panel').hidden = !coop;
@@ -497,7 +491,7 @@ function render(force = false) {
     if (previousVisualPlayer?.id === player.id) {
       if (getFarmUnlocked(player) && !previousVisualPlayer.farmUnlocked) toast('Farm unlocked! Open the Farm tab to grow Beam’s lunch.');
       const fresh = getAchievements(player,state).filter((entry) => entry.unlocked && !previousVisualPlayer.achievements.has(entry.id));
-      if (fresh.length) { audio.play('levelup',{intensity:.5}); toast(fresh.length === 1 ? `Achievement unlocked: ${fresh[0].name}. Find it on the Achievements tab beside the scoreboard.` : `${fresh.length} achievements unlocked. Find them on the Achievements tab beside the scoreboard.`); }
+      if (fresh.length) { audio.play('levelup',{intensity:.5}); toast(fresh.length === 1 ? `Achievement unlocked: ${fresh[0].name}. Find it under the Achievements button.` : `${fresh.length} achievements unlocked. Find them under the Achievements button.`); }
       if(player.farm?.crops?.weed&&!previousVisualPlayer.weedUnlocked){toast('Secret boss defeated! Weed is now unlocked in your farm.');audio.play('levelup');}
       else if(previousVisualPlayer.secretStart!==null&&!player.secretOrb&&state.now-previousVisualPlayer.secretStart>=SECRET_DURATION-1e-8&&!player.farm?.crops?.weed)toast('Haze survived. Improve your DPS and retry from the green star.');
       for (const generator of GENERATORS) if ((player.generators[generator.id] || 0) > (previousVisualPlayer.generators[generator.id] || 0)) {
@@ -511,7 +505,7 @@ function render(force = false) {
   }
   beam.render(state,selfId);
 }
-/** The Achievements tab: every badge in catalog order; locked ones are greyed out and read ??? until they are earned. */
+/** The Achievements dialog, opened by its own button beside the Scoreboard: every badge in catalog order; locked ones are greyed out and read ??? until they are earned. */
 function renderAchievements(player,state) {
   const list = getAchievements(player,state), unlocked = list.filter((entry) => entry.unlocked).length;
   $('#achievements-count').textContent = `${unlocked} / ${list.length}`;
@@ -550,14 +544,15 @@ function multiplayerInfo() {
 }
 $('#multiplayer').addEventListener('click', multiplayerInfo);
 $('#scoreboard-toggle').addEventListener('click', () => $('#scoreboard-dialog').showModal());
-for (const button of document.querySelectorAll('[data-dialog-tab]')) button.addEventListener('click', () => { dialogTab = button.dataset.dialogTab; audio.play('click',{intensity:.4}); render(true); });
+$('#achievements-toggle').addEventListener('click', () => $('#achievements-dialog').showModal());
 $('#sky-events').addEventListener('click', (event) => {
   const star = event.target.closest('[data-sky-star]');
   if (star) { send({type:'catchStar',index:Number(star.dataset.skyStar)}); return; }
   if (event.target.closest('[data-sky-quasar]')) send({type:'tapQuasar'});
 });
 $('#scoreboard-close').addEventListener('click', () => $('#scoreboard-dialog').close());
-$('#scoreboard-dialog').addEventListener('click', (event) => { if (event.target === event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.currentTarget.close(); } });
+$('#achievements-close').addEventListener('click', () => $('#achievements-dialog').close());
+for (const dialog of [$('#scoreboard-dialog'),$('#achievements-dialog')]) dialog.addEventListener('click', (event) => { if (event.target === event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.currentTarget.close(); } });
 $('#crew').addEventListener('click', (event) => { if (event.target.closest('#invite-crew')) multiplayerInfo(); });
 $('#info-dialog .dialog-close').addEventListener('click', () => $('#info-dialog').close());
 $('#info-dialog').addEventListener('click', (event) => { if (event.target === $('#info-dialog')) { const rect = event.target.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.target.close(); } });

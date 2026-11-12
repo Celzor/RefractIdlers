@@ -10,7 +10,8 @@ main{position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-tem
 .workspace-heading,body[data-view="skills"] .workspace-heading{grid-column:1/-1;grid-row:2;display:grid;grid-template-columns:minmax(0,1fr) auto 254px;gap:12px;min-height:0;margin:0;align-items:center}
 .navigation-cluster{display:flex;align-items:center;gap:24px;min-width:0}
 .tab{min-height:32px;padding:7px 12px 6px;font-size:8px}
-#scoreboard-toggle{font-size:7px;min-height:32px;padding:6px 10px;white-space:nowrap}
+#scoreboard-toggle,#achievements-toggle{font-size:7px;min-height:32px;padding:6px 10px;white-space:nowrap}
+#achievements-toggle{display:inline-flex;align-items:center;gap:7px}#achievements-toggle small{font:14px/1 Terminal,monospace;color:inherit}
 .workspace-heading .header-actions{justify-content:flex-end;gap:10px}
 .workspace-heading .header-actions .subtle-button{font-size:7px;padding:6px 10px;min-height:32px}
 .session-meta{padding:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 7px;align-items:center}
@@ -124,7 +125,7 @@ body[data-view="skills"] .view,body[data-view="prestige"] .view{grid-row:2}
 .legacy-research{display:grid;grid-template-rows:42px 26px minmax(0,1fr);gap:6px;min-height:0;min-width:0;margin:0;padding:0;border:0}.legacy-research>.section-heading{margin:0}.legacy-research>.section-heading h2{font-size:11px}.legacy-research>.section-heading .eyebrow{font-size:5px}.legacy-research .points-pill{font-size:16px;padding:5px 7px}.legacy-research .points-pill strong{font-size:25px}.legacy-research>p{font-size:17px;margin:0}
 footer{margin:0;padding:0;min-height:0;height:28px;font-size:14px;align-self:end}
 #info-dialog{max-height:calc(100dvh - 40px);width:min(890px,85vw);padding:26px 32px}
-#scoreboard-dialog{width:760px;max-width:calc(100vw - 80px);max-height:calc(100dvh - 60px);padding:28px;overflow:visible}
+#scoreboard-dialog,#achievements-dialog{width:760px;max-width:calc(100vw - 80px);max-height:calc(100dvh - 60px);padding:28px;overflow:visible}
 #scoreboard-dialog .scoreboard-panel{padding:0;background:none;box-shadow:none;border:0}
 #scoreboard-dialog .session-desk .panel{background:none;border:0;box-shadow:none;padding:0}
 #scoreboard-dialog .coop-overview{padding-right:35px!important}
@@ -159,8 +160,7 @@ footer{margin:0;padding:0;min-height:0;height:28px;font-size:14px;align-self:end
 .core.final-core img{image-rendering:auto;filter:drop-shadow(0 0 12px #99f4e7) drop-shadow(0 0 26px #a4b8fa);width:100%;height:100%;object-fit:contain}
 .core.final-core{background:radial-gradient(ellipse,#96d7dc25,transparent 70%)}
 .prestige-machine .reset-zone{display:grid;grid-template-columns:1fr;gap:8px}
-/* The session dialog's tabs and the Achievements tab share the scorebook's flat framing. */
-#scoreboard-dialog .dialog-tabs{margin-bottom:12px}
-#scoreboard-dialog .achievements-panel{margin:0;padding:0;background:none;box-shadow:none;border:0}
-#scoreboard-dialog .achievements-panel .section-heading{padding-right:0}
-#scoreboard-dialog .achievements-grid{max-height:min(62dvh,780px)}
+/* The Achievements dialog shares the scorebook's flat framing. */
+#achievements-dialog .achievements-panel{margin:0;padding:0;background:none;box-shadow:none;border:0}
+#achievements-dialog .achievements-panel .section-heading{padding-right:35px}
+#achievements-dialog .achievements-grid{max-height:min(62dvh,780px)}

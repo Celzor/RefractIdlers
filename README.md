@@ -2,7 +2,7 @@
 
 A multiplayer incremental game for Refract: break planetary cores across ten solar systems, collect LRCs, build machines, grow vegetables for Beam, and research lasting upgrades between rounds. The host chooses Scoreboard or Co-op. The route ends at the Refract crystal in **Crystal**, Beam's home system.
 
-The interface is built for desktop play, with a fixed game frame verified at **1366×768** and **1920×1080**. The core and workshop fill the frame, with Beam at the top of the active shop. Between rounds, the play field is greyed out with a centered start/ready button; the workshop stays available. Controls sit beside the view tabs; Scoreboard opens the standings dialog and Co-op uses the Crew button for shared production and the roster; both dialogs carry an **Achievements** tab for your lifetime badges. Research uses its own pan-and-zoom map.
+The interface is built for desktop play, with a fixed game frame verified at **1366×768** and **1920×1080**. The core and workshop fill the frame, with Beam at the top of the active shop. Between rounds, the play field is greyed out with a centered start/ready button; the workshop stays available. Controls sit beside the view tabs; Scoreboard opens the standings dialog and Co-op uses the Crew button for shared production and the roster; the **Achievements** button beside it opens your lifetime badges. Research uses its own pan-and-zoom map.
 
 Built on the activity approach from [Refract Tic-tac-toe](https://github.com/Celzor/refract-tack-toe), with assets, audio, orbital rendering, and multiplayer bridge code reused or adapted from [RogueRefract](https://github.com/Celzor/RogueRefract).
 
@@ -106,7 +106,7 @@ Scoreboard is the default. Only the host can change the mode, and only before th
 
 ### Achievements
 
-The standings dialog has a second tab, **Achievements**, beside the Scoreboard (or Crew) tab. It lists every badge in a fixed order with an unlocked count; locked badges are greyed out and read **???** until you earn them. Badges cover manual hits, shattered orbs, system milestones, completed rounds, lifetime LRC, prestige, research ranks, Beam's garden, the secret star, automation, light-ray losses and the Observatory's shooting stars and quasars. Every badge reads a lifetime record the engine keeps across prestige, so nothing ever locks again; only a full progress reset clears them. A toast announces each new badge as it unlocks.
+An **Achievements** button sits beside the Scoreboard (or Crew) button and opens its own dialog. It lists every badge in a fixed order with an unlocked count; locked badges are greyed out and read **???** until you earn them. Badges cover manual hits, shattered orbs, system milestones, completed rounds, lifetime LRC, prestige, research ranks, Beam's garden, the secret star, automation, light-ray losses and the Observatory's shooting stars and quasars. Every badge reads a lifetime record the engine keeps across prestige, so nothing ever locks again; only a full progress reset clears them. A toast announces each new badge as it unlocks.
 
 In Co-op, one pilot can buy a generator using LRCs earned by the others. The generator is owned by its purchaser, while its future output enters the shared bank. Shared funds are never removed by a personal prestige.
 

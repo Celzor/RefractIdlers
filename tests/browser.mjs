@@ -255,21 +255,27 @@ async function eightPlayerSidebars(){
       await pointerClick('#scoreboard-toggle',doc);
       await waitFor(`${doc}.querySelector('#scoreboard-dialog').open`,'Scorebook opens as a dialog');
       assert.equal(await evaluate(`${doc}.querySelectorAll('#scoreboard-list .scoreboard-row').length`),8,'All eight scoreboard entries are rendered');
-      // The Achievements tab sits beside the scoreboard: locked badges are greyed ??? placeholders until earned.
-      await click('[data-dialog-tab="achievements"]',doc);
-      await waitFor(`!${doc}.querySelector('#achievements-panel').hidden && ${doc}.querySelector('#scoreboard-panel').hidden`,'The Achievements tab replaces the scoreboard inside the dialog');
+      assert.equal(await evaluate(`${doc}.querySelector('#scoreboard-dialog #achievements-panel, #scoreboard-dialog [data-dialog-tab]')`),null,'The scorebook holds no achievements');
+      await click('#scoreboard-close',doc);
+      // Achievements have their own launcher beside the Scoreboard: locked badges are greyed ??? placeholders until earned.
+      await desktopFrame('Achievements launcher',['#scoreboard-toggle','#achievements-toggle'],doc);
+      await pointerClick('#achievements-toggle',doc);
+      await waitFor(`${doc}.querySelector('#achievements-dialog').open && !${doc}.querySelector('#scoreboard-dialog').open`,'Achievements open in their own dialog');
       const badges=await evaluate(`(()=>{const nodes=[...${doc}.querySelectorAll('#achievements-list .achievement')];return {total:nodes.length,locked:nodes.filter(node=>node.classList.contains('is-locked')&&node.querySelector('strong').textContent==='???'&&node.querySelector('small').textContent==='???').length,unlocked:nodes.filter(node=>node.classList.contains('is-unlocked')&&node.querySelector('strong').textContent!=='???').length,count:${doc}.querySelector('#achievements-count').textContent.trim()};})()`);
       assert.ok(badges.total>=30,'The achievements catalogue is rendered');
       assert.equal(badges.locked+badges.unlocked,badges.total,'Every badge is either unlocked or a greyed ??? placeholder');
       assert.ok(badges.locked>0,'A young pilot still has locked badges');
-      assert.equal(badges.count,`${badges.unlocked} / ${badges.total}`,'The tab shows the unlocked count');
+      assert.equal(badges.count,`${badges.unlocked} / ${badges.total}`,'The launcher shows the unlocked count');
       // The badge grid scrolls inside the panel like the shop does, so only the first row must be on screen.
-      await desktopFrame('Achievements tab',['.dialog-tabs','#achievements-progress','#achievements-list .achievement:first-child'],doc);
+      await desktopFrame('Achievements dialog',['#achievements-close','#achievements-progress','#achievements-list .achievement:first-child'],doc);
       await containedContent('#achievements-list .achievement',{documentExpression:doc});
-      assert.equal(await evaluate(`(()=>{const dialog=${doc}.querySelector('#scoreboard-dialog');return dialog.scrollHeight<=dialog.clientHeight+1;})()`),true,'The achievements dialog needs no internal scrollbar');
+      assert.equal(await evaluate(`(()=>{const dialog=${doc}.querySelector('#achievements-dialog');return dialog.scrollHeight<=dialog.clientHeight+1;})()`),true,'The achievements dialog needs no internal scrollbar');
       await capture(`desktop-${width}-achievements`);
-      await click('[data-dialog-tab="scoreboard"]',doc);
-      await waitFor(`${doc}.querySelector('#achievements-panel').hidden && !${doc}.querySelector('#scoreboard-panel').hidden`,'The Scoreboard tab returns');
+      await click('#achievements-close',doc);
+      assert.equal(await evaluate(`${doc}.querySelector('#achievements-dialog').open`),false,'Close button dismisses the achievements');
+      assert.equal(await evaluate(`${doc}.activeElement.id`),'achievements-toggle','Closing the achievements restores focus to their launcher');
+      await pointerClick('#scoreboard-toggle',doc);
+      await waitFor(`${doc}.querySelector('#scoreboard-dialog').open`,'Scorebook reopens');
       await desktopFrame('Eight-player scoreboard dialog',['#scoreboard-dialog','#scoreboard-close','#scoreboard-list .scoreboard-row'],doc);
       assert.equal(await evaluate(`(()=>{const dialog=${doc}.querySelector('#scoreboard-dialog');return dialog.scrollHeight<=dialog.clientHeight+1;})()`),true,'The eight-player scorebook needs no internal scrollbar');
       const behindDialogClicks=(await evaluate(session(101))).players.find(player=>player.id==='101').clicks;
@@ -292,6 +298,7 @@ async function eightPlayerSidebars(){
       assert.equal(await evaluate(`${doc}.activeElement.id`),'scoreboard-toggle','Escape restores focus to the scorebook launcher');
     }else{
       assert.equal(await evaluate(`${doc}.querySelector('#scoreboard-toggle').textContent.trim()`),'Crew','Co-op has a Crew dialog launcher');
+      await desktopFrame('Co-op achievements launcher',['#scoreboard-toggle','#achievements-toggle'],doc);
       await pointerClick('#scoreboard-toggle',doc);
       await waitFor(`${doc}.querySelector('#scoreboard-dialog').open`,'Crew opens as a dialog');
       assert.equal(await evaluate(`${doc}.querySelectorAll('#crew .crew-member').length`),8,'All eight co-op crew entries are rendered');
@@ -539,10 +546,10 @@ async function hazardChecks() {
   await capture('hazards-observatory-1366');
   await click('[data-sky-quasar]');
   await waitFor(`${readSolo}?.players?.[0]?.quasarsTapped===1 && !document.querySelector('#lens-label').hidden`,'Tapping the quasar is saved and the lens label appears');
-  await pointerClick('#scoreboard-toggle');await click('[data-dialog-tab="achievements"]');
+  await pointerClick('#achievements-toggle');
   await waitFor(`document.querySelector('[data-achievement="star-catcher"]')?.dataset.unlocked==='true' && document.querySelector('[data-achievement="quasar-tapped"]')?.dataset.unlocked==='true'`,'Sky catches unlock their badges');
   assert.equal(await evaluate(`document.querySelector('[data-achievement="sky-watcher"] strong').textContent`),'???','An unearned badge still reads ???');
-  await click('#scoreboard-close');
+  await click('#achievements-close');
   log('The Observatory forecasts comets, and caught stars and tapped quasars grant their buffs and badges');
   const transit=(fuel)=>`game.applyAction(state,'you',{type:'start'});const p=state.players[0];p.orb.level=20;p.orb.hp=game.getOrb(p,state).maxHp;p.highestOrb=20;p.orbsDestroyed=20;p.fuel=${fuel};p.transit={pilot:'you'};p.generators={mote:3};`;
   await seed(transit(50));
